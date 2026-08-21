@@ -9,41 +9,6 @@ tools, generated from the official OpenAPI specifications.
 > API v4*. The documents themselves are not part of this repository; the generated catalog under
 > `src/main/resources/catalog/` is.
 
----
-
-## Architecture
-
-```mermaid
-flowchart LR
-    subgraph Client["MCP client"]
-        C[Claude Desktop / IDE / agent]
-    end
-
-    subgraph Server["rapid7-insightvm-mcp"]
-        direction TB
-        T1[stdio] --> F
-        T2["Streamable HTTP /mcp<br/>legacy SSE /sse"] --> G["Transport guard<br/>bearer · Host/Origin · CORS · size · throttle"] --> F
-        F["CatalogFilter<br/>--read-only · --tags · --api · --tools"] --> R["CatalogTools<br/>~343 generated tools + 2 meta tools"]
-        R --> B["ArgumentBinder<br/>schema coercion · path encoding · caps"]
-        B --> K["Rapid7Client (OkHttp)<br/>no redirects · response cap"]
-        K --> S["ResponseSanitizer<br/>HTML→text · markup neutralised · fenced"]
-        S --> R
-    end
-
-    subgraph BuildTime["build time"]
-        SP["specs/*.json"] --> GEN["CatalogGenerator.kt<br/>./gradlew generateCatalog"] --> CAT["catalog/v3.json · v4.json"]
-    end
-
-    C -- "JSON-RPC" --> T1
-    C -- "HTTP" --> T2
-    CAT -.-> R
-    K -- "Basic + Token (2FA), custom CA" --> V3[("Security Console API v3")]
-    K -- "X-Api-Key" --> V4[("Insight Platform VM API v4")]
-```
-
-The server never parses the OpenAPI documents at runtime. `CatalogGenerator` (`./gradlew generateCatalog`) turns them into a compact, pre-dereferenced
-catalog that is committed and verified by the build; one generic dispatcher registers every entry as a tool.
-
 ## Requirements
 
 * JDK 21+
@@ -164,6 +129,39 @@ Two meta tools help navigate the set: `insightvm_server_info` (configuration, fi
 --api cloud                                   # just the 13 Insight Platform tools
 --tools 'get_*' --tools 'cloud_*'             # custom allow-list by glob
 ```
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Client["MCP client"]
+        C[Claude Desktop / IDE / agent]
+    end
+
+    subgraph Server["rapid7-insightvm-mcp"]
+        direction TB
+        T1[stdio] --> F
+        T2["Streamable HTTP /mcp<br/>legacy SSE /sse"] --> G["Transport guard<br/>bearer · Host/Origin · CORS · size · throttle"] --> F
+        F["CatalogFilter<br/>--read-only · --tags · --api · --tools"] --> R["CatalogTools<br/>~343 generated tools + 2 meta tools"]
+        R --> B["ArgumentBinder<br/>schema coercion · path encoding · caps"]
+        B --> K["Rapid7Client (OkHttp)<br/>no redirects · response cap"]
+        K --> S["ResponseSanitizer<br/>HTML→text · markup neutralised · fenced"]
+        S --> R
+    end
+
+    subgraph BuildTime["build time"]
+        SP["specs/*.json"] --> GEN["CatalogGenerator.kt<br/>./gradlew generateCatalog"] --> CAT["catalog/v3.json · v4.json"]
+    end
+
+    C -- "JSON-RPC" --> T1
+    C -- "HTTP" --> T2
+    CAT -.-> R
+    K -- "Basic + Token (2FA), custom CA" --> V3[("Security Console API v3")]
+    K -- "X-Api-Key" --> V4[("Insight Platform VM API v4")]
+```
+
+The server never parses the OpenAPI documents at runtime. `CatalogGenerator` (`./gradlew generateCatalog`) turns them into a compact, pre-dereferenced
+catalog that is committed and verified by the build; one generic dispatcher registers every entry as a tool.
 
 ## Security
 
