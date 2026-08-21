@@ -114,4 +114,8 @@ tasks.shadowJar {
     archiveClassifier.set("all")
     archiveVersion.set(project.version.toString())
     mergeServiceFiles()
+    manifest {
+        // JNA (pulled in by kotlinx-io/ktor) loads native code; JDK 24+ warns unless the launcher jar opts in.
+        attributes("Enable-Native-Access" to "ALL-UNNAMED")
+    }
 }
