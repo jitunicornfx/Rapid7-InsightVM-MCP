@@ -24,3 +24,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Rapid7 OpenAPI documents (download separately; see docs/CATALOG.md)
+/specs/

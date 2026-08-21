@@ -109,7 +109,9 @@ val generateCatalog by tasks.registering(JavaExec::class) {
 
 val verifyCatalog by tasks.registering(JavaExec::class) {
     group = "verification"
-    description = "Fails if src/main/resources/catalog is out of date with specs/."
+    description = "Fails if src/main/resources/catalog is out of date with specs/ (skipped when specs/ is absent)."
+    // The OpenAPI documents are not part of the repository; the drift check only makes sense where they exist.
+    onlyIf { file("specs").isDirectory }
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass.set(generatorMain)
     args("--check")

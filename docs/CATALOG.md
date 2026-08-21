@@ -4,6 +4,11 @@
 documents in `specs/`. The server registers one tool per catalog entry at startup and never parses
 the raw specifications.
 
+The OpenAPI documents are **not committed**. To regenerate, download them from Rapid7 and place them at
+`specs/insightvm-console-v3.json` (Security Console API v3) and `specs/insightvm-cloud-v4.json` (Cloud Integrations
+API v4); the folder is git-ignored. `verifyCatalog` and the spec-backed tests skip automatically when it is absent.
+Each catalog records the SHA-256 of the document it was generated from (`meta.specSha256`).
+
 ```bash
 ./gradlew generateCatalog   # regenerate after updating specs/
 ./gradlew verifyCatalog     # verify the committed catalog matches (part of ./gradlew check)

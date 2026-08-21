@@ -26,13 +26,18 @@ class CatalogGeneratorTest {
     private val specs: Path = Path.of("specs")
     private val committed: Path = Path.of("src/main/resources/catalog")
 
+    /** The OpenAPI documents are not committed; spec-backed tests are skipped where they are absent. */
+    private fun requireSpecs() = org.junit.jupiter.api.Assumptions.assumeTrue(Files.isDirectory(specs), "specs/ not present")
+
     @Test
     fun `generated catalogs are byte-identical to the committed ones`() {
+        requireSpecs()
         assertEquals(emptyList(), CatalogGenerator.drift(specs, committed))
     }
 
     @Test
     fun `generated catalogs pass the runtime loader and match the bundled resources`() {
+        requireSpecs()
         val generated = CatalogGenerator.generate(specs)
         for (src in CatalogGenerator.SOURCES) {
             val parsed = CatalogLoader.parse(generated.getValue(src.outputFile), src.family)
@@ -46,6 +51,7 @@ class CatalogGeneratorTest {
 
     @Test
     fun `write and drift round-trip through a directory`() {
+        requireSpecs()
         val dir = createTempDirectory("catalog-out")
         try {
             assertEquals(listOf("v3.json", "v4.json"), CatalogGenerator.drift(specs, dir))

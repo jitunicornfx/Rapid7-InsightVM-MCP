@@ -5,8 +5,9 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server for Rapid7 In
 **Security Console API v3** (330 operations) and **Insight Platform Cloud Integrations API v4** (13 operations) as MCP
 tools, generated from the official OpenAPI specifications.
 
-> Coverage is derived from the bundled specifications in [`specs/`](specs/): *Rapid7 VM API 3* and *InsightVM Cloud
-> Integrations API v4*.
+> Coverage is derived from Rapid7's published OpenAPI documents — *Rapid7 VM API 3* and *InsightVM Cloud Integrations
+> API v4*. The documents themselves are not part of this repository; the generated catalog under
+> `src/main/resources/catalog/` is.
 
 ---
 
@@ -204,7 +205,7 @@ the new JAR and swaps it in at shutdown. Clients receive an MCP logging notifica
 ## Development
 
 ```bash
-./gradlew generateCatalog            # regenerate the catalog after updating specs/
+./gradlew generateCatalog            # regenerate the catalog (needs the OpenAPI documents in specs/, see docs/CATALOG.md)
 ./gradlew test jacocoTestReport      # tests + coverage (build/reports/jacoco/test/html)
 ./gradlew run --args="--stdio"       # dev loop
 ```
