@@ -13,12 +13,16 @@ import com.github.ajalt.clikt.parameters.options.switch
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.int
 import com.jitunicornfx.insightvm.mcp.catalog.ApiFamily
+import com.jitunicornfx.insightvm.mcp.catalog.CatalogLoader
 import io.ktor.server.cio.CIO
+import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
+import io.ktor.server.routing.routing
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerSession
 import io.modelcontextprotocol.kotlin.sdk.server.StdioServerTransport
 import io.modelcontextprotocol.kotlin.sdk.server.mcp
+import io.modelcontextprotocol.kotlin.sdk.server.mcpStreamableHttp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -32,11 +36,14 @@ import kotlinx.io.asSink
 import kotlinx.io.asSource
 import kotlinx.io.buffered
 import java.io.File
+import java.io.InputStream
 import java.io.PrintStream
 import java.util.concurrent.atomic.AtomicBoolean
 
 const val DEFAULT_HTTP_HOST = "127.0.0.1"
 const val DEFAULT_HTTP_PORT = 3072
+const val STREAMABLE_HTTP_PATH = "/mcp"
+const val LEGACY_SSE_PATH = "/sse"
 
 /** Guards [autoInstall] so a release is downloaded and installed at most once per process. */
 private val installAttempted = AtomicBoolean(false)
@@ -294,14 +301,23 @@ private suspend fun autoInstall(config: Config, result: UpdateChecker.Result): U
     return outcome
 }
 
-private fun runStdio(client: Rapid7Client, config: Config, protocolOut: PrintStream) = runBlocking {
+/**
+ * Serve one MCP session over [input]/[protocolOut] until the peer closes the stream. Blocks.
+ * The streams are parameters so tests can drive a full session through pipes.
+ */
+internal fun runStdio(
+    client: Rapid7Client,
+    config: Config,
+    protocolOut: PrintStream,
+    input: InputStream = System.`in`,
+) = runBlocking {
     System.err.println("[insightvm-mcp] Starting over stdio — ${describeConfig(config)}")
     val built = buildInsightVmServer(client, config)
     logRegistration(built)
     val checkScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val updateCheck = checkScope.startUpdateCheck(config)
     val transport = StdioServerTransport(
-        input = System.`in`.asSource().buffered(),
+        input = input.asSource().buffered(),
         output = protocolOut.asSink().buffered(),
     )
 
@@ -320,14 +336,29 @@ private fun runStdio(client: Rapid7Client, config: Config, protocolOut: PrintStr
     }
 }
 
-private fun runHttp(client: Rapid7Client, config: Config, host: String, port: Int) {
+/** Everything [runHttp] needs to start and later tear down; returned unstarted so tests can drive it. */
+internal class HttpRuntime(
+    val engine: EmbeddedServer<*, *>,
+    private val checkScope: CoroutineScope,
+    private val updateCheck: Deferred<UpdateChecker.Result>?,
+    private val client: Rapid7Client,
+) {
+    fun shutdown() {
+        updateCheck?.cancel()
+        checkScope.cancel()
+        client.close()
+    }
+}
+
+/** Build the HTTP transport (security guard + MCP routes) without starting it. */
+internal fun buildHttpRuntime(client: Rapid7Client, config: Config, host: String, port: Int): HttpRuntime {
     System.err.println("[insightvm-mcp] Starting over HTTP on $host:$port — ${describeConfig(config)}")
     if (config.httpAuthToken == null) {
         System.err.println(
             "[insightvm-mcp] WARNING: no ${Config.ENV_MCP_AUTH_TOKEN} set; any local process can call this server on $host:$port.",
         )
     }
-    val catalogs = com.jitunicornfx.insightvm.mcp.catalog.CatalogLoader.loadAll(config.activeFamilies)
+    val catalogs = CatalogLoader.loadAll(config.activeFamilies)
     // Build once for logging; mcp { } builds a server per connection from the same catalogs.
     logRegistration(buildInsightVmServer(client, config, catalogs))
 
@@ -342,7 +373,9 @@ private fun runHttp(client: Rapid7Client, config: Config, host: String, port: In
                 allowedOrigins = config.httpAllowedOrigins,
             ),
         )
-        mcp {
+        // One server per connection (both SDK transports build on demand); the update notifier is
+        // attached to each so every session gets the notice exactly once.
+        val newServer: () -> Server = {
             buildInsightVmServer(client, config, catalogs).server.also { server ->
                 if (updateCheck != null) {
                     server.attachUpdateNotifier(checkScope) { session ->
@@ -358,12 +391,21 @@ private fun runHttp(client: Rapid7Client, config: Config, host: String, port: In
                 }
             }
         }
+        // Host/Origin validation is done by installTransportSecurity (it also understands non-loopback
+        // binds); the SDK's own DNS-rebinding guard is localhost-only, so it is switched off here.
+        // Streamable HTTP (current spec) on /mcp — this also installs the SSE plugin ...
+        mcpStreamableHttp(path = STREAMABLE_HTTP_PATH, enableDnsRebindingProtection = false) { newServer() }
+        // ... which the legacy HTTP+SSE transport (GET /sse stream, POST /sse messages) relies on.
+        routing { mcp(path = LEGACY_SSE_PATH, enableDnsRebindingProtection = false) { newServer() } }
     }
+    return HttpRuntime(engine, checkScope, updateCheck, client)
+}
+
+private fun runHttp(client: Rapid7Client, config: Config, host: String, port: Int) {
+    val runtime = buildHttpRuntime(client, config, host, port)
     try {
-        engine.start(wait = true)
+        runtime.engine.start(wait = true)
     } finally {
-        updateCheck?.cancel()
-        checkScope.cancel()
-        client.close()
+        runtime.shutdown()
     }
 }
