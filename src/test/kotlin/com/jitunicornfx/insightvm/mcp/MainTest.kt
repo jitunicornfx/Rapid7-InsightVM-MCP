@@ -156,6 +156,24 @@ class MainTest {
         assertTrue(served.isEmpty())
     }
 
+    @Test
+    fun `startup banner names version, runtime, location and env variable names but never values`() {
+        val banner = startupBanner(
+            arrayOf("--stdio", "--read-only"),
+            mapOf(Config.ENV_API_KEY to "super-secret-key", Config.ENV_REGION to "eu", "PATH" to "x"),
+        )
+        assertContains(banner, "$SERVER_NAME $SERVER_VERSION starting")
+        assertContains(banner, "java ${System.getProperty("java.version")}")
+        assertContains(banner, "location: ${runningLocation()}")
+        assertContains(banner, "args: --stdio --read-only")
+        assertContains(banner, "environment: ${Config.ENV_API_KEY}, ${Config.ENV_REGION}")
+        assertFalse(banner.contains("super-secret-key"))
+        assertFalse(banner.contains("PATH"))
+        assertContains(startupBanner(emptyArray(), emptyMap()), "args: (none)")
+        assertContains(startupBanner(emptyArray(), emptyMap()), "no INSIGHTVM_* variables set")
+        assertTrue(runningLocation().isNotBlank())
+    }
+
     // ----------------------------------------------------------------- real transports
 
     private fun mockClient(config: Config) = Rapid7Client(

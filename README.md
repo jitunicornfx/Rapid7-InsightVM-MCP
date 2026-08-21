@@ -86,8 +86,9 @@ See [`.env.example`](.env.example) for a template.
 ./gradlew clean check shadowJar
 ```
 
-The fat JAR lands in `build/libs/rapid7-insightvm-mcp-0.1.0-all.jar`. `check` runs the tests, enforces 90 % line
-coverage and verifies the catalog matches `specs/`.
+The runnable JAR is **`build/libs/rapid7-insightvm-mcp-0.1.0-all.jar`** (≈20 MB, all dependencies bundled). The
+`-thin.jar` next to it contains only this project's classes and cannot be run (`no main manifest attribute`).
+`check` runs the tests, enforces 90 % line coverage and verifies the catalog matches `specs/`.
 
 ## Run
 
@@ -181,6 +182,19 @@ Summarised here; details and residual risks in [docs/SECURITY.md](docs/SECURITY.
 * **Dangerous operations** — `execute_command` is unregistered unless `--allow-admin-commands` *and* then requires
   `confirm="EXECUTE"`; all mutations are flagged `destructiveHint` where applicable; `--read-only` removes them entirely.
 * **TLS** — strict by default; trust a private CA with `INSIGHTVM_CONSOLE_CA_CERT`; `INSECURE_TLS` is explicit and loud.
+
+### Troubleshooting a start-up failure
+
+The server prints a diagnostic banner to stderr before doing anything else — version, JVM, the JAR it was loaded
+from, its arguments and which `INSIGHTVM_*` variables are set (names only). Desktop clients surface stderr in their MCP
+log, so that is the first place to look:
+
+| Symptom in the client log | Cause |
+|---|---|
+| `no main manifest attribute, in …jar` | The `-thin.jar` was deployed; use the `-all.jar` |
+| `Configuration error: …` | Missing/invalid `INSIGHTVM_*` variable — the message names it |
+| `Refusing to listen on …` | `--http` on a non-loopback address without `INSIGHTVM_MCP_AUTH_TOKEN` |
+| banner printed, then nothing | Normal for stdio: the server is waiting for the client's `initialize` |
 
 ## Updates
 

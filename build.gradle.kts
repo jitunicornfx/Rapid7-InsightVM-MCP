@@ -109,6 +109,12 @@ tasks.check {
     dependsOn(tasks.jacocoTestCoverageVerification, verifyCatalog)
 }
 
+// The plain jar holds only this project's classes — it has no dependencies and is not runnable.
+// Give it an explicit classifier so it cannot be mistaken for the launcher ("no main manifest attribute").
+tasks.jar {
+    archiveClassifier.set("thin")
+}
+
 tasks.shadowJar {
     archiveBaseName.set("rapid7-insightvm-mcp")
     archiveClassifier.set("all")

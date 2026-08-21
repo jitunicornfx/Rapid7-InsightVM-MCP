@@ -194,7 +194,44 @@ class Rapid7InsightVmCommand internal constructor(
     }
 }
 
-fun main(args: Array<String>) = Rapid7InsightVmCommand().main(args)
+fun main(args: Array<String>) {
+    // Diagnostics first, before anything that can fail: when a desktop client reports "server
+    // transport closed unexpectedly", these lines in its log are usually all there is to go on.
+    System.err.println(startupBanner(args))
+    try {
+        Rapid7InsightVmCommand().main(args)
+    } catch (e: Throwable) {
+        // Clikt handles its own exits; anything else escaping here would otherwise die silently.
+        System.err.println("[insightvm-mcp] FATAL: ${e::class.simpleName}: ${e.message}")
+        e.printStackTrace(System.err)
+        kotlin.system.exitProcess(1)
+    }
+}
+
+/** Where this code was loaded from (the JAR path, or the classes directory during development). */
+internal fun runningLocation(): String =
+    runCatching { Rapid7InsightVmCommand::class.java.protectionDomain.codeSource.location.toURI().path }
+        .getOrNull() ?: "unknown"
+
+/**
+ * One multi-line stderr banner with everything needed to diagnose a failed start: version, runtime,
+ * launch location, arguments and which `INSIGHTVM_*` variables are present (names only — values are
+ * never printed). Also warns when the thin (dependency-free) JAR is being run by mistake.
+ */
+internal fun startupBanner(args: Array<String>, env: Map<String, String> = System.getenv()): String {
+    val location = runningLocation()
+    val present = env.keys.filter { it.startsWith("INSIGHTVM_") }.sorted()
+    return buildString {
+        append("[insightvm-mcp] $SERVER_NAME $SERVER_VERSION starting")
+        append(" - java ${System.getProperty("java.version")} (${System.getProperty("java.vendor")})")
+        append(", ${System.getProperty("os.name")} ${System.getProperty("os.arch")}")
+        append('\n')
+        append("[insightvm-mcp] location: $location\n")
+        append("[insightvm-mcp] args: ${if (args.isEmpty()) "(none)" else args.joinToString(" ")}\n")
+        append("[insightvm-mcp] environment: ")
+        append(if (present.isEmpty()) "no INSIGHTVM_* variables set" else present.joinToString(", "))
+    }
+}
 
 /** Creates the shared client and dispatches to the selected transport. */
 internal fun runServer(transport: Transport, host: String, port: Int, config: Config) {
@@ -312,7 +349,7 @@ internal fun runStdio(
     protocolOut: PrintStream,
     input: InputStream = System.`in`,
 ) = runBlocking {
-    System.err.println("[insightvm-mcp] Starting over stdio — ${describeConfig(config)}")
+    System.err.println("[insightvm-mcp] Starting over stdio - ${describeConfig(config)}")
     val built = buildInsightVmServer(client, config)
     logRegistration(built)
     val checkScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -353,7 +390,7 @@ internal class HttpRuntime(
 
 /** Build the HTTP transport (security guard + MCP routes) without starting it. */
 internal fun buildHttpRuntime(client: Rapid7Client, config: Config, host: String, port: Int): HttpRuntime {
-    System.err.println("[insightvm-mcp] Starting over HTTP on $host:$port — ${describeConfig(config)}")
+    System.err.println("[insightvm-mcp] Starting over HTTP on $host:$port - ${describeConfig(config)}")
     if (config.httpAuthToken == null) {
         System.err.println(
             "[insightvm-mcp] WARNING: no ${Config.ENV_MCP_AUTH_TOKEN} set; any local process can call this server on $host:$port.",
