@@ -19,6 +19,7 @@ import io.ktor.http.contentType
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readAvailable
 import kotlinx.serialization.json.JsonElement
+import okhttp3.OkHttpClient
 import java.io.ByteArrayOutputStream
 import java.util.Base64
 
@@ -55,8 +56,11 @@ class Rapid7Client(
         if (consoleEngine != null) {
             HttpClient(consoleEngine) { configureClient() }
         } else {
+            // Build the OkHttp client eagerly (engine { config { } } runs lazily on first use) so TLS
+            // misconfiguration fails — and the insecure-mode banner prints — at startup.
+            val okHttp = OkHttpClient.Builder().also { TlsSupport.apply(it, console, warn) }.build()
             HttpClient(OkHttp) {
-                engine { config { TlsSupport.apply(this, console, warn) } }
+                engine { preconfigured = okHttp }
                 configureClient()
             }
         }

@@ -96,12 +96,15 @@ object ResponseSanitizer {
     /** Convert an API response into a tool result, marking non-2xx responses as errors. */
     fun toToolResult(response: ApiResponse, op: CatalogOp, family: ApiFamily): CallToolResult {
         val ct = response.contentType?.lowercase().orEmpty()
+        // The response's own content type wins; the catalog's documented type is only a fallback
+        // for responses that omit it.
+        val effectiveType = ct.ifEmpty { op.responses.success }
         val rendered: String = when {
             response.bytes != null && !looksTextual(ct) ->
                 describeBinary(response.bytes, response.contentType, response.truncated)
             response.bytes != null -> scrubControlCharacters(response.bytes.toString(Charsets.UTF_8))
-            ct.startsWith("text/html") -> htmlToText(response.text.orEmpty())
-            ct.contains("json") || op.responses.success == "application/json" -> prettyOrRaw(response.text.orEmpty())
+            effectiveType.startsWith("text/html") -> htmlToText(response.text.orEmpty())
+            effectiveType.contains("json") -> scrubControlCharacters(prettyOrRaw(response.text.orEmpty()))
             else -> scrubControlCharacters(response.text.orEmpty())
         }
         val text = buildString {
