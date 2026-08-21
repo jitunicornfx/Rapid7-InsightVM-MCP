@@ -235,6 +235,12 @@ internal fun startupBanner(args: Array<String>, env: Map<String, String> = Syste
 
 /** Creates the shared client and dispatches to the selected transport. */
 internal fun runServer(transport: Transport, host: String, port: Int, config: Config) {
+    // Leftovers from an interrupted self-update (".new" staging files, ".bak", the lock sidecar)
+    // would otherwise accumulate beside the JAR; sweep them before anything else.
+    UpdateInstaller.runningJar()?.let { jar ->
+        val removed = UpdateInstaller.cleanupStaleArtifacts(jar)
+        if (removed.isNotEmpty()) System.err.println("[insightvm-mcp] Removed stale update files: ${removed.joinToString(", ")}")
+    }
     val client = Rapid7Client(config)
     Runtime.getRuntime().addShutdownHook(Thread { runCatching { client.close() } })
 

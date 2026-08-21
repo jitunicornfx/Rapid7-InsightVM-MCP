@@ -101,6 +101,8 @@ Out of scope: a compromised operator machine, a malicious bundled specification,
 Ported from the InsightIDR server with its protections intact: exact-match GitHub host allow-list, a strict version-tag
 regex as the only remote text that reaches the model, mandatory SHA-256 verified from disk, entry-point check on the
 downloaded JAR, a cross-process lock, and staged swap-at-shutdown on Windows with rollback.
+Housekeeping: the lock sidecar is deleted by its holder on release, and abandoned `<jar>.*.new` / `<jar>.bak` files
+older than an hour are swept at startup and before each install (only files carrying this JAR's own name prefix).
 
 **Residual risk, stated plainly:** the digest comes from the same GitHub API response as the download URL, so a
 compromise of the GitHub repository or release would not be detected. Set `INSIGHTVM_DISABLE_AUTO_UPDATE=1` (or

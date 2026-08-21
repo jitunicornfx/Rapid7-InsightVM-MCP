@@ -67,6 +67,15 @@ object UpdateInstaller {
     /** Sidecar used to serialise installation across processes launched from the same JAR. */
     const val LOCK_SUFFIX = ".update.lock"
 
+    /**
+     * Age after which a leftover staging (`.new`) or backup (`.bak`) file beside the JAR is considered
+     * abandoned. A staged update is normally applied when the process that downloaded it exits; if
+     * that process was killed, the file stays behind forever — and every later download creates a
+     * fresh one. One hour comfortably exceeds any download-to-exit window while still letting a
+     * concurrently running sibling finish its own swap.
+     */
+    const val STALE_ARTIFACT_AGE_MILLIS = 60L * 60 * 1000
+
     /** What happened, for logging and for the notification sent to the MCP client. */
     sealed interface Outcome {
         /** The new JAR is installed at the original path; the new code activates on restart. */
@@ -111,14 +120,50 @@ object UpdateInstaller {
      */
     internal fun <T> withInstallLock(target: File, block: () -> T): T? {
         val lockFile = File(target.parentFile, target.name + LOCK_SUFFIX)
-        return runCatching {
-            RandomAccessFile(lockFile, "rw").use { raf ->
-                raf.channel.use { channel ->
-                    val lock = runCatching { channel.tryLock() }.getOrNull() ?: return null
-                    lock.use { block() }
+        var acquired = false
+        try {
+            return runCatching {
+                RandomAccessFile(lockFile, "rw").use { raf ->
+                    raf.channel.use { channel ->
+                        val lock = runCatching { channel.tryLock() }.getOrNull() ?: return null
+                        acquired = true
+                        lock.use { block() }
+                    }
                 }
-            }
-        }.getOrNull()
+            }.getOrNull()
+        } finally {
+            // The sidecar only matters while held: the process that held it removes it on release so
+            // it does not linger beside the JAR. Only the holder may delete — unlinking a file another
+            // process has locked would let a third process lock a fresh file and run concurrently.
+            if (acquired) runCatching { lockFile.delete() }
+        }
+    }
+
+    /**
+     * Delete abandoned update artifacts beside [target]: staging files (`<jar>.*.new`), backups
+     * (`<jar>.bak`) and the lock sidecar, when older than [maxAgeMillis] (the lock is removed
+     * regardless of age if nothing holds it). Only files whose name starts with the JAR's own name
+     * are considered, so neighbouring servers' files are never touched. Returns what was removed.
+     */
+    fun cleanupStaleArtifacts(
+        target: File,
+        maxAgeMillis: Long = STALE_ARTIFACT_AGE_MILLIS,
+        now: Long = System.currentTimeMillis(),
+    ): List<String> {
+        val dir = target.parentFile ?: return emptyList()
+        val prefix = target.name + "."
+        val candidates = dir.listFiles() ?: return emptyList()
+        val removed = mutableListOf<String>()
+        for (file in candidates) {
+            if (!file.isFile || file == target || !file.name.startsWith(prefix)) continue
+            val isStaged = file.name.endsWith(STAGED_SUFFIX)
+            val isBackup = file.name == target.name + BACKUP_SUFFIX
+            val isLock = file.name == target.name + LOCK_SUFFIX
+            if (!isStaged && !isBackup && !isLock) continue
+            val stale = isLock || now - file.lastModified() >= maxAgeMillis
+            if (stale && runCatching { file.delete() }.getOrDefault(false)) removed += file.name
+        }
+        return removed
     }
 
     /**
@@ -301,6 +346,7 @@ object UpdateInstaller {
 
         // Serialise the whole download-verify-swap against other processes started from this JAR.
         val outcome = withInstallLock(target) {
+            cleanupStaleArtifacts(target)
             // A unique staging file, created exclusively: two processes can never share one, and a
             // pre-existing file left by someone else is never adopted or deleted.
             val stagedPath = runCatching {

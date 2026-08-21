@@ -398,6 +398,68 @@ class UpdateInstallerTest {
     }
 
     @Test
+    fun `the lock sidecar is removed by its holder on release and kept while contended`() {
+        val target = serverJar(File(tempDir, "installed.jar"))
+        val lockFile = File(tempDir, target.name + UpdateInstaller.LOCK_SUFFIX)
+        assertEquals(42, UpdateInstaller.withInstallLock(target) { assertTrue(lockFile.isFile); 42 })
+        assertFalse(lockFile.exists(), "holder deletes the sidecar on release")
+
+        // A contender that fails to acquire must leave the holder's sidecar alone.
+        UpdateInstaller.withInstallLock(target) {
+            assertNull(UpdateInstaller.withInstallLock(target) { "inner" })
+            assertTrue(lockFile.isFile, "contender must not delete a lock it does not hold")
+        }
+        assertFalse(lockFile.exists())
+    }
+
+    @Test
+    fun `cleanupStaleArtifacts removes old staging, backup and lock files but nothing else`() {
+        val target = serverJar(File(tempDir, "installed.jar"))
+        val hour = UpdateInstaller.STALE_ARTIFACT_AGE_MILLIS
+        val now = System.currentTimeMillis()
+        fun make(name: String, ageMillis: Long): File = File(tempDir, name).apply {
+            writeText("x")
+            assertTrue(setLastModified(now - ageMillis))
+        }
+        val oldStaged = make("installed.jar.1234.new", hour + 1)
+        val oldStaged2 = make("installed.jar.5678.new", 2 * hour)
+        val freshStaged = make("installed.jar.9999.new", 1_000)
+        val oldBackup = make("installed.jar.bak", hour + 1)
+        val lock = make("installed.jar.update.lock", 0)
+        val otherServer = make("other-server.jar.1111.new", 3 * hour)
+        val otherLock = make("other-server.jar.update.lock", 0)
+        val unrelated = make("installed.jar.notes.txt", 3 * hour)
+
+        val removed = UpdateInstaller.cleanupStaleArtifacts(target, now = now)
+
+        assertEquals(setOf(oldStaged.name, oldStaged2.name, oldBackup.name, lock.name), removed.toSet())
+        assertFalse(oldStaged.exists()); assertFalse(oldStaged2.exists()); assertFalse(oldBackup.exists()); assertFalse(lock.exists())
+        assertTrue(freshStaged.exists(), "a recent staging file may belong to a running sibling")
+        assertTrue(otherServer.exists()); assertTrue(otherLock.exists()); assertTrue(unrelated.exists())
+        assertTrue(target.isFile)
+
+        // Second pass: nothing left to do; a missing parent directory is handled.
+        assertEquals(emptyList(), UpdateInstaller.cleanupStaleArtifacts(target, now = now))
+        assertEquals(emptyList(), UpdateInstaller.cleanupStaleArtifacts(File(tempDir, "missing/dir/x.jar")))
+        assertEquals(emptyList(), UpdateInstaller.cleanupStaleArtifacts(File("bare.jar")))
+    }
+
+    @Test
+    fun `install sweeps stale staging files before downloading`() = runBlocking {
+        val source = serverJar(File(tempDir, "source.jar"))
+        val target = serverJar(File(tempDir, "installed.jar"), marker = "OLD")
+        val stale = File(tempDir, "installed.jar.0000.new").apply {
+            writeText("old")
+            assertTrue(setLastModified(System.currentTimeMillis() - 2 * UpdateInstaller.STALE_ARTIFACT_AGE_MILLIS))
+        }
+        val result = UpdateChecker.Result(true, "0.1.6", "9.9.9", asset = assetFor(source))
+        val outcome = UpdateInstaller.install(result, engineServing(source.readBytes()), target)
+        assertTrue(outcome is UpdateInstaller.Outcome.Installed || outcome is UpdateInstaller.Outcome.Staged, outcome.toString())
+        assertFalse(stale.exists(), "stale staging file swept")
+        assertFalse(File(tempDir, target.name + UpdateInstaller.LOCK_SUFFIX).exists(), "lock sidecar removed after install")
+    }
+
+    @Test
     fun `each install stages to its own file rather than a shared predictable path`() = runBlocking {
         // Regression: a fixed "<jar>.new" path let concurrent processes clobber each other's download.
         val source = serverJar(File(tempDir, "source.jar"))
