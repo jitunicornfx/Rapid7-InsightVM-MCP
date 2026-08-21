@@ -21,7 +21,6 @@ import io.ktor.server.routing.routing
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerSession
 import io.modelcontextprotocol.kotlin.sdk.server.StdioServerTransport
-import io.modelcontextprotocol.kotlin.sdk.server.mcp
 import io.modelcontextprotocol.kotlin.sdk.server.mcpStreamableHttp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -398,7 +397,7 @@ internal fun buildHttpRuntime(client: Rapid7Client, config: Config, host: String
         // Streamable HTTP (current spec) on /mcp — this also installs the SSE plugin ...
         mcpStreamableHttp(path = STREAMABLE_HTTP_PATH, enableDnsRebindingProtection = false) { newServer() }
         // ... which the legacy HTTP+SSE transport (GET /sse stream, POST /sse messages) relies on.
-        routing { mcp(path = LEGACY_SSE_PATH, enableDnsRebindingProtection = false) { newServer() } }
+        routing { legacySseTransport(LEGACY_SSE_PATH, newServer = newServer) }
     }
     return HttpRuntime(engine, checkScope, updateCheck, client)
 }

@@ -9,6 +9,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -306,6 +307,45 @@ class MainTest {
             runtime.shutdown()
         }
     }
+
+    @Test
+    fun `legacy sse transport works with the sdk client (which resolves the endpoint against the parent path)`() = runBlocking {
+        val config = testConfig(console = null).copy(httpAuthToken = "tok")
+        val errBefore = System.err
+        System.setErr(PrintStream(ByteArrayOutputStream(), true, "UTF-8"))
+        val runtime = try {
+            buildHttpRuntime(mockClient(config), config, "127.0.0.1", 0)
+        } finally {
+            System.setErr(errBefore)
+        }
+        runtime.engine.start(wait = false)
+        val http = HttpClient(OkHttp) {
+            install(io.ktor.client.plugins.sse.SSE)
+            defaultRequest { header(HttpHeaders.Authorization, "Bearer tok") }
+        }
+        try {
+            val port = withTimeout(10_000) { runtime.engine.engine.resolvedConnectors().first().port }
+            val transport = io.modelcontextprotocol.kotlin.sdk.client.SseClientTransport(http, "http://127.0.0.1:$port$LEGACY_SSE_PATH")
+            val mcp = io.modelcontextprotocol.kotlin.sdk.client.Client(io.modelcontextprotocol.kotlin.sdk.types.Implementation("sse-test", "0"))
+            withTimeout(20_000) { mcp.connect(transport) }
+            val tools = withTimeout(20_000) { mcp.listTools() }
+            assertEquals(13 + 2, tools.tools.size)
+            val result = withTimeout(20_000) { mcp.callTool("cloud_health", emptyMap()) }
+            assertContains(harnessText(result), "\"ok\": true")
+            mcp.close()
+
+            // Unknown session / missing session id on the message endpoint.
+            assertEquals(HttpStatusCode.NotFound, http.post("http://127.0.0.1:$port$LEGACY_SSE_PATH?sessionId=nope") { setBody("{}") }.status)
+            assertEquals(HttpStatusCode.BadRequest, http.post("http://127.0.0.1:$port$LEGACY_SSE_PATH") { setBody("{}") }.status)
+        } finally {
+            http.close()
+            runtime.engine.stop(100, 500)
+            runtime.shutdown()
+        }
+    }
+
+    private fun harnessText(result: io.modelcontextprotocol.kotlin.sdk.types.CallToolResult): String =
+        result.content.filterIsInstance<io.modelcontextprotocol.kotlin.sdk.types.TextContent>().joinToString("\n") { it.text }
 
     @Test
     fun `http runtime without a token warns and logs the large tool-set hint`() {
