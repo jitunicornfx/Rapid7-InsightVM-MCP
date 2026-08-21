@@ -85,6 +85,8 @@ class Rapid7InsightVmCommand internal constructor(
         |
         |${Config.ENV_CONSOLE_INSECURE_TLS} (optional): 1 disables TLS verification for the console (lab use only).
         |
+        |${Config.ENV_ALLOW_HTTP} (optional): 1 permits cleartext http:// API URLs (lab use only).
+        |
         |${Config.ENV_API_KEY}, ${Config.ENV_REGION}: Insight Platform Cloud Integrations API v4 (regions: ${Region.entries.joinToString(", ") { it.code }}).
         |
         |${Config.ENV_MCP_AUTH_TOKEN}: bearer token required by --http (mandatory when --host is not loopback).

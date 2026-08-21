@@ -105,8 +105,15 @@ class ConfigTest {
     fun `console env allows http only when explicitly enabled`() {
         val env = consoleEnv + (Config.ENV_CONSOLE_URL to "http://console.lab")
         assertFailsWith<IllegalArgumentException> { Config.fromEnv(env) }
-        val c = Config.fromEnv(env + (Config.ENV_CONSOLE_ALLOW_HTTP to "true"))
+        val c = Config.fromEnv(env + (Config.ENV_ALLOW_HTTP to "true"))
         assertEquals("http://console.lab:3780", c.console!!.baseUrl)
+    }
+
+    @Test
+    fun `cloud base url override must be https unless allowed`() {
+        val env = mapOf(Config.ENV_API_KEY to "k", Config.ENV_CLOUD_BASE_URL to "http://mock.local/vm")
+        assertFailsWith<IllegalArgumentException> { Config.fromEnv(env) }
+        assertEquals("http://mock.local/vm", Config.fromEnv(env + (Config.ENV_ALLOW_HTTP to "1")).cloud!!.baseUrl)
     }
 
     @Test

@@ -138,7 +138,7 @@ data class Config(
         const val ENV_CONSOLE_2FA_TOKEN = "INSIGHTVM_CONSOLE_2FA_TOKEN"
         const val ENV_CONSOLE_CA_CERT = "INSIGHTVM_CONSOLE_CA_CERT"
         const val ENV_CONSOLE_INSECURE_TLS = "INSIGHTVM_CONSOLE_INSECURE_TLS"
-        const val ENV_CONSOLE_ALLOW_HTTP = "INSIGHTVM_CONSOLE_ALLOW_HTTP"
+        const val ENV_ALLOW_HTTP = "INSIGHTVM_ALLOW_HTTP"
         const val ENV_API_KEY = "INSIGHTVM_API_KEY"
         const val ENV_REGION = "INSIGHTVM_REGION"
         const val ENV_CLOUD_BASE_URL = "INSIGHTVM_CLOUD_BASE_URL"
@@ -173,6 +173,10 @@ data class Config(
             val cloud = get(ENV_API_KEY)?.let { key ->
                 val region = Region.fromCode(get(ENV_REGION) ?: DEFAULT_REGION)
                 val base = get(ENV_CLOUD_BASE_URL)?.trimEnd('/') ?: "https://${region.code}.api.insight.rapid7.com/vm"
+                // The API key travels on every request; never let an override downgrade it to cleartext by accident.
+                require(base.startsWith("https://") || (isTruthy(env[ENV_ALLOW_HTTP]) && base.startsWith("http://"))) {
+                    "$ENV_CLOUD_BASE_URL must use https (set $ENV_ALLOW_HTTP=1 to permit cleartext http)."
+                }
                 CloudConfig(apiKey = key, region = region, baseUrl = base)
             }
             if (cloud == null && get(ENV_REGION) != null && console == null) {
@@ -216,7 +220,7 @@ data class Config(
                 )
             }
             return ConsoleConfig(
-                baseUrl = normalizeConsoleUrl(url, allowHttp = isTruthy(env[ENV_CONSOLE_ALLOW_HTTP])),
+                baseUrl = normalizeConsoleUrl(url, allowHttp = isTruthy(env[ENV_ALLOW_HTTP])),
                 username = user,
                 password = password,
                 twoFactorToken = get(ENV_CONSOLE_2FA_TOKEN),
@@ -240,7 +244,7 @@ data class Config(
             when (parsed.protocol) {
                 URLProtocol.HTTPS -> Unit
                 URLProtocol.HTTP -> require(allowHttp) {
-                    "$ENV_CONSOLE_URL must use https (set $ENV_CONSOLE_ALLOW_HTTP=1 to permit cleartext http)."
+                    "$ENV_CONSOLE_URL must use https (set $ENV_ALLOW_HTTP=1 to permit cleartext http)."
                 }
                 else -> throw IllegalArgumentException("$ENV_CONSOLE_URL must use https: $trimmed")
             }

@@ -8,6 +8,7 @@ import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.plugins.cors.routing.CORS
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.header
 import io.ktor.server.request.httpMethod
 import io.ktor.server.response.header
@@ -26,9 +27,61 @@ data class HttpSecurity(
     val allowedOrigins: List<String>,
     /** Requests larger than this (by `Content-Length`) are refused with 413. */
     val maxBodyBytes: Long = DEFAULT_MAX_BODY_BYTES,
+    /** Failed bearer attempts allowed per client address per [authFailureWindowMillis] before 429s. */
+    val maxAuthFailures: Int = DEFAULT_MAX_AUTH_FAILURES,
+    val authFailureWindowMillis: Long = DEFAULT_AUTH_FAILURE_WINDOW_MILLIS,
 ) {
     companion object {
         const val DEFAULT_MAX_BODY_BYTES = 4L * 1024 * 1024
+        const val DEFAULT_MAX_AUTH_FAILURES = 20
+        const val DEFAULT_AUTH_FAILURE_WINDOW_MILLIS = 60_000L
+    }
+}
+
+/**
+ * Sliding-window counter of failed authentication attempts per client address, so a weak bearer
+ * token cannot be brute-forced at line rate. Memory is bounded: entries expire with the window and
+ * the table is capped, evicting the oldest entry when full.
+ */
+internal class AuthFailureLimiter(
+    private val maxFailures: Int,
+    private val windowMillis: Long,
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val maxTrackedClients: Int = 10_000,
+) {
+    private class Entry(var windowStart: Long, var failures: Int)
+
+    private val entries = LinkedHashMap<String, Entry>()
+
+    /** True when [client] has exhausted its budget and must be refused before credentials are even checked. */
+    @Synchronized
+    fun isBlocked(client: String): Boolean {
+        val now = clock()
+        val e = entries[client] ?: return false
+        if (now - e.windowStart >= windowMillis) {
+            entries.remove(client)
+            return false
+        }
+        return e.failures >= maxFailures
+    }
+
+    @Synchronized
+    fun recordFailure(client: String) {
+        val now = clock()
+        val e = entries[client]
+        if (e == null || now - e.windowStart >= windowMillis) {
+            if (e == null && entries.size >= maxTrackedClients) {
+                entries.remove(entries.keys.first())
+            }
+            entries[client] = Entry(now, 1)
+        } else {
+            e.failures++
+        }
+    }
+
+    @Synchronized
+    fun recordSuccess(client: String) {
+        entries.remove(client)
     }
 }
 
@@ -45,7 +98,9 @@ data class HttpSecurity(
  *  3. **Bearer token** — when configured, every request must carry the exact token; comparison is
  *     constant-time. Startup refuses to bind a non-loopback interface without a token.
  *  4. **Body size cap** — declared `Content-Length` above the limit is refused with 413.
- *  5. **CORS** — default-deny; only the allow-listed origins get CORS headers.
+ *  5. **Brute-force throttle** — after [HttpSecurity.maxAuthFailures] bad tokens from one client
+ *     address within the window, further attempts get 429 until the window passes.
+ *  6. **CORS** — default-deny; only the allow-listed origins get CORS headers.
  */
 fun Application.installTransportSecurity(security: HttpSecurity) {
     val allowedOriginSet = security.allowedOrigins.mapNotNull { normalizeOrigin(it) }.toSet()
@@ -59,6 +114,7 @@ fun Application.installTransportSecurity(security: HttpSecurity) {
     }
 
     val enforceHost = isLoopback(security.bindHost)
+    val limiter = AuthFailureLimiter(security.maxAuthFailures, security.authFailureWindowMillis)
 
     intercept(ApplicationCallPipeline.Plugins) {
         val request = call.request
@@ -85,12 +141,20 @@ fun Application.installTransportSecurity(security: HttpSecurity) {
 
         security.token?.let { expected ->
             if (!isPreflight) {
+                val client = request.origin.remoteAddress
+                if (limiter.isBlocked(client)) {
+                    call.response.header(HttpHeaders.RetryAfter, (security.authFailureWindowMillis / 1000).toString())
+                    call.respondText("Too many failed authentication attempts.", status = HttpStatusCode.TooManyRequests)
+                    return@intercept finish()
+                }
                 val presented = request.header(HttpHeaders.Authorization)?.let(::bearerToken)
                 if (presented == null || !constantTimeEquals(presented, expected)) {
+                    limiter.recordFailure(client)
                     call.response.header(HttpHeaders.WWWAuthenticate, "Bearer realm=\"$SERVER_NAME\"")
                     call.respondText("Unauthorized.", status = HttpStatusCode.Unauthorized)
                     return@intercept finish()
                 }
+                limiter.recordSuccess(client)
             }
         }
 

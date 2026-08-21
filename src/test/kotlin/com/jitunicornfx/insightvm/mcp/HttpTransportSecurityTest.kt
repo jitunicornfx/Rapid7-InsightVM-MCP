@@ -103,6 +103,37 @@ class HttpTransportSecurityTest {
     }
 
     @Test
+    fun `repeated bad tokens are throttled per client`() = app(loopbackToken.copy(maxAuthFailures = 3)) { c ->
+        repeat(3) {
+            assertEquals(HttpStatusCode.Unauthorized, c.get("/mcp") { header(HttpHeaders.Host, "localhost"); header(HttpHeaders.Authorization, "Bearer nope") }.status)
+        }
+        // Even the correct token is refused once the budget is spent — the limiter runs before the compare.
+        val blocked = c.get("/mcp") { header(HttpHeaders.Host, "localhost"); header(HttpHeaders.Authorization, "Bearer s3cret-token") }
+        assertEquals(HttpStatusCode.TooManyRequests, blocked.status)
+        assertEquals("60", blocked.headers[HttpHeaders.RetryAfter])
+    }
+
+    @Test
+    fun `auth failure limiter windows, resets on success and bounds memory`() {
+        var now = 1_000L
+        val l = AuthFailureLimiter(maxFailures = 2, windowMillis = 100, clock = { now }, maxTrackedClients = 2)
+        assertFalse(l.isBlocked("a"))
+        l.recordFailure("a"); assertFalse(l.isBlocked("a"))
+        l.recordFailure("a"); assertTrue(l.isBlocked("a"))
+        now += 100
+        assertFalse(l.isBlocked("a")) // window expired
+        l.recordFailure("a"); l.recordFailure("a"); assertTrue(l.isBlocked("a"))
+        l.recordSuccess("a"); assertFalse(l.isBlocked("a"))
+        // Capacity: the oldest tracked client is evicted when a new one arrives.
+        l.recordFailure("a"); l.recordFailure("a"); l.recordFailure("b"); l.recordFailure("b"); l.recordFailure("c")
+        assertFalse(l.isBlocked("a"))
+        assertTrue(l.isBlocked("b"))
+        // A stale entry is replaced rather than incremented.
+        now += 100
+        l.recordFailure("b"); assertFalse(l.isBlocked("b"))
+    }
+
+    @Test
     fun `oversized declared bodies are refused`() = app(loopbackNoToken.copy(maxBodyBytes = 10)) { c ->
         val r = c.post("/mcp") {
             header(HttpHeaders.Host, "localhost")

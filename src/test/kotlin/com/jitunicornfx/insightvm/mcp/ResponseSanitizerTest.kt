@@ -87,6 +87,13 @@ class ResponseSanitizerTest {
         val truncatedText = ResponseSanitizer.toToolResult(ApiResponse(200, true, "text/plain", text = "abc", truncated = true, limitBytes = 3), op, ApiFamily.CONSOLE)
         assertTrue(text(truncatedText).endsWith("[Response body truncated at 3 bytes; narrow the query (page size, filters) to see everything.]"))
 
+        val xss = ResponseSanitizer.toToolResult(ApiResponse(200, true, "application/json", text = """{"proof":"<script>alert(1)</script>","note":"a &lt; b"}"""), op, ApiFamily.CONSOLE)
+        assertFalse(text(xss).contains("<script>"))
+        assertContains(text(xss), "&lt;script&gt;alert(1)&lt;/script&gt;")
+        assertContains(text(xss), "a &lt; b")
+        val plainXss = ResponseSanitizer.toToolResult(ApiResponse(200, true, "text/plain", text = "<img src=x onerror=alert(1)>"), op, ApiFamily.CONSOLE)
+        assertFalse(text(plainXss).substringAfter(UNTRUSTED_BEGIN).contains('<'))
+
         val failed = ResponseSanitizer.toToolResult(ApiResponse(503, false, "application/json", text = ""), op, ApiFamily.CLOUD)
         assertTrue(failed.isError == true)
         assertContains(text(failed), "Cloud Integrations API v4 returned HTTP 503.")

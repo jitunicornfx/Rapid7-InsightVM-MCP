@@ -72,6 +72,14 @@ object ResponseSanitizer {
     internal fun escapeMarkup(text: String): String =
         text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
+    /**
+     * Replace the two characters that can open or close an HTML tag. API data (host names, banners,
+     * vulnerability proofs, descriptions) is attacker-influenced and MCP clients frequently render tool
+     * output as Markdown/HTML; `&lt;`/`&gt;` keep the text readable and reversible for the model while
+     * making `<script>` and friends inert. `&` is left alone so already-escaped data is not double-escaped.
+     */
+    internal fun neutralizeMarkup(text: String): String = text.replace("<", "&lt;").replace(">", "&gt;")
+
     /** Remove C0/C1-ish control characters except tab and newline. */
     fun scrubControlCharacters(text: String): String = CONTROL.replace(text, "")
 
@@ -104,8 +112,8 @@ object ResponseSanitizer {
                 describeBinary(response.bytes, response.contentType, response.truncated)
             response.bytes != null -> scrubControlCharacters(response.bytes.toString(Charsets.UTF_8))
             effectiveType.startsWith("text/html") -> htmlToText(response.text.orEmpty())
-            effectiveType.contains("json") -> scrubControlCharacters(prettyOrRaw(response.text.orEmpty()))
-            else -> scrubControlCharacters(response.text.orEmpty())
+            effectiveType.contains("json") -> neutralizeMarkup(scrubControlCharacters(prettyOrRaw(response.text.orEmpty())))
+            else -> neutralizeMarkup(scrubControlCharacters(response.text.orEmpty()))
         }
         val text = buildString {
             if (!response.ok) {
