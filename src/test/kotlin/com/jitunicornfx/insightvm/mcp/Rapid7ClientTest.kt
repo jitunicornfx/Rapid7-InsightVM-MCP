@@ -1,0 +1,203 @@
+package com.jitunicornfx.insightvm.mcp
+
+import com.jitunicornfx.insightvm.mcp.catalog.ApiFamily
+import com.jitunicornfx.insightvm.mcp.testutil.TEST_CLOUD
+import com.jitunicornfx.insightvm.mcp.testutil.TEST_CONSOLE
+import com.jitunicornfx.insightvm.mcp.testutil.testConfig
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.TextContent
+import io.ktor.http.headersOf
+import io.ktor.utils.io.ByteReadChannel
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlin.test.Test
+import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class Rapid7ClientTest {
+
+    private fun engine(status: HttpStatusCode = HttpStatusCode.OK, body: String = "{}", contentType: String = "application/json", bytes: ByteArray? = null) =
+        MockEngine { _ ->
+            if (bytes != null) respond(bytes, status, headersOf(HttpHeaders.ContentType, contentType))
+            else respond(body, status, headersOf(HttpHeaders.ContentType, contentType))
+        }
+
+    @Test
+    fun `console requests carry basic auth, 2fa token, accept and query`() = runBlocking {
+        val e = engine()
+        val config = testConfig(console = TEST_CONSOLE.copy(twoFactorToken = "otp"))
+        val client = Rapid7Client(config, consoleEngine = e, cloudEngine = engine())
+        val r = client.request(ApiFamily.CONSOLE, HttpMethod.Get, "/api/3/sites", query = mapOf("sort" to listOf("a", "b"), "page" to listOf("0")))
+        assertTrue(r.ok)
+        assertEquals(200, r.status)
+        val req = e.requestHistory.single()
+        assertEquals("https://console.test:3780/api/3/sites?sort=a&sort=b&page=0", req.url.toString())
+        assertEquals("Basic YXBpLXVzZXI6czNjcmV0", req.headers[HttpHeaders.Authorization])
+        assertEquals("otp", req.headers["Token"])
+        assertEquals("application/json", req.headers[HttpHeaders.Accept])
+        assertNull(req.headers["X-Api-Key"])
+        client.close()
+    }
+
+    @Test
+    fun `cloud requests carry the api key and json body`() = runBlocking {
+        val e = engine()
+        val client = Rapid7Client(testConfig(), consoleEngine = engine(), cloudEngine = e)
+        client.request(ApiFamily.CLOUD, HttpMethod.Post, "/v4/integration/assets", jsonBody = buildJsonObject { put("asset", "x") })
+        val req = e.requestHistory.single()
+        assertEquals("https://us.api.insight.rapid7.com/vm/v4/integration/assets", req.url.toString())
+        assertEquals(TEST_CLOUD.apiKey, req.headers["X-Api-Key"])
+        assertNull(req.headers["Token"])
+        val body = req.body as TextContent
+        assertEquals("""{"asset":"x"}""", body.text)
+        assertEquals(ContentType.Application.Json, body.contentType.withoutParameters())
+        client.close()
+    }
+
+    @Test
+    fun `raw bodies use the given content type`() = runBlocking {
+        val e = engine(contentType = "text/plain", body = "ok")
+        val client = Rapid7Client(testConfig(), consoleEngine = e, cloudEngine = engine())
+        val r = client.request(ApiFamily.CONSOLE, HttpMethod.Post, "/api/3/administration/commands", rawBody = "help", rawContentType = ContentType.Text.Plain, accept = ContentType.Text.Plain)
+        assertEquals("ok", r.text)
+        assertNull(r.bytes)
+        val body = e.requestHistory.single().body as TextContent
+        assertEquals("help", body.text)
+        assertEquals(ContentType.Text.Plain, body.contentType.withoutParameters())
+        assertEquals("text/plain", e.requestHistory.single().headers[HttpHeaders.Accept])
+        client.close()
+    }
+
+    @Test
+    fun `unconfigured family is refused before any request`() = runBlocking {
+        val client = Rapid7Client(testConfig(console = null), cloudEngine = engine())
+        assertFailsWith<IllegalStateException> { client.request(ApiFamily.CONSOLE, HttpMethod.Get, "/x") }
+        assertFailsWith<IllegalStateException> { client.baseUrlFor(ApiFamily.CONSOLE) }
+        assertEquals("https://us.api.insight.rapid7.com/vm", client.baseUrlFor(ApiFamily.CLOUD))
+        client.close()
+    }
+
+    @Test
+    fun `path must be absolute`() = runBlocking {
+        val client = Rapid7Client(testConfig(), consoleEngine = engine(), cloudEngine = engine())
+        assertFailsWith<IllegalArgumentException> { client.request(ApiFamily.CONSOLE, HttpMethod.Get, "api/3/sites") }
+        client.close()
+    }
+
+    @Test
+    fun `redirects are not followed`() = runBlocking {
+        val e = MockEngine { respond("", HttpStatusCode.Found, headersOf(HttpHeaders.Location, "https://evil.example/")) }
+        val client = Rapid7Client(testConfig(), consoleEngine = e, cloudEngine = engine())
+        val r = client.request(ApiFamily.CONSOLE, HttpMethod.Get, "/api/3/sites")
+        assertEquals(302, r.status)
+        assertFalse(r.ok)
+        assertEquals(1, e.requestHistory.size)
+        client.close()
+    }
+
+    @Test
+    fun `binary responses are returned as bytes and textual ones as text`() = runBlocking {
+        val zip = byteArrayOf(0x50, 0x4B, 3, 4)
+        val client = Rapid7Client(testConfig(), consoleEngine = engine(bytes = zip, contentType = "application/zip"), cloudEngine = engine(body = "<x/>", contentType = "application/xml; charset=ISO-8859-1"))
+        val bin = client.request(ApiFamily.CONSOLE, HttpMethod.Get, "/api/3/administration/logs")
+        assertContentEquals(zip, bin.bytes)
+        assertNull(bin.text)
+        val xml = client.request(ApiFamily.CLOUD, HttpMethod.Get, "/admin/health")
+        assertEquals("<x/>", xml.text)
+        assertNull(xml.bytes)
+        client.close()
+    }
+
+    @Test
+    fun `response bodies are capped`() = runBlocking {
+        val big = "y".repeat(5000)
+        val client = Rapid7Client(testConfig(maxResponseBytes = 100), consoleEngine = engine(body = big, contentType = "text/plain"), cloudEngine = engine(body = "z".repeat(100), contentType = "text/plain"))
+        val r = client.request(ApiFamily.CONSOLE, HttpMethod.Get, "/x")
+        assertTrue(r.truncated)
+        assertEquals(100, r.text!!.length)
+        assertEquals(100, r.limitBytes)
+        val exact = client.request(ApiFamily.CLOUD, HttpMethod.Get, "/x")
+        assertFalse(exact.truncated)
+        assertEquals(100, exact.text!!.length)
+        client.close()
+    }
+
+    @Test
+    fun `readCapped edge cases`() = runBlocking {
+        val (empty, t0) = Rapid7Client.readCapped(ByteReadChannel(ByteArray(0)), 10)
+        assertEquals(0, empty.size); assertFalse(t0)
+        val (small, t1) = Rapid7Client.readCapped(ByteReadChannel("abc".toByteArray()), 10)
+        assertEquals("abc", small.toString(Charsets.UTF_8)); assertFalse(t1)
+        val (cut, t2) = Rapid7Client.readCapped(ByteReadChannel(ByteArray(100_000) { 1 }), 1000)
+        assertEquals(1000, cut.size); assertTrue(t2)
+    }
+
+    @Test
+    fun `isTextual classification`() {
+        assertTrue(Rapid7Client.isTextual(ContentType.parse("text/html")))
+        assertTrue(Rapid7Client.isTextual(ContentType.parse("application/json")))
+        assertTrue(Rapid7Client.isTextual(ContentType.parse("application/problem+json")))
+        assertTrue(Rapid7Client.isTextual(ContentType.parse("application/javascript")))
+        assertTrue(Rapid7Client.isTextual(ContentType.parse("application/x-www-form-urlencoded")))
+        assertFalse(Rapid7Client.isTextual(ContentType.parse("application/zip")))
+        assertFalse(Rapid7Client.isTextual(ContentType.parse("image/png")))
+    }
+
+    @Test
+    fun `follow urls must match the configured origin exactly`() = runBlocking {
+        val client = Rapid7Client(testConfig(), consoleEngine = engine(), cloudEngine = engine())
+        assertTrue(client.isAllowedFollowUrl(ApiFamily.CONSOLE, "https://console.test:3780/api/3/sites?page=1"))
+        assertTrue(client.isAllowedFollowUrl(ApiFamily.CONSOLE, "HTTPS://CONSOLE.TEST:3780/"))
+        assertFalse(client.isAllowedFollowUrl(ApiFamily.CONSOLE, "https://console.test/api/3/sites")) // port 443 != 3780
+        assertFalse(client.isAllowedFollowUrl(ApiFamily.CONSOLE, "http://console.test:3780/"))
+        assertFalse(client.isAllowedFollowUrl(ApiFamily.CONSOLE, "https://console.test.evil.example:3780/"))
+        assertFalse(client.isAllowedFollowUrl(ApiFamily.CONSOLE, "https://console.test:3780@evil.example/"))
+        assertFalse(client.isAllowedFollowUrl(ApiFamily.CONSOLE, "file:///etc/passwd"))
+        assertFalse(client.isAllowedFollowUrl(ApiFamily.CONSOLE, "::not a url::"))
+        assertTrue(client.isAllowedFollowUrl(ApiFamily.CLOUD, "https://us.api.insight.rapid7.com/vm/v4/integration/assets?cursor=abc"))
+        assertFalse(client.isAllowedFollowUrl(ApiFamily.CLOUD, "https://eu.api.insight.rapid7.com/vm/"))
+        assertFalse(client.isAllowedFollowUrl(ApiFamily.CLOUD, "https://console.test:3780/"))
+
+        val noConsole = Rapid7Client(testConfig(console = null), cloudEngine = engine())
+        assertFalse(noConsole.isAllowedFollowUrl(ApiFamily.CONSOLE, "https://console.test:3780/"))
+        noConsole.close()
+        client.close()
+    }
+
+    @Test
+    fun `requestAbsolute refuses foreign origins and follows allowed ones`() = runBlocking {
+        val e = engine()
+        val client = Rapid7Client(testConfig(), consoleEngine = e, cloudEngine = engine())
+        assertFailsWith<IllegalArgumentException> { client.requestAbsolute(ApiFamily.CONSOLE, "https://evil.example/") }
+        assertEquals(0, e.requestHistory.size)
+        val r = client.requestAbsolute(ApiFamily.CONSOLE, "https://console.test:3780/api/3/sites?page=2")
+        assertTrue(r.ok)
+        assertEquals(HttpMethod.Get, e.requestHistory.single().method)
+        assertEquals("Basic YXBpLXVzZXI6czNjcmV0", e.requestHistory.single().headers[HttpHeaders.Authorization])
+        client.close()
+    }
+
+    @Test
+    fun `real OkHttp engines are constructed for both families`() {
+        // No network call is made; this covers the production engine branch including TLS customisation.
+        val warnings = mutableListOf<String>()
+        val caPath = java.nio.file.Paths.get(javaClass.getResource("/tls/test-ca.pem")!!.toURI()).toString()
+        val withCa = Rapid7Client(testConfig(console = TEST_CONSOLE.copy(caCertPath = caPath)), warn = warnings::add)
+        withCa.close()
+        assertTrue(warnings.isEmpty())
+        val insecure = Rapid7Client(testConfig(console = TEST_CONSOLE.copy(insecureTls = true)), warn = warnings::add)
+        insecure.close()
+        assertEquals(listOf(TlsSupport.INSECURE_BANNER), warnings)
+        Rapid7Client(testConfig()).close()
+    }
+}
