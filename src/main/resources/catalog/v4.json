@@ -4,7 +4,7 @@
   "title": "InsightVM Cloud Integrations API",
   "specVersion": "PUBLIC_V4",
   "specSha256": "5d322d0ec815d1afd678b70300804a4af8b69fd94a7e058250d81c0426520abd",
-  "generator": "gen_catalog.py@1",
+  "generator": "CatalogGenerator.kt@1",
   "generatedFrom": "specs/insightvm-cloud-v4.json",
   "opCount": 13
  },

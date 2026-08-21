@@ -30,7 +30,7 @@ flowchart LR
     end
 
     subgraph BuildTime["build time"]
-        SP["specs/*.json"] --> GEN["tools/gen_catalog.py"] --> CAT["catalog/v3.json · v4.json"]
+        SP["specs/*.json"] --> GEN["CatalogGenerator.kt<br/>./gradlew generateCatalog"] --> CAT["catalog/v3.json · v4.json"]
     end
 
     C -- "JSON-RPC" --> T1
@@ -40,14 +40,13 @@ flowchart LR
     K -- "X-Api-Key" --> V4[("Insight Platform VM API v4")]
 ```
 
-The server never parses the OpenAPI documents at runtime. `tools/gen_catalog.py` turns them into a compact, pre-dereferenced
+The server never parses the OpenAPI documents at runtime. `CatalogGenerator` (`./gradlew generateCatalog`) turns them into a compact, pre-dereferenced
 catalog that is committed and verified by the build; one generic dispatcher registers every entry as a tool.
 
 ## Requirements
 
 * JDK 21+
 * A Security Console account (API v3) and/or an [Insight Platform API key](https://insight.help.rapid7.com/docs/managing-platform-api-keys) (API v4)
-* Python 3.10+ only if you regenerate the catalog or run `./gradlew check` (skip with `-PskipCatalogCheck=true`)
 
 ## Configuration
 
@@ -120,7 +119,7 @@ Command-line flags can only tighten what the environment allows; `--allow-admin-
   "mcpServers": {
     "insightvm": {
       "command": "java",
-      "args": ["-jar", "C:\\tools\\rapid7-insightvm-mcp-0.1.0-all.jar", "--stdio", "--tags", "Site,Asset,Vulnerability,Scan"],
+      "args": ["-jar", "C:\\tools\\rapid7-insightvm-mcp-0.1.0-all.jar", "--stdio"],
       "env": {
         "INSIGHTVM_CONSOLE_URL": "https://console.corp.example:3780",
         "INSIGHTVM_CONSOLE_USERNAME": "mcp-readonly",
@@ -205,12 +204,12 @@ the new JAR and swaps it in at shutdown. Clients receive an MCP logging notifica
 ## Development
 
 ```bash
-python tools/gen_catalog.py          # regenerate the catalog after updating specs/
+./gradlew generateCatalog            # regenerate the catalog after updating specs/
 ./gradlew test jacocoTestReport      # tests + coverage (build/reports/jacoco/test/html)
 ./gradlew run --args="--stdio"       # dev loop
 ```
 
-See [tools/README.md](tools/README.md) for the generator's rules and [docs/CODE_COVERAGE.md](docs/CODE_COVERAGE.md) for the
+See [docs/CATALOG.md](docs/CATALOG.md) for the generator's rules and [docs/CODE_COVERAGE.md](docs/CODE_COVERAGE.md) for the
 coverage gate.
 
 ## License

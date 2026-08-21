@@ -4,7 +4,7 @@
   "title": "Rapid7 VM API",
   "specVersion": "3",
   "specSha256": "3a8197c22d71a1655e46a3522b144ba3db006f0dba14b2b3969bd6360ce3d755",
-  "generator": "gen_catalog.py@1",
+  "generator": "CatalogGenerator.kt@1",
   "generatedFrom": "specs/insightvm-console-v3.json",
   "opCount": 330
  },

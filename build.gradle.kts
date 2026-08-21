@@ -94,15 +94,26 @@ tasks.jacocoTestCoverageVerification {
     }
 }
 
-// The tool catalog under src/main/resources/catalog is generated from specs/ by tools/gen_catalog.py.
-// This task regenerates it into build/ and fails if the committed copy has drifted.
-// Skip on machines without Python 3: ./gradlew check -PskipCatalogCheck=true
-val verifyCatalog by tasks.registering(Exec::class) {
+// The tool catalog under src/main/resources/catalog is generated from specs/ by CatalogGenerator
+// (src/main/kotlin/.../catalog/CatalogGenerator.kt). `generateCatalog` rewrites it; `verifyCatalog`
+// (part of `check`) fails if the committed copy has drifted from the specifications.
+val generatorMain = "com.jitunicornfx.insightvm.mcp.catalog.CatalogGenerator"
+
+val generateCatalog by tasks.registering(JavaExec::class) {
+    group = "build"
+    description = "Regenerates src/main/resources/catalog from specs/."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set(generatorMain)
+    workingDir = projectDir
+}
+
+val verifyCatalog by tasks.registering(JavaExec::class) {
     group = "verification"
-    description = "Fails if src/main/resources/catalog is out of date with specs/ (requires python3)."
-    val pythonExe = providers.gradleProperty("python").orNull ?: "python"
-    commandLine(pythonExe, "tools/gen_catalog.py", "--check")
-    onlyIf { providers.gradleProperty("skipCatalogCheck").orNull != "true" }
+    description = "Fails if src/main/resources/catalog is out of date with specs/."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set(generatorMain)
+    args("--check")
+    workingDir = projectDir
 }
 
 tasks.check {

@@ -1,18 +1,17 @@
-# tools/
+# Catalog generation
 
-## `gen_catalog.py`
-
-Generates the MCP tool catalog (`src/main/resources/catalog/v3.json`, `v4.json`) from the OpenAPI
+`CatalogGenerator` (`src/main/kotlin/com/jitunicornfx/insightvm/mcp/catalog/CatalogGenerator.kt`) generates the MCP tool catalog (`src/main/resources/catalog/v3.json`, `v4.json`) from the OpenAPI
 documents in `specs/`. The server registers one tool per catalog entry at startup and never parses
 the raw specifications.
 
 ```bash
-python tools/gen_catalog.py          # regenerate after updating specs/
-python tools/gen_catalog.py --check  # verify the committed catalog matches (run by ./gradlew check)
+./gradlew generateCatalog   # regenerate after updating specs/
+./gradlew verifyCatalog     # verify the committed catalog matches (part of ./gradlew check)
 ```
 
-Python 3.10+, standard library only. Skip the Gradle check on machines without Python:
-`./gradlew check -PskipCatalogCheck=true`.
+The generator serialises through the runtime's own `CatalogModel` data classes and validates with
+`CatalogLoader.validate`, so the catalog can never drift from what the server expects. Output is deterministic
+(one-space indent, LF); `CatalogGeneratorTest` asserts the committed files are byte-identical to a fresh run.
 
 ### Rules encoded in the generator
 
@@ -24,7 +23,7 @@ Python 3.10+, standard library only. Skip the Gradle check on machines without P
 | `admin` | `POST /api/3/administration/commands` (arbitrary console command execution). Registered only with `--allow-admin-commands`, and then still requires `confirm="EXECUTE"`. |
 | Parameters | Path and query only. The v4 `region` path parameter is dropped (it comes from `INSIGHTVM_REGION`). Array query parameters are sent `form`/`explode` style (`sort=a&sort=b`). |
 | Request bodies | `$ref`s are inlined (cycle-guarded, depth ≤ 8). `readOnly: true` properties are removed — they are server-assigned and never valid in a request. `example`, `xml`, `title`, `discriminator` are stripped. |
-| Descriptions | HTML stripped, entities decoded, whitespace collapsed, control characters removed, `<`/`>` neutralised, capped at 600 characters. |
+| Descriptions | HTML stripped, entities decoded (unknown named entities fail the build), whitespace collapsed, control characters removed, `<`/`>` neutralised, capped at 600 characters. |
 | Responses | The first 2xx content type is recorded (`application/json`, `text/html`, `text/plain`, `application/zip`) so the runtime can choose the `Accept` header and the sanitiser. |
 
 ### Known quirks passed through from the specifications

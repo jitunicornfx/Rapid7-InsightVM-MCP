@@ -53,4 +53,4 @@ private key in the repository and trusts nothing real.
   `runBlocking` returns `Unit` here; if a test's last expression is an assertion that returns a value, wrap it.
   Cross-check declared `@Test` counts against `build/test-results/test/TEST-*.xml` when in doubt.
 * The catalog is loaded once per JVM in tests (`TEST_CATALOGS`); re-parsing 500 KB per test would dominate the run.
-* `verifyCatalog` (part of `check`) needs Python 3. Skip it with `-PskipCatalogCheck=true` on machines without it.
+* `verifyCatalog` (part of `check`) re-runs `CatalogGenerator` and fails on drift; `CatalogGeneratorTest` asserts the same byte-for-byte.
