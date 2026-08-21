@@ -1,0 +1,369 @@
+package com.jitunicornfx.insightvm.mcp
+
+import com.github.ajalt.clikt.core.CliktCommand
+import com.github.ajalt.clikt.core.Context
+import com.github.ajalt.clikt.core.ProgramResult
+import com.github.ajalt.clikt.core.main
+import com.github.ajalt.clikt.parameters.options.default
+import com.github.ajalt.clikt.parameters.options.flag
+import com.github.ajalt.clikt.parameters.options.help
+import com.github.ajalt.clikt.parameters.options.multiple
+import com.github.ajalt.clikt.parameters.options.option
+import com.github.ajalt.clikt.parameters.options.switch
+import com.github.ajalt.clikt.parameters.types.choice
+import com.github.ajalt.clikt.parameters.types.int
+import com.jitunicornfx.insightvm.mcp.catalog.ApiFamily
+import io.ktor.server.cio.CIO
+import io.ktor.server.engine.embeddedServer
+import io.modelcontextprotocol.kotlin.sdk.server.Server
+import io.modelcontextprotocol.kotlin.sdk.server.ServerSession
+import io.modelcontextprotocol.kotlin.sdk.server.StdioServerTransport
+import io.modelcontextprotocol.kotlin.sdk.server.mcp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.io.asSink
+import kotlinx.io.asSource
+import kotlinx.io.buffered
+import java.io.File
+import java.io.PrintStream
+import java.util.concurrent.atomic.AtomicBoolean
+
+const val DEFAULT_HTTP_HOST = "127.0.0.1"
+const val DEFAULT_HTTP_PORT = 3072
+
+/** Guards [autoInstall] so a release is downloaded and installed at most once per process. */
+private val installAttempted = AtomicBoolean(false)
+
+internal enum class Transport { STDIO, HTTP }
+
+/**
+ * Command-line entry point for the Rapid7 InsightVM MCP server (built with Clikt).
+ *
+ * Transports:
+ *  - `--stdio` (default): standard MCP stdio transport for local desktop clients.
+ *  - `--http`: Streamable HTTP / SSE transport, bound to `--host`/`--port` (default port 3072).
+ *
+ * All diagnostics are written to stderr so stdout stays reserved for the JSON-RPC channel.
+ *
+ * The [configProvider] and [serve] seams exist so tests can drive option parsing and the run()
+ * dispatch without reading the real environment or starting a (blocking) server.
+ */
+class Rapid7InsightVmCommand internal constructor(
+    private val configProvider: () -> Config,
+    private val serve: (transport: Transport, host: String, port: Int, config: Config) -> Unit,
+) : CliktCommand(name = "rapid7-insightvm-mcp") {
+
+    /** Production entry point: reads config from the environment and starts a real server. */
+    constructor() : this({ Config.fromEnv() }, ::runServer)
+
+    override fun help(context: Context): String =
+        "Run the Rapid7 InsightVM MCP server over stdio (default) or Streamable HTTP/SSE."
+
+    override fun helpEpilog(context: Context): String =
+        """
+        |Environment variables (at least one API must be configured):
+        |
+        |${Config.ENV_CONSOLE_URL}, ${Config.ENV_CONSOLE_USERNAME}, ${Config.ENV_CONSOLE_PASSWORD}: Security Console API v3 (https://host:3780).
+        |
+        |${Config.ENV_CONSOLE_2FA_TOKEN} (optional): two-factor token sent in the Token header.
+        |
+        |${Config.ENV_CONSOLE_CA_CERT} (optional): PEM file with the console's CA/self-signed certificate.
+        |
+        |${Config.ENV_CONSOLE_INSECURE_TLS} (optional): 1 disables TLS verification for the console (lab use only).
+        |
+        |${Config.ENV_API_KEY}, ${Config.ENV_REGION}: Insight Platform Cloud Integrations API v4 (regions: ${Region.entries.joinToString(", ") { it.code }}).
+        |
+        |${Config.ENV_MCP_AUTH_TOKEN}: bearer token required by --http (mandatory when --host is not loopback).
+        |
+        |${Config.ENV_HTTP_ALLOWED_ORIGINS} (optional): comma-separated browser origins allowed in --http mode.
+        |
+        |${Config.ENV_READ_ONLY}, ${Config.ENV_TAGS}, ${Config.ENV_EXCLUDE_TAGS}, ${Config.ENV_ALLOW_ADMIN_COMMANDS}: tool filters (same as the flags).
+        |
+        |${Config.ENV_TIMEOUT_MS} (default ${Config.DEFAULT_TIMEOUT_MS}), ${Config.ENV_MAX_RESPONSE_BYTES} (default ${Config.DEFAULT_MAX_RESPONSE_BYTES}).
+        |
+        |${Config.ENV_DISABLE_UPDATE_CHECK}, ${Config.ENV_DISABLE_AUTO_UPDATE}: update behaviour (see --no-update-check / --no-auto-update).
+        """.trimMargin()
+
+    private val transport: Transport by option()
+        .switch("--stdio" to Transport.STDIO, "--http" to Transport.HTTP)
+        .default(Transport.STDIO)
+        .help("Transport to run. Defaults to --stdio.")
+
+    private val host: String by option("--host", "--ip")
+        .default(DEFAULT_HTTP_HOST)
+        .help("Address to listen on in HTTP mode. Defaults to $DEFAULT_HTTP_HOST.")
+
+    private val port: Int by option("--port")
+        .int()
+        .default(DEFAULT_HTTP_PORT)
+        .help("Port to listen on in HTTP mode. Defaults to $DEFAULT_HTTP_PORT.")
+
+    private val readOnly: Boolean by option("--read-only")
+        .flag(default = false)
+        .help("Register only read-only (GET) tools. Equivalent to ${Config.ENV_READ_ONLY}=1.")
+
+    private val tags: List<String> by option("--tags")
+        .multiple()
+        .help("Comma-separated API tags to expose (e.g. Site,Asset,Vulnerability). Repeatable.")
+
+    private val excludeTags: List<String> by option("--exclude-tags")
+        .multiple()
+        .help("Comma-separated API tags to hide. Repeatable.")
+
+    private val api: String? by option("--api")
+        .choice("console", "cloud", "both")
+        .help("Which configured API family to expose. Defaults to every configured family.")
+
+    private val tools: List<String> by option("--tools")
+        .multiple()
+        .help("Glob on tool names (e.g. 'get_site*'). Repeatable; a tool is kept if any glob matches.")
+
+    private val allowAdminCommands: Boolean by option("--allow-admin-commands")
+        .flag(default = false)
+        .help(
+            "Register execute_command (POST /api/3/administration/commands), which runs arbitrary " +
+                "commands on the Security Console. Off by default. Equivalent to ${Config.ENV_ALLOW_ADMIN_COMMANDS}=1.",
+        )
+
+    private val noAutoUpdate: Boolean by option("--no-auto-update")
+        .flag(default = false)
+        .help("Never download or install a new release; only report that one is available. Equivalent to ${Config.ENV_DISABLE_AUTO_UPDATE}=1.")
+
+    private val noUpdateCheck: Boolean by option("--no-update-check")
+        .flag(default = false)
+        .help("Skip the startup check for a newer release entirely (implies --no-auto-update). Equivalent to ${Config.ENV_DISABLE_UPDATE_CHECK}=1.")
+
+    override fun run() {
+        val fromEnv = try {
+            configProvider()
+        } catch (e: Exception) {
+            echo("Configuration error: ${e.message}", err = true)
+            throw ProgramResult(1)
+        }
+
+        val families = when (api) {
+            "console" -> setOf(ApiFamily.CONSOLE)
+            "cloud" -> setOf(ApiFamily.CLOUD)
+            else -> ApiFamily.entries.toSet()
+        }
+        val cliFilter = ToolFilter(
+            readOnly = readOnly,
+            tags = tags.flatMap { Config.csv(it) }.toSet(),
+            excludeTags = excludeTags.flatMap { Config.csv(it) }.toSet(),
+            // The only flag that loosens the environment: it is explicit and logged at startup.
+            allowAdminCommands = fromEnv.filter.allowAdminCommands || allowAdminCommands,
+            families = families,
+            nameGlobs = tools.flatMap { Config.csv(it) },
+        )
+        val filter = fromEnv.filter.tighten(cliFilter).copy(allowAdminCommands = cliFilter.allowAdminCommands)
+
+        val config = fromEnv.copy(
+            filter = filter,
+            updateCheckDisabled = fromEnv.updateCheckDisabled || noUpdateCheck,
+            autoUpdateDisabled = fromEnv.autoUpdateDisabled || noAutoUpdate || noUpdateCheck,
+        )
+
+        if (config.activeFamilies.isEmpty()) {
+            echo("Configuration error: --api ${api ?: "both"} selected but that API family is not configured.", err = true)
+            throw ProgramResult(1)
+        }
+        if (transport == Transport.HTTP && config.httpAuthToken == null && !isLoopback(host)) {
+            echo(
+                "Refusing to listen on $host without authentication: set ${Config.ENV_MCP_AUTH_TOKEN} " +
+                    "to a strong shared secret, or bind to a loopback address.",
+                err = true,
+            )
+            throw ProgramResult(2)
+        }
+        serve(transport, host, port, config)
+    }
+}
+
+fun main(args: Array<String>) = Rapid7InsightVmCommand().main(args)
+
+/** Creates the shared client and dispatches to the selected transport. */
+internal fun runServer(transport: Transport, host: String, port: Int, config: Config) {
+    val client = Rapid7Client(config)
+    Runtime.getRuntime().addShutdownHook(Thread { runCatching { client.close() } })
+
+    when (transport) {
+        Transport.STDIO -> {
+            // In stdio mode stdout carries the JSON-RPC stream. Capture the real stdout for the
+            // transport and redirect System.out to stderr so stray writes can't corrupt the channel.
+            val protocolOut: PrintStream = System.out
+            System.setOut(System.err)
+            runStdio(client, config, protocolOut)
+        }
+
+        Transport.HTTP -> runHttp(client, config, host, port)
+    }
+}
+
+private fun describeConfig(config: Config): String = buildString {
+    config.console?.let { append("console=${it.baseUrl}") }
+    config.cloud?.let { if (isNotEmpty()) append(", "); append("cloud=${it.region.code} (${it.baseUrl})") }
+}
+
+private fun logRegistration(built: BuiltServer) {
+    System.err.println("[insightvm-mcp] ${built.summary}")
+    if (built.selected.size > LARGE_TOOL_SET_THRESHOLD) {
+        System.err.println(
+            "[insightvm-mcp] ${built.selected.size} tools is a large set for some MCP clients; consider " +
+                "--read-only, --tags, --api or --tools to trim it.",
+        )
+    }
+}
+
+/** Start the GitHub update check concurrently with startup, or return null when it is disabled. */
+private fun CoroutineScope.startUpdateCheck(config: Config): Deferred<UpdateChecker.Result>? =
+    if (config.updateCheckDisabled) {
+        System.err.println("[insightvm-mcp] Update check disabled via ${Config.ENV_DISABLE_UPDATE_CHECK}.")
+        null
+    } else {
+        async(Dispatchers.IO) { UpdateChecker.check() }
+    }
+
+/** Attach the deferred update result to a session, notifying the client once it is initialized. */
+private fun CoroutineScope.notifyWhenInitialized(
+    server: Server,
+    session: ServerSession,
+    updateCheck: Deferred<UpdateChecker.Result>?,
+    config: Config,
+) {
+    if (updateCheck == null) return
+    session.onInitialized {
+        launch {
+            val result = runCatching { updateCheck.await() }.getOrNull() ?: return@launch
+            if (result.updateAvailable) System.err.println("[insightvm-mcp] ${result.message()}")
+            server.notifyUpdateAvailable(session, result)
+            if (result.updateAvailable) {
+                val outcome = autoInstall(config, result)
+                if (outcome != null) server.notifyUpdateInstalled(session, outcome)
+            }
+        }
+    }
+}
+
+/**
+ * Download and install [result]'s release, unless automatic installation is switched off.
+ * Returns null when nothing was attempted.
+ */
+private suspend fun autoInstall(config: Config, result: UpdateChecker.Result): UpdateInstaller.Outcome? {
+    if (!installAttempted.compareAndSet(false, true)) return null
+    if (config.autoUpdateDisabled) {
+        System.err.println(
+            "[insightvm-mcp] Automatic installation is disabled (${Config.ENV_DISABLE_AUTO_UPDATE} / --no-auto-update); update it manually.",
+        )
+        return null
+    }
+    val outcome = UpdateInstaller.install(result)
+    when (outcome) {
+        is UpdateInstaller.Outcome.Installed ->
+            System.err.println("[insightvm-mcp] Installed ${outcome.version}; restart to run it.")
+
+        is UpdateInstaller.Outcome.Staged -> {
+            System.err.println("[insightvm-mcp] Staged ${outcome.version}; it will be applied as this server exits.")
+            val staged = File(outcome.stagedPath)
+            val target = UpdateInstaller.runningJar()
+            if (target != null) {
+                runCatching {
+                    Runtime.getRuntime().addShutdownHook(
+                        Thread { runCatching { UpdateInstaller.installStagedAtShutdown(staged, target, outcome.sha256) } },
+                    )
+                }.onFailure {
+                    System.err.println(
+                        "[insightvm-mcp] Shutting down already; ${outcome.version} remains staged at " +
+                            "${outcome.stagedPath} and will not be applied automatically.",
+                    )
+                }
+            }
+        }
+
+        is UpdateInstaller.Outcome.Failed ->
+            System.err.println("[insightvm-mcp] Automatic update did not complete: ${outcome.reason}")
+
+        UpdateInstaller.Outcome.Skipped -> Unit
+    }
+    return outcome
+}
+
+private fun runStdio(client: Rapid7Client, config: Config, protocolOut: PrintStream) = runBlocking {
+    System.err.println("[insightvm-mcp] Starting over stdio — ${describeConfig(config)}")
+    val built = buildInsightVmServer(client, config)
+    logRegistration(built)
+    val checkScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val updateCheck = checkScope.startUpdateCheck(config)
+    val transport = StdioServerTransport(
+        input = System.`in`.asSource().buffered(),
+        output = protocolOut.asSink().buffered(),
+    )
+
+    // The transport fires onClose when stdin reaches EOF; register it before starting the session
+    // so the process exits cleanly instead of blocking on done.join() forever.
+    val done = Job()
+    transport.onClose { done.complete() }
+    try {
+        val session = built.server.createSession(transport)
+        checkScope.notifyWhenInitialized(built.server, session, updateCheck, config)
+        done.join()
+    } finally {
+        updateCheck?.cancel()
+        checkScope.cancel()
+        client.close()
+    }
+}
+
+private fun runHttp(client: Rapid7Client, config: Config, host: String, port: Int) {
+    System.err.println("[insightvm-mcp] Starting over HTTP on $host:$port — ${describeConfig(config)}")
+    if (config.httpAuthToken == null) {
+        System.err.println(
+            "[insightvm-mcp] WARNING: no ${Config.ENV_MCP_AUTH_TOKEN} set; any local process can call this server on $host:$port.",
+        )
+    }
+    val catalogs = com.jitunicornfx.insightvm.mcp.catalog.CatalogLoader.loadAll(config.activeFamilies)
+    // Build once for logging; mcp { } builds a server per connection from the same catalogs.
+    logRegistration(buildInsightVmServer(client, config, catalogs))
+
+    val checkScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val updateCheck = checkScope.startUpdateCheck(config)
+    val engine = embeddedServer(CIO, host = host, port = port) {
+        installTransportSecurity(
+            HttpSecurity(
+                bindHost = host,
+                bindPort = port,
+                token = config.httpAuthToken,
+                allowedOrigins = config.httpAllowedOrigins,
+            ),
+        )
+        mcp {
+            buildInsightVmServer(client, config, catalogs).server.also { server ->
+                if (updateCheck != null) {
+                    server.attachUpdateNotifier(checkScope) { session ->
+                        val result = runCatching { updateCheck.await() }.getOrNull()
+                        if (result != null) {
+                            server.notifyUpdateAvailable(session, result)
+                            if (result.updateAvailable) {
+                                val outcome = autoInstall(config, result)
+                                if (outcome != null) server.notifyUpdateInstalled(session, outcome)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    try {
+        engine.start(wait = true)
+    } finally {
+        updateCheck?.cancel()
+        checkScope.cancel()
+        client.close()
+    }
+}
