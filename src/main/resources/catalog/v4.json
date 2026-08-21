@@ -1,0 +1,753 @@
+{
+ "meta": {
+  "family": "cloud",
+  "title": "InsightVM Cloud Integrations API",
+  "specVersion": "PUBLIC_V4",
+  "specSha256": "5d322d0ec815d1afd678b70300804a4af8b69fd94a7e058250d81c0426520abd",
+  "generator": "gen_catalog.py@1",
+  "generatedFrom": "specs/insightvm-cloud-v4.json",
+  "opCount": 13
+ },
+ "ops": [
+  {
+   "name": "cloud_health",
+   "opId": "health",
+   "method": "GET",
+   "path": "/admin/health",
+   "tag": "Health",
+   "summary": "Health Check",
+   "description": "Returns an indicator of the health of the API.",
+   "readOnly": true,
+   "destructive": false,
+   "admin": false,
+   "params": [],
+   "body": null,
+   "responses": {
+    "success": "application/json",
+    "binary": false
+   }
+  },
+  {
+   "name": "cloud_search_integration_assets",
+   "opId": "searchIntegrationAssets",
+   "method": "POST",
+   "path": "/v4/integration/assets",
+   "tag": "Asset",
+   "summary": "Search Assets",
+   "description": "Returns the inventory, assessment, and summary details for a page of assets. Only assets which the caller has access to are returned. If using the comparisonTime parameter, the recommended page size is 50.",
+   "readOnly": false,
+   "destructive": false,
+   "admin": false,
+   "params": [
+    {
+     "name": "cursor",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "type": "string",
+      "description": "Use the cursor from the previous response to retrieve the next page."
+     }
+    },
+    {
+     "name": "currentTime",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "format": "date-time",
+      "type": "string",
+      "description": "The current date and time to compare against the asset state to detect changes. If specified, changes in vulnerabilities from this timestamp since the comparison time are calculated and output in the response. If not provided, defaults to the time of request."
+     }
+    },
+    {
+     "name": "comparisonTime",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "format": "date-time",
+      "type": "string",
+      "description": "The date and time to compare the asset current state against to detect changes. If specified, changes in vulnerabilities from this timestamp to the current time are calculated and output in the response. If not provided, defaults to the current time value."
+     }
+    },
+    {
+     "name": "includeSame",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "default": false,
+      "type": "boolean",
+      "description": "Whether the response should include the list of already-existing vulnerabilities on an asset."
+     }
+    },
+    {
+     "name": "includeUniqueIdentifiers",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "default": true,
+      "type": "boolean",
+      "description": "Whether the response should include unique identifiers."
+     }
+    },
+    {
+     "name": "includeInterSnapshotRemediations",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "default": false,
+      "type": "boolean",
+      "description": "Whether to include vulnerabilities remediated between comparisonTime and currentTime that are not present in the snapshots."
+     }
+    },
+    {
+     "name": "page",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "type": "integer",
+      "description": "The index of the page (zero-based) to retrieve."
+     }
+    },
+    {
+     "name": "size",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "type": "integer",
+      "description": "The number of records per page to retrieve."
+     }
+    },
+    {
+     "name": "sort",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "type": "string",
+      "format": "<property>[,ASC|DESC]",
+      "description": "The criteria to sort the records by, in the format: ` [,ASC|DESC]`. The default sort order is ascending. Multiple sort criteria can be specified using multiple sort query parameters."
+     }
+    }
+   ],
+   "body": {
+    "contentType": "application/json",
+    "required": false,
+    "schema": {
+     "properties": {
+      "asset": {
+       "description": "Example {\"asset\": \"last_scan_end ›= '2025-09-13T00:02:01Z' && cvss_score ›= 9\"} Filter for assets that have vulnerabilities matching the asset criteria."
+      },
+      "vulnerability": {
+       "description": "Example {\"asset\": \"last_assessed_for_vulnerabilities ›= '2025-09-13T00:02:01Z'\", \"vulnerability\": \"cvss_score ›= 9\"} Filter the results to include assets which have vulnerabilities matching the asset criteria and subsequently filter for individual vulnerabilities that meet the vulnerability criteria."
+      }
+     },
+     "description": "${assetvulnerabilityqueryresource.description}, ${asset.vulnerability.query.resource.description}",
+     "type": "object"
+    }
+   },
+   "responses": {
+    "success": "application/json",
+    "binary": false
+   }
+  },
+  {
+   "name": "cloud_get_integration_asset",
+   "opId": "getIntegrationAsset",
+   "method": "GET",
+   "path": "/v4/integration/assets/{id}",
+   "tag": "Asset",
+   "summary": "Get Asset",
+   "description": "Returns the assessment and details of an asset (specified by id). Only assets which the caller has access to can be returned.",
+   "readOnly": true,
+   "destructive": false,
+   "admin": false,
+   "params": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "array": false,
+     "schema": {
+      "properties": {
+       "id": {
+        "description": "${assetkey.id.description}, ${asset.key.id.description}"
+       }
+      },
+      "description": "The identifier of the asset to retrieve the details for.",
+      "type": "string"
+     }
+    },
+    {
+     "name": "currentTime",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "format": "date-time",
+      "type": "string",
+      "description": "The current date and time to compare the asset state against to detect changes. If specified, changes in vulnerabilities from this timestamp since the comparison time are calculated and output in the response. If not provided, defaults to the time of request."
+     }
+    },
+    {
+     "name": "comparisonTime",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "format": "date-time",
+      "type": "string",
+      "description": "The date and time to compare the current asset state against to detect changes. If specified, changes in vulnerabilities from this timestamp to the current time are calculated and output in the response. If not provided, defaults to the current time value."
+     }
+    },
+    {
+     "name": "includeSame",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "default": false,
+      "type": "boolean",
+      "description": "Whether the response should include the list of already-existing vulnerabilities on an asset."
+     }
+    },
+    {
+     "name": "includeUniqueIdentifiers",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "default": true,
+      "type": "boolean",
+      "description": "Whether the response should include asset unique identifiers in the response."
+     }
+    },
+    {
+     "name": "includeInterSnapshotRemediations",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "default": false,
+      "type": "boolean",
+      "description": "Whether to include vulnerabilities remediated between comparisonTime and currentTime that are not present in the snapshots."
+     }
+    }
+   ],
+   "body": null,
+   "responses": {
+    "success": "application/json",
+    "binary": false
+   }
+  },
+  {
+   "name": "cloud_get_scans",
+   "opId": "getScans",
+   "method": "GET",
+   "path": "/v4/integration/scan",
+   "tag": "Scan",
+   "summary": "Get Scans",
+   "description": "Retrieves a page of scans.",
+   "readOnly": true,
+   "destructive": false,
+   "admin": false,
+   "params": [
+    {
+     "name": "includeDetails",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "default": false,
+      "type": "boolean",
+      "description": "Whether the response should include additional details about scans."
+     }
+    },
+    {
+     "name": "page",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "type": "integer",
+      "description": "The index of the page (zero-based) to retrieve."
+     }
+    },
+    {
+     "name": "size",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "type": "integer",
+      "description": "The number of records per page to retrieve."
+     }
+    }
+   ],
+   "body": null,
+   "responses": {
+    "success": "application/json",
+    "binary": false
+   }
+  },
+  {
+   "name": "cloud_start_scan",
+   "opId": "startScan",
+   "method": "POST",
+   "path": "/v4/integration/scan",
+   "tag": "Scan",
+   "summary": "Start Scan",
+   "description": "Starts a scan.",
+   "readOnly": false,
+   "destructive": false,
+   "admin": false,
+   "params": [],
+   "body": {
+    "contentType": "application/json",
+    "required": true,
+    "schema": {
+     "properties": {
+      "asset_ids": {
+       "uniqueItems": true,
+       "description": "The identifiers of the assets to scan.",
+       "items": {}
+      },
+      "credential_sources": {
+       "uniqueItems": true,
+       "description": "The names of the sites on the Nexpose console to pull asset credentials from.",
+       "items": {}
+      },
+      "engine_ids": {
+       "uniqueItems": true,
+       "description": "The identifiers of the engines to use for the scan.",
+       "items": {}
+      },
+      "exclusions": {
+       "type": "object",
+       "description": "ScanForm (nested object; see the Rapid7 API documentation)"
+      },
+      "name": {
+       "description": "The name of the scan."
+      },
+      "result_consumer": {
+       "description": "The name of the site on the Nexpose console used to ingest the scanned assets."
+      },
+      "solution_ids": {
+       "uniqueItems": true,
+       "description": "The identifiers of the solutions used to reduce the scope of the scan.",
+       "items": {}
+      },
+      "start_time": {
+       "description": "The time at which to start the scan."
+      },
+      "vulnerability_ids": {
+       "uniqueItems": true,
+       "description": "The identifiers of the vulnerabilities used to reduce the scope of the scan.",
+       "items": {}
+      }
+     },
+     "description": "The payload for starting a scan.",
+     "type": "object"
+    }
+   },
+   "responses": {
+    "success": "application/json",
+    "binary": false
+   }
+  },
+  {
+   "name": "cloud_get_scan_engines",
+   "opId": "getScanEngines",
+   "method": "GET",
+   "path": "/v4/integration/scan/engine",
+   "tag": "Scan",
+   "summary": "Get Scan Engines",
+   "description": "Retrieves a page of scan engines.",
+   "readOnly": true,
+   "destructive": false,
+   "admin": false,
+   "params": [
+    {
+     "name": "page",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "type": "integer",
+      "description": "The index of the page (zero-based) to retrieve."
+     }
+    },
+    {
+     "name": "size",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "type": "integer",
+      "description": "The number of records per page to retrieve."
+     }
+    }
+   ],
+   "body": null,
+   "responses": {
+    "success": "application/json",
+    "binary": false
+   }
+  },
+  {
+   "name": "cloud_get_scan_engine",
+   "opId": "getScanEngine",
+   "method": "GET",
+   "path": "/v4/integration/scan/engine/{id}",
+   "tag": "Scan",
+   "summary": "Get Scan Engine",
+   "description": "Retrieves the scan engine with the specified identifier.",
+   "readOnly": true,
+   "destructive": false,
+   "admin": false,
+   "params": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "array": false,
+     "schema": {
+      "properties": {
+       "id": {
+        "description": "${scan.engine.id.id.description}, ${scanengineid.id.description}"
+       }
+      },
+      "description": "The identifier of the scan engine to retrieve.",
+      "type": "string"
+     }
+    }
+   ],
+   "body": null,
+   "responses": {
+    "success": "application/json",
+    "binary": false
+   }
+  },
+  {
+   "name": "cloud_remove_scan_engine_configuration",
+   "opId": "removeScanEngineConfiguration",
+   "method": "DELETE",
+   "path": "/v4/integration/scan/engine/{id}/configuration",
+   "tag": "Scan",
+   "summary": "Remove Scan Engine Configuration Property",
+   "description": "Removes specified custom properties from the configuration of the scan engine with the specified identifier if applied. May require engine restart before taking effect. Care should be taken when setting custom properties. If you are not familiar with custom properties we recommend contacting Rapid7 Support for assistance.",
+   "readOnly": false,
+   "destructive": true,
+   "admin": false,
+   "params": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "array": false,
+     "schema": {
+      "properties": {
+       "id": {
+        "description": "${scan.engine.id.id.description}, ${scanengineid.id.description}"
+       }
+      },
+      "description": "The identifier of the scan engine to update.",
+      "type": "string"
+     }
+    }
+   ],
+   "body": {
+    "contentType": "application/json",
+    "required": true,
+    "schema": {
+     "properties": {
+      "properties": {
+       "description": "List of property names to remove from a scan engine.",
+       "items": {}
+      }
+     },
+     "description": "${removescanengineconfigurationproperty.description}, ${remove.scan.engine.configuration.property.description}",
+     "type": "object"
+    }
+   },
+   "responses": {
+    "success": "application/json",
+    "binary": false
+   }
+  },
+  {
+   "name": "cloud_update_scan_engine_configuration",
+   "opId": "updateScanEngineConfiguration",
+   "method": "POST",
+   "path": "/v4/integration/scan/engine/{id}/configuration",
+   "tag": "Scan",
+   "summary": "Update Scan Engine Configuration",
+   "description": "Updates the custom properties configuration of a scan engine with the specified identifier. May require engine restart before taking effect. Care should be taken when setting custom properties. If you are not familiar with custom properties we recommend contacting Rapid7 Support for assistance.",
+   "readOnly": false,
+   "destructive": false,
+   "admin": false,
+   "params": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "array": false,
+     "schema": {
+      "properties": {
+       "id": {
+        "description": "${scan.engine.id.id.description}, ${scanengineid.id.description}"
+       }
+      },
+      "description": "The identifier of the scan engine to update.",
+      "type": "string"
+     }
+    }
+   ],
+   "body": {
+    "contentType": "application/json",
+    "required": true,
+    "schema": {
+     "properties": {
+      "properties": {
+       "description": "The properties to apply to the engine payload.",
+       "items": {
+        "properties": {
+         "name": {
+          "description": "Name of the scan engine configuration property (e.g. com.rapid7.*)."
+         },
+         "value": {
+          "description": "Value the configuration property should be set to."
+         }
+        },
+        "description": "${scan.engine.configuration.property.input.description}, ${scanengineconfigurationpropertyinput.description}"
+       }
+      }
+     },
+     "description": "${updateenginepropertiesform.description}, ${update.engine.properties.form.description}",
+     "type": "object"
+    }
+   },
+   "responses": {
+    "success": "application/json",
+    "binary": false
+   }
+  },
+  {
+   "name": "cloud_get_scan",
+   "opId": "getScan",
+   "method": "GET",
+   "path": "/v4/integration/scan/{id}",
+   "tag": "Scan",
+   "summary": "Get Scan",
+   "description": "Retrieves the scan with the specified identifier.",
+   "readOnly": true,
+   "destructive": false,
+   "admin": false,
+   "params": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "array": false,
+     "schema": {
+      "properties": {
+       "id": {
+        "description": "${scanid.id.description}, ${scan.id.id.description}"
+       }
+      },
+      "description": "The identifier of the scan to retrieve.",
+      "type": "string"
+     }
+    },
+    {
+     "name": "includeDetails",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "default": false,
+      "type": "boolean",
+      "description": "Whether the response should include additional details about the scan."
+     }
+    }
+   ],
+   "body": null,
+   "responses": {
+    "success": "application/json",
+    "binary": false
+   }
+  },
+  {
+   "name": "cloud_stop_scan",
+   "opId": "stopScan",
+   "method": "POST",
+   "path": "/v4/integration/scan/{id}/stop",
+   "tag": "Scan",
+   "summary": "Stop Scan",
+   "description": "Stops the scan with the specified identifier.",
+   "readOnly": false,
+   "destructive": true,
+   "admin": false,
+   "params": [
+    {
+     "name": "id",
+     "in": "path",
+     "required": true,
+     "array": false,
+     "schema": {
+      "properties": {
+       "id": {
+        "description": "${scanid.id.description}, ${scan.id.id.description}"
+       }
+      },
+      "description": "The identifier of the scan to stop.",
+      "type": "string"
+     }
+    }
+   ],
+   "body": null,
+   "responses": {
+    "success": "none",
+    "binary": false
+   }
+  },
+  {
+   "name": "cloud_get_sites",
+   "opId": "getSites",
+   "method": "POST",
+   "path": "/v4/integration/sites",
+   "tag": "Site",
+   "summary": "List Sites",
+   "description": "Returns the details for sites.",
+   "readOnly": false,
+   "destructive": false,
+   "admin": false,
+   "params": [
+    {
+     "name": "cursor",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "type": "string",
+      "description": "The stateless cursor to retrieve the next page of resources."
+     }
+    },
+    {
+     "name": "page",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "type": "integer",
+      "description": "The index of the page (zero-based) to retrieve."
+     }
+    },
+    {
+     "name": "size",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "type": "integer",
+      "description": "The number of records per page to retrieve."
+     }
+    },
+    {
+     "name": "sort",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "type": "string",
+      "format": "<property>[,ASC|DESC]",
+      "description": "The criteria to sort the records by, in the format: ` [,ASC|DESC]`. The default sort order is ascending. Multiple sort criteria can be specified using multiple sort query parameters."
+     }
+    }
+   ],
+   "body": null,
+   "responses": {
+    "success": "application/json",
+    "binary": false
+   }
+  },
+  {
+   "name": "cloud_search_integration_vulnerabilities",
+   "opId": "searchIntegrationVulnerabilities",
+   "method": "POST",
+   "path": "/v4/integration/vulnerabilities",
+   "tag": "Vulnerability",
+   "summary": "Search Vulnerabilities",
+   "description": "Returns all vulnerabilities that can be assessed.",
+   "readOnly": false,
+   "destructive": false,
+   "admin": false,
+   "params": [
+    {
+     "name": "cursor",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "type": "string",
+      "description": "The stateless cursor to retrieve the next page of resources."
+     }
+    },
+    {
+     "name": "page",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "type": "integer",
+      "description": "The index of the page (zero-based) to retrieve."
+     }
+    },
+    {
+     "name": "size",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "type": "integer",
+      "description": "The number of records per page to retrieve."
+     }
+    },
+    {
+     "name": "sort",
+     "in": "query",
+     "required": false,
+     "array": false,
+     "schema": {
+      "type": "string",
+      "format": "<property>[,ASC|DESC]",
+      "description": "The criteria to sort the records by, in the format: ` [,ASC|DESC]`. The default sort order is ascending. Multiple sort criteria can be specified using multiple sort query parameters."
+     }
+    }
+   ],
+   "body": {
+    "contentType": "application/json",
+    "required": false,
+    "schema": {
+     "properties": {
+      "vulnerability": {
+       "description": "Search expression with criteria for searching on vulnerabilities."
+      }
+     },
+     "description": "Criteria for searching vulnerabilities.",
+     "type": "object"
+    }
+   },
+   "responses": {
+    "success": "application/json",
+    "binary": false
+   }
+  }
+ ]
+}
