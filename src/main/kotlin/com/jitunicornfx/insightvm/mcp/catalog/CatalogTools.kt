@@ -7,12 +7,14 @@ import com.jitunicornfx.insightvm.mcp.ResultBudget
 import com.jitunicornfx.insightvm.mcp.SERVER_NAME
 import com.jitunicornfx.insightvm.mcp.SERVER_VERSION
 import com.jitunicornfx.insightvm.mcp.apiTool
+import com.jitunicornfx.insightvm.mcp.booleanOrNull
 import com.jitunicornfx.insightvm.mcp.stringOrNull
 import com.jitunicornfx.insightvm.mcp.textResult
 import io.ktor.http.ContentType
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -64,7 +66,11 @@ object CatalogTools {
                     "This tool executes a command on the Security Console. Set confirm=\"${InputSchemaBuilder.CONFIRM_VALUE}\" to proceed."
                 }
             }
-            val bound = ArgumentBinder.bind(op, PagingDefaults.apply(op, args, config.defaultPageSize))
+            // include_links is this server's own knob, not an API parameter: read it, then remove it
+            // before binding or the binder's unknown-parameter guard would reject every paged call.
+            val keepLinks = args.booleanOrNull(CatalogLoader.INCLUDE_LINKS_PROPERTY) ?: config.keepRecordLinks
+            val apiArgs = JsonObject(args - CatalogLoader.INCLUDE_LINKS_PROPERTY)
+            val bound = ArgumentBinder.bind(op, PagingDefaults.apply(op, apiArgs, config.defaultPageSize))
             val response = client.request(
                 family = family,
                 method = bound.method,
@@ -75,7 +81,7 @@ object CatalogTools {
                 rawContentType = bound.rawContentType ?: ContentType.Text.Plain,
                 accept = acceptFor(op),
             )
-            ResponseSanitizer.toToolResult(response, op, family, budget, config.keepRecordLinks)
+            ResponseSanitizer.toToolResult(response, op, family, budget, keepLinks)
         }
     }
 

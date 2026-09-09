@@ -54,7 +54,7 @@ object CatalogLoader {
             val names = HashSet<String>()
             for (p in op.params) {
                 check(p.isPath || p.isQuery) { "Catalog ${family.id}: '${op.name}' parameter '${p.name}' has unsupported location '${p.`in`}'" }
-                check(p.name != BODY_PROPERTY && p.name != CONFIRM_PROPERTY) { "Catalog ${family.id}: '${op.name}' uses reserved parameter name '${p.name}'" }
+                check(p.name !in RESERVED_PROPERTIES) { "Catalog ${family.id}: '${op.name}' uses reserved parameter name '${p.name}'" }
                 check(names.add(p.name)) { "Catalog ${family.id}: '${op.name}' duplicate parameter '${p.name}'" }
             }
             for (text in listOf(op.summary, op.description)) {
@@ -70,5 +70,11 @@ object CatalogLoader {
 
     const val BODY_PROPERTY = "body"
     const val CONFIRM_PROPERTY = "confirm"
+
+    /** Synthetic opt-out added to paged tools; never a real API parameter. */
+    const val INCLUDE_LINKS_PROPERTY = "include_links"
     private val METHODS = setOf("GET", "POST", "PUT", "DELETE", "PATCH")
+
+    /** Names this server synthesises onto a tool schema, so a spec parameter can never collide. */
+    private val RESERVED_PROPERTIES = setOf(BODY_PROPERTY, CONFIRM_PROPERTY, INCLUDE_LINKS_PROPERTY)
 }

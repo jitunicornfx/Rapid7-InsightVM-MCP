@@ -12,6 +12,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 
@@ -31,6 +32,24 @@ object JsonCodec {
 fun emptySchema(): ToolSchema = ToolSchema(properties = buildJsonObject {})
 
 fun JsonObject.stringOrNull(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
+
+/** Accepts a real boolean or the string form a lenient client may send. */
+fun JsonObject.booleanOrNull(key: String): Boolean? =
+    (this[key] as? JsonPrimitive)?.let { p ->
+        p.booleanOrNull ?: when (p.contentOrNull?.trim()?.lowercase()) {
+            "true" -> true
+            "false" -> false
+            else -> null
+        }
+    }
+
+/** Accepts a real number or the string form a lenient client may send. */
+fun JsonObject.intOrNull(key: String): Int? =
+    (this[key] as? JsonPrimitive)?.contentOrNull?.trim()?.toIntOrNull()
+
+/** Accepts a real number or the string form a lenient client may send. */
+fun JsonObject.longOrNull(key: String): Long? =
+    (this[key] as? JsonPrimitive)?.contentOrNull?.trim()?.toLongOrNull()
 
 /**
  * URL-encode a value for safe inclusion as a single path segment.

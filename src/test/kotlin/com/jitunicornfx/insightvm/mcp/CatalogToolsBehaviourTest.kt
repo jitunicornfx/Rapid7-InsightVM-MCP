@@ -181,6 +181,23 @@ class CatalogToolsBehaviourTest {
     }
 
     @Test
+    fun `include_links opts a single call back into the raw shape`() = runBlocking {
+        val page = """{"resources":[{"id":1,"links":[{"href":"https://console.test:3780/api/3/assets/1","rel":"self"}]}]}"""
+        val h = mcpHarness { Canned(body = page) }
+
+        val stripped = h.text(h.call("get_assets"))
+        assertFalse(stripped.contains("\"links\""), "stripped by default")
+        assertContains(stripped.substringAfter(UNTRUSTED_END), "Removed the per-record 'links'")
+
+        val kept = h.text(h.call("get_assets", mapOf("include_links" to true)))
+        assertContains(kept, "\"rel\": \"self\"")
+        assertTrue(kept.endsWith(UNTRUSTED_END), "nothing was removed, so there is no notice")
+
+        // The knob is ours, not the API's: it must never reach the request.
+        assertFalse(h.lastRequest.url.parameters.names().contains("include_links"))
+    }
+
+    @Test
     fun `a normal-sized response still ends at the fence`() = runBlocking {
         // The invariant the 343 dynamic tests rely on: no footer on the happy path.
         val h = mcpHarness { Canned(body = """{"resources":[{"id":1}],"page":{"totalResources":1}}""") }

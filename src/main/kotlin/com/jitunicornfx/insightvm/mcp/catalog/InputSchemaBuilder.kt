@@ -56,6 +56,20 @@ object InputSchemaBuilder {
                 put(CatalogLoader.BODY_PROPERTY, schema)
                 if (body.required) required += CatalogLoader.BODY_PROPERTY
             }
+            if (PagingDefaults.isPaged(op)) {
+                put(
+                    CatalogLoader.INCLUDE_LINKS_PROPERTY,
+                    buildJsonObject {
+                        put("type", "boolean")
+                        put(
+                            "description",
+                            "Keep the per-record HATEOAS 'links' objects, which this server strips by " +
+                                "default because they are derivable from each record's id and dominate a " +
+                                "large page. Rarely needed. Defaults to false.",
+                        )
+                    },
+                )
+            }
             if (op.admin) {
                 put(
                     CatalogLoader.CONFIRM_PROPERTY,
