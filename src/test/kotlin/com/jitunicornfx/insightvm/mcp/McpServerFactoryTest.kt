@@ -71,7 +71,10 @@ class McpServerFactoryTest {
     @Test
     fun `constants`() {
         assertEquals("rapid7-insightvm-mcp", SERVER_NAME)
-        assertEquals("0.1.0", SERVER_VERSION)
+        // Deliberately NOT a hardcoded literal: that would only assert one constant against another
+        // and would keep passing while the Gradle version drifted away from both. The real guard is
+        // BuildInfoTest's FALLBACK_VERSION check, which compares against the generated resource.
+        assertEquals(BuildInfo.version, SERVER_VERSION)
         assertEquals("$SERVER_NAME.update", UPDATE_LOGGER_NAME)
     }
 }

@@ -7,6 +7,7 @@ import com.jitunicornfx.insightvm.mcp.ConsoleConfig
 import com.jitunicornfx.insightvm.mcp.JsonCodec
 import com.jitunicornfx.insightvm.mcp.Rapid7Client
 import com.jitunicornfx.insightvm.mcp.Region
+import com.jitunicornfx.insightvm.mcp.SpoolStore
 import com.jitunicornfx.insightvm.mcp.ToolFilter
 import com.jitunicornfx.insightvm.mcp.buildInsightVmServer
 import com.jitunicornfx.insightvm.mcp.catalog.ApiFamily
@@ -32,6 +33,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlin.io.path.createTempDirectory
 
 val TEST_CONSOLE = ConsoleConfig(baseUrl = "https://console.test:3780", username = "api-user", password = "s3cret")
 val TEST_CLOUD = CloudConfig(apiKey = "cloud-key", region = Region.US)
@@ -108,6 +110,7 @@ val TEST_CATALOGS: Map<ApiFamily, Catalog> by lazy { CatalogLoader.loadAll() }
  */
 suspend fun mcpHarness(
     config: Config = testConfig(),
+    spool: SpoolStore = SpoolStore(createTempDirectory("harness-spool")),
     respond: (HttpRequestData) -> Canned = { Canned() },
 ): McpTestHarness {
     val bodies = mutableListOf<String?>()
@@ -124,7 +127,7 @@ suspend fun mcpHarness(
     val cloudEngine = MockEngine { answer(it) }
 
     val apiClient = Rapid7Client(config, consoleEngine = consoleEngine, cloudEngine = cloudEngine)
-    val built = buildInsightVmServer(apiClient, config, TEST_CATALOGS.filterKeys { it in config.activeFamilies })
+    val built = buildInsightVmServer(apiClient, config, TEST_CATALOGS.filterKeys { it in config.activeFamilies }, spool)
 
     val (clientTransport, serverTransport) = InMemoryTransport.createLinkedPair()
     val client = Client(Implementation("test-client", "1.0"))

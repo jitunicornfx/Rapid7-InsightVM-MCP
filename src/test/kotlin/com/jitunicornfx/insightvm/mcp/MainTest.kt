@@ -215,7 +215,7 @@ class MainTest {
         val init = lines.first { it["id"]?.jsonPrimitive?.content == "1" }
         assertEquals(SERVER_NAME, init["result"]!!.jsonObject["serverInfo"]!!.jsonObject["name"]!!.jsonPrimitive.content)
         val tools = lines.first { it["id"]?.jsonPrimitive?.content == "2" }["result"]!!.jsonObject["tools"]!!.jsonArray
-        assertEquals(1 + 2, tools.size) // Root tag has one op + two meta tools
+        assertEquals(1 + 3, tools.size) // Root tag has one op + two meta tools + the export tool
         val call = lines.first { it["id"]?.jsonPrimitive?.content == "3" }["result"]!!.jsonObject
         assertContains(call["content"]!!.jsonArray.first().jsonObject["text"]!!.jsonPrimitive.content, "\"ok\": true")
         val err = errBuf.toString("UTF-8")
@@ -347,7 +347,7 @@ class MainTest {
             val mcp = io.modelcontextprotocol.kotlin.sdk.client.Client(io.modelcontextprotocol.kotlin.sdk.types.Implementation("sse-test", "0"))
             withTimeout(20_000) { mcp.connect(transport) }
             val tools = withTimeout(20_000) { mcp.listTools() }
-            assertEquals(13 + 2, tools.tools.size)
+            assertEquals(13 + 3, tools.tools.size)
             val result = withTimeout(20_000) { mcp.callTool("cloud_health", emptyMap()) }
             assertContains(harnessText(result), "\"ok\": true")
             mcp.close()

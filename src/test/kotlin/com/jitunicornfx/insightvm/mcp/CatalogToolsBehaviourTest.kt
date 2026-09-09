@@ -263,6 +263,7 @@ class CatalogToolsBehaviourTest {
     fun `read-only filter drops every non-GET tool`() = runBlocking {
         val h = mcpHarness(testConfig(filter = ToolFilter(readOnly = true)))
         val tools = h.listTools()
+        // The export tool is suppressed under --read-only, so this stays at two meta tools.
         assertEquals(180 + 6 + 2, tools.size)
         assertTrue(tools.all { it.annotations?.readOnlyHint == true })
     }
@@ -271,11 +272,11 @@ class CatalogToolsBehaviourTest {
     fun `family selection follows configuration`() = runBlocking {
         val cloudOnly = mcpHarness(testConfig(console = null))
         val names = cloudOnly.listTools().map { it.name }
-        assertEquals(13 + 2, names.size)
+        assertEquals(13 + 3, names.size)
         assertTrue(names.filter { !it.startsWith("insightvm_") }.all { it.startsWith("cloud_") })
 
         val consoleOnly = mcpHarness(testConfig(cloud = null))
-        assertEquals(329 + 2, consoleOnly.listTools().size)
+        assertEquals(329 + 3, consoleOnly.listTools().size)
     }
 
     @Test

@@ -24,7 +24,7 @@ import java.time.format.DateTimeFormatter
  * (`rwx------`) and files `rw-------` wherever POSIX permissions exist. On Windows the inherited
  * per-user `%USERPROFILE%` ACL already achieves this.
  */
-class SpoolStore(val directory: Path) {
+open class SpoolStore(val directory: Path) {
 
     /**
      * Create the spool directory if needed, harden it, and drop the warning README once.
@@ -74,8 +74,8 @@ class SpoolStore(val directory: Path) {
         return spool.resolveSibling(base + MANIFEST_SUFFIX)
     }
 
-    /** Free bytes on the spool volume, or null when it cannot be determined. */
-    fun usableSpace(): Long? = runCatching {
+    /** Free bytes on the spool volume, or null when it cannot be determined. Open so tests can simulate a full disk. */
+    open fun usableSpace(): Long? = runCatching {
         prepare()
         Files.getFileStore(directory).usableSpace
     }.getOrNull()

@@ -5,6 +5,9 @@ import com.jitunicornfx.insightvm.mcp.Rapid7Client
 import com.jitunicornfx.insightvm.mcp.ResponseSanitizer
 import com.jitunicornfx.insightvm.mcp.ResultBudget
 import com.jitunicornfx.insightvm.mcp.SERVER_NAME
+import com.jitunicornfx.insightvm.mcp.SpoolStore
+import com.jitunicornfx.insightvm.mcp.tools.ExportTools
+import com.jitunicornfx.insightvm.mcp.BuildInfo
 import com.jitunicornfx.insightvm.mcp.SERVER_VERSION
 import com.jitunicornfx.insightvm.mcp.apiTool
 import com.jitunicornfx.insightvm.mcp.booleanOrNull
@@ -38,12 +41,19 @@ object CatalogTools {
         client: Rapid7Client,
         config: Config,
         catalogs: Map<ApiFamily, Catalog>,
+        spool: SpoolStore = SpoolStore.active,
     ): List<CatalogFilter.Selection> {
         val filter = config.filter.copy(families = config.activeFamilies.intersect(config.filter.families))
         val selected = CatalogFilter.select(catalogs, filter)
         val budget = ResultBudget(maxChars = config.maxResultChars)
         selected.forEach { (family, op) -> server.registerOperation(client, family, op, config, budget) }
-        server.registerMetaTools(config, catalogs, selected)
+        // The export tool writes to the local filesystem, so it is gated twice: an operator can turn
+        // it off outright, and --read-only removes it because that flag promises GET tools only.
+        val exportEnabled = !config.filter.readOnly && !config.exportDisabled
+        server.registerMetaTools(config, catalogs, selected, if (exportEnabled) 3 else 2)
+        if (exportEnabled) {
+            with(ExportTools) { server.registerExportTool(client, config, selected, spool) }
+        }
         return selected
     }
 
@@ -93,14 +103,19 @@ object CatalogTools {
         else -> ContentType.parse(op.responses.success)
     }
 
-    private fun Server.registerMetaTools(config: Config, catalogs: Map<ApiFamily, Catalog>, selected: List<CatalogFilter.Selection>) {
+    private fun Server.registerMetaTools(
+        config: Config,
+        catalogs: Map<ApiFamily, Catalog>,
+        selected: List<CatalogFilter.Selection>,
+        metaToolCount: Int,
+    ) {
         apiTool(
             name = SERVER_INFO_TOOL,
             description = "Describe this MCP server: version, which InsightVM APIs are configured, active tool filters and tool counts per API family.",
             inputSchema = ToolSchema(properties = buildJsonObject {}),
             readOnly = true,
         ) {
-            textResult(pretty(serverInfo(config, catalogs, selected)))
+            textResult(pretty(serverInfo(config, catalogs, selected, metaToolCount)))
         }
         apiTool(
             name = TOOL_GROUPS_TOOL,
@@ -120,9 +135,23 @@ object CatalogTools {
         }
     }
 
-    internal fun serverInfo(config: Config, catalogs: Map<ApiFamily, Catalog>, selected: List<CatalogFilter.Selection>): JsonElement = buildJsonObject {
+    internal fun serverInfo(
+        config: Config,
+        catalogs: Map<ApiFamily, Catalog>,
+        selected: List<CatalogFilter.Selection>,
+        metaToolCount: Int = 2,
+    ): JsonElement = buildJsonObject {
         put("server", SERVER_NAME)
         put("version", SERVER_VERSION)
+        // Which binary is actually running. Worth reporting because the auto-installer swaps the
+        // JAR underneath a running server, so "version" alone can be ambiguous after an update.
+        putJsonObject("build") {
+            put("versionSource", if (BuildInfo.fromGeneratedResource) "generated" else "fallback")
+            BuildInfo.gitSha?.let { put("gitSha", it) }
+            put("gitDirty", BuildInfo.gitDirty)
+            BuildInfo.gitCommitTime?.let { put("gitCommitTime", it) }
+            BuildInfo.generatedAt?.let { put("generatedAt", it) }
+        }
         putJsonObject("apis") {
             for (family in ApiFamily.entries) {
                 putJsonObject(family.id) {
@@ -144,7 +173,7 @@ object CatalogTools {
             putJsonArray("tools") { config.filter.nameGlobs.forEach { add(it) } }
             put("adminCommandsEnabled", config.filter.allowAdminCommands)
         }
-        put("totalTools", selected.size + 2)
+        put("totalTools", selected.size + metaToolCount)
     }
 
     internal fun toolGroups(selected: List<CatalogFilter.Selection>, tag: String?): JsonElement {

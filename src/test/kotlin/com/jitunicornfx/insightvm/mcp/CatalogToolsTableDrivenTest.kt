@@ -154,7 +154,8 @@ class CatalogToolsTableDrivenTest {
     @TestFactory
     fun `tool list matches the catalog exactly`(): List<DynamicTest> = listOf(
         DynamicTest.dynamicTest("counts") {
-            val apiTools = toolsByName.keys - setOf("insightvm_server_info", "insightvm_list_tool_groups")
+            val apiTools = toolsByName.keys -
+                setOf("insightvm_server_info", "insightvm_list_tool_groups", "insightvm_export_to_file")
             assertEquals(allOps().map { it.second.name }.toSet(), apiTools)
             assertEquals(330, TEST_CATALOGS.getValue(ApiFamily.CONSOLE).ops.size)
             assertEquals(13, TEST_CATALOGS.getValue(ApiFamily.CLOUD).ops.size)
