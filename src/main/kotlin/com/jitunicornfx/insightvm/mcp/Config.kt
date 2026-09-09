@@ -116,6 +116,12 @@ data class Config(
     val keepRecordLinks: Boolean = false,
     /** `size` injected when a paged operation is called without one. See [PagingDefaults]. */
     val defaultPageSize: Int = PagingDefaults.DEFAULT_PAGE_SIZE,
+    /** Where exported results are written; null means the per-user default. See [SpoolStore]. */
+    val spoolDirectory: String? = null,
+    /** Hours an exported file survives before the startup sweep removes it; 0 never sweeps. */
+    val spoolRetentionHours: Int = DEFAULT_SPOOL_RETENTION_HOURS,
+    /** Whether insightvm_export_to_file is registered at all — the only tool that writes files. */
+    val exportDisabled: Boolean = false,
     /** Shared secret required as `Authorization: Bearer` on the `--http` transport. */
     val httpAuthToken: String? = null,
     /** Browser origins permitted in `--http` mode (CORS + Origin check). Empty = deny all browsers. */
@@ -140,7 +146,7 @@ data class Config(
 
     override fun toString(): String =
         "Config(console=$console, cloud=$cloud, requestTimeoutMillis=$requestTimeoutMillis, " +
-            "maxResponseBytes=$maxResponseBytes, maxResultChars=$maxResultChars, keepRecordLinks=$keepRecordLinks, defaultPageSize=$defaultPageSize, " +
+            "maxResponseBytes=$maxResponseBytes, maxResultChars=$maxResultChars, keepRecordLinks=$keepRecordLinks, defaultPageSize=$defaultPageSize, spoolDirectory=$spoolDirectory, exportDisabled=$exportDisabled, " +
             "httpAuthToken=${if (httpAuthToken == null) "unset" else "***"}, " +
             "httpAllowedOrigins=$httpAllowedOrigins, filter=$filter)"
 
@@ -160,6 +166,9 @@ data class Config(
         const val ENV_MAX_RESULT_CHARS = "INSIGHTVM_MAX_RESULT_CHARS"
         const val ENV_KEEP_RECORD_LINKS = "INSIGHTVM_KEEP_RECORD_LINKS"
         const val ENV_DEFAULT_PAGE_SIZE = "INSIGHTVM_DEFAULT_PAGE_SIZE"
+        const val ENV_SPOOL_DIR = "INSIGHTVM_SPOOL_DIR"
+        const val ENV_SPOOL_RETENTION_HOURS = "INSIGHTVM_SPOOL_RETENTION_HOURS"
+        const val ENV_DISABLE_EXPORT = "INSIGHTVM_DISABLE_EXPORT"
         const val ENV_MCP_AUTH_TOKEN = "INSIGHTVM_MCP_AUTH_TOKEN"
         const val ENV_HTTP_ALLOWED_ORIGINS = "INSIGHTVM_HTTP_ALLOWED_ORIGINS"
         const val ENV_READ_ONLY = "INSIGHTVM_READ_ONLY"
@@ -186,6 +195,8 @@ data class Config(
          * silently reinstate an unbounded result. Raise the number instead.
          */
         const val MAX_MAX_RESULT_CHARS = 5_000_000
+
+        const val DEFAULT_SPOOL_RETENTION_HOURS = 24
 
         const val DEFAULT_CONSOLE_PORT = 3780
 
@@ -237,6 +248,9 @@ data class Config(
                 keepRecordLinks = isTruthy(env[ENV_KEEP_RECORD_LINKS]),
                 defaultPageSize = (get(ENV_DEFAULT_PAGE_SIZE)?.toIntOrNull()?.takeIf { it > 0 } ?: PagingDefaults.DEFAULT_PAGE_SIZE)
                     .coerceIn(1, PagingDefaults.MAX_PAGE_SIZE),
+                spoolDirectory = get(ENV_SPOOL_DIR),
+                spoolRetentionHours = (get(ENV_SPOOL_RETENTION_HOURS)?.toIntOrNull()?.takeIf { it >= 0 } ?: DEFAULT_SPOOL_RETENTION_HOURS),
+                exportDisabled = isTruthy(env[ENV_DISABLE_EXPORT]),
                 httpAuthToken = get(ENV_MCP_AUTH_TOKEN),
                 httpAllowedOrigins = origins,
                 filter = filter,

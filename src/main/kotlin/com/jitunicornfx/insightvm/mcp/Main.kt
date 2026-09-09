@@ -103,6 +103,10 @@ class Rapid7InsightVmCommand internal constructor(
         |
         |${Config.ENV_DEFAULT_PAGE_SIZE} (optional): 'size' injected when a paged tool is called without one, default ${PagingDefaults.DEFAULT_PAGE_SIZE}, clamped to ${PagingDefaults.MAX_PAGE_SIZE}.
         |
+        |${Config.ENV_SPOOL_DIR} (optional): where insightvm_export_to_file writes, default ~/.rapid7-insightvm-mcp/spool. ${Config.ENV_SPOOL_RETENTION_HOURS} (default ${Config.DEFAULT_SPOOL_RETENTION_HOURS}h, 0 never sweeps).
+        |
+        |${Config.ENV_DISABLE_EXPORT} (optional): 1 removes insightvm_export_to_file, the only tool that writes to the local filesystem.
+        |
         |${Config.ENV_DISABLE_UPDATE_CHECK}, ${Config.ENV_DISABLE_AUTO_UPDATE}: update behaviour (see --no-update-check / --no-auto-update).
         """.trimMargin()
 
@@ -246,6 +250,10 @@ internal fun runServer(transport: Transport, host: String, port: Int, config: Co
     // --http path builds a fresh Server per connection but never a fresh Config — so one budget per
     // process is the right granularity.
     ResultBudget.install(ResultBudget(maxChars = config.maxResultChars))
+    SpoolStore.install(SpoolStore.resolve(config.spoolDirectory))
+    if (config.spoolRetentionHours > 0) {
+        SpoolStore.active.sweepStale(config.spoolRetentionHours * 3_600_000L)
+    }
     // Leftovers from an interrupted self-update (".new" staging files, ".bak", the lock sidecar)
     // would otherwise accumulate beside the JAR; sweep them before anything else.
     UpdateInstaller.runningJar()?.let { jar ->
