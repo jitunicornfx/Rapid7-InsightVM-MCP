@@ -7,7 +7,6 @@ import com.jitunicornfx.insightvm.mcp.ResultBudget
 import com.jitunicornfx.insightvm.mcp.SERVER_NAME
 import com.jitunicornfx.insightvm.mcp.SpoolStore
 import com.jitunicornfx.insightvm.mcp.tools.ExportTools
-import com.jitunicornfx.insightvm.mcp.BuildInfo
 import com.jitunicornfx.insightvm.mcp.SERVER_VERSION
 import com.jitunicornfx.insightvm.mcp.apiTool
 import com.jitunicornfx.insightvm.mcp.booleanOrNull
@@ -147,15 +146,6 @@ object CatalogTools {
     ): JsonElement = buildJsonObject {
         put("server", SERVER_NAME)
         put("version", SERVER_VERSION)
-        // Which binary is actually running. Worth reporting because the auto-installer swaps the
-        // JAR underneath a running server, so "version" alone can be ambiguous after an update.
-        putJsonObject("build") {
-            put("versionSource", if (BuildInfo.fromGeneratedResource) "generated" else "fallback")
-            BuildInfo.gitSha?.let { put("gitSha", it) }
-            put("gitDirty", BuildInfo.gitDirty)
-            BuildInfo.gitCommitTime?.let { put("gitCommitTime", it) }
-            BuildInfo.generatedAt?.let { put("generatedAt", it) }
-        }
         putJsonObject("apis") {
             for (family in ApiFamily.entries) {
                 putJsonObject(family.id) {
