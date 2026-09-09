@@ -99,7 +99,7 @@ tasks.jacocoTestCoverageVerification {
 // (part of `check`) fails if the committed copy has drifted from the specifications.
 val generatorMain = "com.jitunicornfx.insightvm.mcp.catalog.CatalogGenerator"
 
-val generateCatalog by tasks.registering(JavaExec::class) {
+val generateCatalog = tasks.register<JavaExec>("generateCatalog") {
     group = "build"
     description = "Regenerates src/main/resources/catalog from specs/."
     classpath = sourceSets.main.get().runtimeClasspath
@@ -107,7 +107,7 @@ val generateCatalog by tasks.registering(JavaExec::class) {
     workingDir = projectDir
 }
 
-val verifyCatalog by tasks.registering(JavaExec::class) {
+val verifyCatalog = tasks.register<JavaExec>("verifyCatalog") {
     group = "verification"
     description = "Fails if src/main/resources/catalog is out of date with specs/ (skipped when specs/ is absent)."
     // The OpenAPI documents are not part of the repository; the drift check only makes sense where they exist.
