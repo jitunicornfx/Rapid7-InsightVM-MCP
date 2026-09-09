@@ -1,6 +1,7 @@
 package com.jitunicornfx.insightvm.mcp
 
 import com.jitunicornfx.insightvm.mcp.catalog.ApiFamily
+import com.jitunicornfx.insightvm.mcp.catalog.PagingDefaults
 import io.ktor.http.URLProtocol
 import io.ktor.http.Url
 
@@ -113,6 +114,8 @@ data class Config(
     val maxResultChars: Int = DEFAULT_MAX_RESULT_CHARS,
     /** Keep the per-record HATEOAS `links` that are stripped by default. See [pruneRecordLinks]. */
     val keepRecordLinks: Boolean = false,
+    /** `size` injected when a paged operation is called without one. See [PagingDefaults]. */
+    val defaultPageSize: Int = PagingDefaults.DEFAULT_PAGE_SIZE,
     /** Shared secret required as `Authorization: Bearer` on the `--http` transport. */
     val httpAuthToken: String? = null,
     /** Browser origins permitted in `--http` mode (CORS + Origin check). Empty = deny all browsers. */
@@ -137,7 +140,7 @@ data class Config(
 
     override fun toString(): String =
         "Config(console=$console, cloud=$cloud, requestTimeoutMillis=$requestTimeoutMillis, " +
-            "maxResponseBytes=$maxResponseBytes, maxResultChars=$maxResultChars, keepRecordLinks=$keepRecordLinks, " +
+            "maxResponseBytes=$maxResponseBytes, maxResultChars=$maxResultChars, keepRecordLinks=$keepRecordLinks, defaultPageSize=$defaultPageSize, " +
             "httpAuthToken=${if (httpAuthToken == null) "unset" else "***"}, " +
             "httpAllowedOrigins=$httpAllowedOrigins, filter=$filter)"
 
@@ -156,6 +159,7 @@ data class Config(
         const val ENV_MAX_RESPONSE_BYTES = "INSIGHTVM_MAX_RESPONSE_BYTES"
         const val ENV_MAX_RESULT_CHARS = "INSIGHTVM_MAX_RESULT_CHARS"
         const val ENV_KEEP_RECORD_LINKS = "INSIGHTVM_KEEP_RECORD_LINKS"
+        const val ENV_DEFAULT_PAGE_SIZE = "INSIGHTVM_DEFAULT_PAGE_SIZE"
         const val ENV_MCP_AUTH_TOKEN = "INSIGHTVM_MCP_AUTH_TOKEN"
         const val ENV_HTTP_ALLOWED_ORIGINS = "INSIGHTVM_HTTP_ALLOWED_ORIGINS"
         const val ENV_READ_ONLY = "INSIGHTVM_READ_ONLY"
@@ -231,6 +235,8 @@ data class Config(
                 maxResponseBytes = maxBytes,
                 maxResultChars = maxResultChars,
                 keepRecordLinks = isTruthy(env[ENV_KEEP_RECORD_LINKS]),
+                defaultPageSize = (get(ENV_DEFAULT_PAGE_SIZE)?.toIntOrNull()?.takeIf { it > 0 } ?: PagingDefaults.DEFAULT_PAGE_SIZE)
+                    .coerceIn(1, PagingDefaults.MAX_PAGE_SIZE),
                 httpAuthToken = get(ENV_MCP_AUTH_TOKEN),
                 httpAllowedOrigins = origins,
                 filter = filter,

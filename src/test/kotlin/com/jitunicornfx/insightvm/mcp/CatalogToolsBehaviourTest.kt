@@ -149,6 +149,38 @@ class CatalogToolsBehaviourTest {
     }
 
     @Test
+    fun `an omitted page size is defaulted and an enormous one is clamped`() = runBlocking {
+        val h = mcpHarness()
+        h.call("get_assets")
+        assertEquals(listOf("100"), h.lastRequest.url.parameters.getAll("size"), "omitted size is defaulted")
+
+        h.call("get_assets", mapOf("size" to 1_000_000))
+        assertEquals(listOf("500"), h.lastRequest.url.parameters.getAll("size"), "an enormous size is clamped")
+
+        h.call("get_assets", mapOf("size" to 25))
+        assertEquals(listOf("25"), h.lastRequest.url.parameters.getAll("size"), "a sensible size is respected")
+
+        // An unpaged operation gains nothing.
+        h.call("get_asset", mapOf("id" to 1))
+        assertTrue(h.lastRequest.url.parameters.names().isEmpty())
+
+        // A non-numeric size still produces the binder's actionable error, not a silent replacement.
+        val bad = h.call("get_assets", mapOf("size" to "abc"))
+        assertTrue(bad.isError == true)
+        assertContains(h.text(bad), "must be an integer")
+    }
+
+    @Test
+    fun `paged tools carry the size and counting guidance, unpaged ones do not`() = runBlocking {
+        val tools = mcpHarness().listTools().associateBy { it.name }
+        val paged = tools.getValue("get_assets")
+        assertContains(paged.description!!, "size=1 and read")
+        assertContains(paged.description!!, "insightvm_export_to_file")
+        assertContains(paged.inputSchema.properties!!["size"]!!.jsonObject["description"]!!.jsonPrimitive.content, "Defaults to 100")
+        assertFalse(tools.getValue("get_asset").description!!.contains("size=1 and read"))
+    }
+
+    @Test
     fun `a normal-sized response still ends at the fence`() = runBlocking {
         // The invariant the 343 dynamic tests rely on: no footer on the happy path.
         val h = mcpHarness { Canned(body = """{"resources":[{"id":1}],"page":{"totalResources":1}}""") }

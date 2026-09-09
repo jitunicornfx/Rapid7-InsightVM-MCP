@@ -40,7 +40,7 @@ object CatalogTools {
         val filter = config.filter.copy(families = config.activeFamilies.intersect(config.filter.families))
         val selected = CatalogFilter.select(catalogs, filter)
         val budget = ResultBudget(maxChars = config.maxResultChars)
-        selected.forEach { (family, op) -> server.registerOperation(client, family, op, budget, config.keepRecordLinks) }
+        selected.forEach { (family, op) -> server.registerOperation(client, family, op, config, budget) }
         server.registerMetaTools(config, catalogs, selected)
         return selected
     }
@@ -49,8 +49,8 @@ object CatalogTools {
         client: Rapid7Client,
         family: ApiFamily,
         op: CatalogOp,
+        config: Config,
         budget: ResultBudget = ResultBudget.active,
-        keepRecordLinks: Boolean = false,
     ) {
         apiTool(
             name = op.name,
@@ -64,7 +64,7 @@ object CatalogTools {
                     "This tool executes a command on the Security Console. Set confirm=\"${InputSchemaBuilder.CONFIRM_VALUE}\" to proceed."
                 }
             }
-            val bound = ArgumentBinder.bind(op, args)
+            val bound = ArgumentBinder.bind(op, PagingDefaults.apply(op, args, config.defaultPageSize))
             val response = client.request(
                 family = family,
                 method = bound.method,
@@ -75,7 +75,7 @@ object CatalogTools {
                 rawContentType = bound.rawContentType ?: ContentType.Text.Plain,
                 accept = acceptFor(op),
             )
-            ResponseSanitizer.toToolResult(response, op, family, budget, keepRecordLinks)
+            ResponseSanitizer.toToolResult(response, op, family, budget, config.keepRecordLinks)
         }
     }
 

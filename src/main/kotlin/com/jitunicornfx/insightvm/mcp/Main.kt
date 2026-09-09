@@ -14,6 +14,7 @@ import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.int
 import com.jitunicornfx.insightvm.mcp.catalog.ApiFamily
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogLoader
+import com.jitunicornfx.insightvm.mcp.catalog.PagingDefaults
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
@@ -99,6 +100,8 @@ class Rapid7InsightVmCommand internal constructor(
         |${Config.ENV_MAX_RESULT_CHARS} (optional): characters of API data one tool result may carry, default ${Config.DEFAULT_MAX_RESULT_CHARS} (~50k tokens). This is the model-context budget.
         |
         |${Config.ENV_KEEP_RECORD_LINKS} (optional): 1 keeps the per-record HATEOAS 'links' that are stripped by default (they are ~93% of a large reference list).
+        |
+        |${Config.ENV_DEFAULT_PAGE_SIZE} (optional): 'size' injected when a paged tool is called without one, default ${PagingDefaults.DEFAULT_PAGE_SIZE}, clamped to ${PagingDefaults.MAX_PAGE_SIZE}.
         |
         |${Config.ENV_DISABLE_UPDATE_CHECK}, ${Config.ENV_DISABLE_AUTO_UPDATE}: update behaviour (see --no-update-check / --no-auto-update).
         """.trimMargin()
