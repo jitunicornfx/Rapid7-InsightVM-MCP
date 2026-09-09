@@ -40,7 +40,7 @@ object CatalogTools {
         val filter = config.filter.copy(families = config.activeFamilies.intersect(config.filter.families))
         val selected = CatalogFilter.select(catalogs, filter)
         val budget = ResultBudget(maxChars = config.maxResultChars)
-        selected.forEach { (family, op) -> server.registerOperation(client, family, op, budget) }
+        selected.forEach { (family, op) -> server.registerOperation(client, family, op, budget, config.keepRecordLinks) }
         server.registerMetaTools(config, catalogs, selected)
         return selected
     }
@@ -50,6 +50,7 @@ object CatalogTools {
         family: ApiFamily,
         op: CatalogOp,
         budget: ResultBudget = ResultBudget.active,
+        keepRecordLinks: Boolean = false,
     ) {
         apiTool(
             name = op.name,
@@ -74,7 +75,7 @@ object CatalogTools {
                 rawContentType = bound.rawContentType ?: ContentType.Text.Plain,
                 accept = acceptFor(op),
             )
-            ResponseSanitizer.toToolResult(response, op, family, budget)
+            ResponseSanitizer.toToolResult(response, op, family, budget, keepRecordLinks)
         }
     }
 

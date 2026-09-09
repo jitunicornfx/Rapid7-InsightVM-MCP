@@ -105,6 +105,7 @@ internal fun renderWithinBudget(
     budget: ResultBudget,
     ok: Boolean,
     json: Boolean,
+    keepRecordLinks: Boolean = false,
 ): BudgetedBody {
     if (raw.isBlank()) return BudgetedBody(raw, null, BudgetStrategy.PRETTY)
     val limit = budget.limitFor(ok)
@@ -114,22 +115,27 @@ internal fun renderWithinBudget(
         else lineAwareCut(raw, limit, budget, wasJson = false)
     }
 
-    val element: JsonElement? =
+    val parsed: JsonElement? =
         if (raw.length > budget.parseCeilingChars) null else parseOrNull(raw)
 
     // Not JSON after all, or too large to hold as a tree.
-    if (element == null) {
+    if (parsed == null) {
         return if (raw.length <= limit) BudgetedBody(raw, null, BudgetStrategy.PRETTY)
         else lineAwareCut(raw, limit, budget, wasJson = false)
     }
 
-    // Rung 1 — pretty, the historical behaviour. Skipped when the raw body already exceeds the
-    // limit: pretty >= compact, and for valid JSON compact <= raw (whitespace only adds), so a
-    // pretty render at that size is near-certainly wasted allocation.
-    if (raw.length <= limit) {
+    val pruned = if (keepRecordLinks) Pruned(parsed, 0) else pruneRecordLinks(parsed)
+    val element = pruned.element
+    val stripNotice = if (pruned.removed > 0) strippedLinksNotice(pruned.removed) else null
+
+    // Rung 1 — pretty. Normally skipped when the raw body already exceeds the limit: pretty >=
+    // compact, and for valid JSON compact <= raw (whitespace only adds), so a pretty render at that
+    // size is near-certainly wasted allocation. Pruning breaks that reasoning — the element is now
+    // smaller than what `raw` measured — so an oversized body that was pruned is still worth trying.
+    if (raw.length <= limit || pruned.removed > 0) {
         val pretty = encodeOrNull(JsonCodec.pretty, element)
         if (pretty != null && pretty.length <= limit) {
-            return BudgetedBody(pretty, null, BudgetStrategy.PRETTY)
+            return BudgetedBody(pretty, stripNotice, BudgetStrategy.PRETTY)
         }
     }
 
@@ -138,16 +144,22 @@ internal fun renderWithinBudget(
     val compact = encodeOrNull(JsonCodec.compact, element)
         ?: return lineAwareCut(raw, limit, budget, wasJson = false)
     if (compact.length <= limit) {
-        return BudgetedBody(compact, compactedNotice(limit), BudgetStrategy.COMPACT)
+        return BudgetedBody(compact, join(stripNotice, compactedNotice(limit)), BudgetStrategy.COMPACT)
     }
 
     // Rung 3 — structural: drop entries from the largest trimmable top-level array, keeping the
     // document valid, parseable JSON.
-    trimLargestArray(element, limit)?.let { return it }
+    trimLargestArray(element, limit)?.let {
+        return it.copy(notice = join(stripNotice, it.notice))
+    }
 
     // Rung 4 — cut. The output is a prefix, not a JSON document; the notice says so.
-    return lineAwareCut(compact, limit, budget, wasJson = true)
+    val cut = lineAwareCut(compact, limit, budget, wasJson = true)
+    return cut.copy(notice = join(stripNotice, cut.notice))
 }
+
+private fun join(vararg parts: String?): String? =
+    parts.filterNotNull().ifEmpty { null }?.joinToString("\n\n")
 
 internal fun parseOrNull(raw: String): JsonElement? = try {
     JsonCodec.compact.parseToJsonElement(raw)

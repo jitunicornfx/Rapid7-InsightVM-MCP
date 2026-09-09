@@ -98,6 +98,8 @@ class Rapid7InsightVmCommand internal constructor(
         |
         |${Config.ENV_MAX_RESULT_CHARS} (optional): characters of API data one tool result may carry, default ${Config.DEFAULT_MAX_RESULT_CHARS} (~50k tokens). This is the model-context budget.
         |
+        |${Config.ENV_KEEP_RECORD_LINKS} (optional): 1 keeps the per-record HATEOAS 'links' that are stripped by default (they are ~93% of a large reference list).
+        |
         |${Config.ENV_DISABLE_UPDATE_CHECK}, ${Config.ENV_DISABLE_AUTO_UPDATE}: update behaviour (see --no-update-check / --no-auto-update).
         """.trimMargin()
 

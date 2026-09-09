@@ -111,6 +111,8 @@ data class Config(
     val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
     /** Ceiling on the rendered characters of API data in one tool result. See [ResultBudget]. */
     val maxResultChars: Int = DEFAULT_MAX_RESULT_CHARS,
+    /** Keep the per-record HATEOAS `links` that are stripped by default. See [pruneRecordLinks]. */
+    val keepRecordLinks: Boolean = false,
     /** Shared secret required as `Authorization: Bearer` on the `--http` transport. */
     val httpAuthToken: String? = null,
     /** Browser origins permitted in `--http` mode (CORS + Origin check). Empty = deny all browsers. */
@@ -135,7 +137,7 @@ data class Config(
 
     override fun toString(): String =
         "Config(console=$console, cloud=$cloud, requestTimeoutMillis=$requestTimeoutMillis, " +
-            "maxResponseBytes=$maxResponseBytes, maxResultChars=$maxResultChars, " +
+            "maxResponseBytes=$maxResponseBytes, maxResultChars=$maxResultChars, keepRecordLinks=$keepRecordLinks, " +
             "httpAuthToken=${if (httpAuthToken == null) "unset" else "***"}, " +
             "httpAllowedOrigins=$httpAllowedOrigins, filter=$filter)"
 
@@ -153,6 +155,7 @@ data class Config(
         const val ENV_TIMEOUT_MS = "INSIGHTVM_TIMEOUT_MS"
         const val ENV_MAX_RESPONSE_BYTES = "INSIGHTVM_MAX_RESPONSE_BYTES"
         const val ENV_MAX_RESULT_CHARS = "INSIGHTVM_MAX_RESULT_CHARS"
+        const val ENV_KEEP_RECORD_LINKS = "INSIGHTVM_KEEP_RECORD_LINKS"
         const val ENV_MCP_AUTH_TOKEN = "INSIGHTVM_MCP_AUTH_TOKEN"
         const val ENV_HTTP_ALLOWED_ORIGINS = "INSIGHTVM_HTTP_ALLOWED_ORIGINS"
         const val ENV_READ_ONLY = "INSIGHTVM_READ_ONLY"
@@ -227,6 +230,7 @@ data class Config(
                 requestTimeoutMillis = timeout,
                 maxResponseBytes = maxBytes,
                 maxResultChars = maxResultChars,
+                keepRecordLinks = isTruthy(env[ENV_KEEP_RECORD_LINKS]),
                 httpAuthToken = get(ENV_MCP_AUTH_TOKEN),
                 httpAllowedOrigins = origins,
                 filter = filter,

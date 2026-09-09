@@ -121,6 +121,7 @@ object ResponseSanitizer {
         op: CatalogOp,
         family: ApiFamily,
         budget: ResultBudget = ResultBudget.active,
+        keepRecordLinks: Boolean = false,
     ): CallToolResult {
         val ct = response.contentType?.lowercase().orEmpty()
         // The response's own content type wins; the catalog's documented type is only a fallback
@@ -148,7 +149,7 @@ object ResponseSanitizer {
                 isJson = effectiveType.contains("json")
             }
         }
-        val rendered = renderWithinBudget(sanitized, budget, response.ok, isJson)
+        val rendered = renderWithinBudget(sanitized, budget, response.ok, isJson, keepRecordLinks)
         val text = buildString {
             if (!response.ok) {
                 append("${family.displayName} returned HTTP ${response.status}.")
