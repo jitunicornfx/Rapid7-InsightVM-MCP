@@ -94,7 +94,9 @@ class Rapid7InsightVmCommand internal constructor(
         |
         |${Config.ENV_READ_ONLY}, ${Config.ENV_TAGS}, ${Config.ENV_EXCLUDE_TAGS}, ${Config.ENV_ALLOW_ADMIN_COMMANDS}: tool filters (same as the flags).
         |
-        |${Config.ENV_TIMEOUT_MS} (default ${Config.DEFAULT_TIMEOUT_MS}), ${Config.ENV_MAX_RESPONSE_BYTES} (default ${Config.DEFAULT_MAX_RESPONSE_BYTES}).
+        |${Config.ENV_TIMEOUT_MS} (default ${Config.DEFAULT_TIMEOUT_MS}), ${Config.ENV_MAX_RESPONSE_BYTES} (default ${Config.DEFAULT_MAX_RESPONSE_BYTES}, a memory guard on the wire).
+        |
+        |${Config.ENV_MAX_RESULT_CHARS} (optional): characters of API data one tool result may carry, default ${Config.DEFAULT_MAX_RESULT_CHARS} (~50k tokens). This is the model-context budget.
         |
         |${Config.ENV_DISABLE_UPDATE_CHECK}, ${Config.ENV_DISABLE_AUTO_UPDATE}: update behaviour (see --no-update-check / --no-auto-update).
         """.trimMargin()
@@ -235,6 +237,10 @@ internal fun startupBanner(args: Array<String>, env: Map<String, String> = Syste
 
 /** Creates the shared client and dispatches to the selected transport. */
 internal fun runServer(transport: Transport, host: String, port: Int, config: Config) {
+    // Install before anything can serve a tool call. There is exactly one Config per process — the
+    // --http path builds a fresh Server per connection but never a fresh Config — so one budget per
+    // process is the right granularity.
+    ResultBudget.install(ResultBudget(maxChars = config.maxResultChars))
     // Leftovers from an interrupted self-update (".new" staging files, ".bak", the lock sidecar)
     // would otherwise accumulate beside the JAR; sweep them before anything else.
     UpdateInstaller.runningJar()?.let { jar ->

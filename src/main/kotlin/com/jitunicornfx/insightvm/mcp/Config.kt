@@ -102,8 +102,15 @@ data class Config(
     val console: ConsoleConfig?,
     val cloud: CloudConfig?,
     val requestTimeoutMillis: Long = DEFAULT_TIMEOUT_MS,
-    /** Upper bound on bytes read from any API response body; larger bodies are truncated. */
+    /**
+     * Upper bound on bytes read from any API response body — a MEMORY guard, not a context budget.
+     * It must stay comfortably above the largest complete response the API can return, because a
+     * body cut mid-stream is unparseable and so cannot be trimmed intelligently. What reaches the
+     * model is bounded by [maxResultChars] instead.
+     */
     val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
+    /** Ceiling on the rendered characters of API data in one tool result. See [ResultBudget]. */
+    val maxResultChars: Int = DEFAULT_MAX_RESULT_CHARS,
     /** Shared secret required as `Authorization: Bearer` on the `--http` transport. */
     val httpAuthToken: String? = null,
     /** Browser origins permitted in `--http` mode (CORS + Origin check). Empty = deny all browsers. */
@@ -128,7 +135,8 @@ data class Config(
 
     override fun toString(): String =
         "Config(console=$console, cloud=$cloud, requestTimeoutMillis=$requestTimeoutMillis, " +
-            "maxResponseBytes=$maxResponseBytes, httpAuthToken=${if (httpAuthToken == null) "unset" else "***"}, " +
+            "maxResponseBytes=$maxResponseBytes, maxResultChars=$maxResultChars, " +
+            "httpAuthToken=${if (httpAuthToken == null) "unset" else "***"}, " +
             "httpAllowedOrigins=$httpAllowedOrigins, filter=$filter)"
 
     companion object {
@@ -144,6 +152,7 @@ data class Config(
         const val ENV_CLOUD_BASE_URL = "INSIGHTVM_CLOUD_BASE_URL"
         const val ENV_TIMEOUT_MS = "INSIGHTVM_TIMEOUT_MS"
         const val ENV_MAX_RESPONSE_BYTES = "INSIGHTVM_MAX_RESPONSE_BYTES"
+        const val ENV_MAX_RESULT_CHARS = "INSIGHTVM_MAX_RESULT_CHARS"
         const val ENV_MCP_AUTH_TOKEN = "INSIGHTVM_MCP_AUTH_TOKEN"
         const val ENV_HTTP_ALLOWED_ORIGINS = "INSIGHTVM_HTTP_ALLOWED_ORIGINS"
         const val ENV_READ_ONLY = "INSIGHTVM_READ_ONLY"
@@ -155,7 +164,22 @@ data class Config(
 
         const val DEFAULT_REGION = "us"
         const val DEFAULT_TIMEOUT_MS = 60_000L
-        const val DEFAULT_MAX_RESPONSE_BYTES = 5_000_000L
+        const val DEFAULT_MAX_RESPONSE_BYTES = 16_777_216L
+
+        /** An env typo must not be able to exhaust the heap. */
+        const val MAX_RESPONSE_BYTES_CEILING = 268_435_456L
+
+        const val DEFAULT_MAX_RESULT_CHARS = ResultBudget.DEFAULT_MAX_CHARS
+
+        /** Below this a result is too small to be diagnostically useful; a misconfiguration clamps up. */
+        const val MIN_MAX_RESULT_CHARS = 2_000
+
+        /**
+         * There is deliberately no "unlimited" value: one environment variable must not be able to
+         * silently reinstate an unbounded result. Raise the number instead.
+         */
+        const val MAX_MAX_RESULT_CHARS = 5_000_000
+
         const val DEFAULT_CONSOLE_PORT = 3780
 
         private val TRUTHY = setOf("1", "true", "yes", "on")
@@ -184,7 +208,10 @@ data class Config(
             }
 
             val timeout = get(ENV_TIMEOUT_MS)?.toLongOrNull()?.takeIf { it > 0 } ?: DEFAULT_TIMEOUT_MS
-            val maxBytes = get(ENV_MAX_RESPONSE_BYTES)?.toLongOrNull()?.takeIf { it > 0 } ?: DEFAULT_MAX_RESPONSE_BYTES
+            val maxBytes = (get(ENV_MAX_RESPONSE_BYTES)?.toLongOrNull()?.takeIf { it > 0 } ?: DEFAULT_MAX_RESPONSE_BYTES)
+                .coerceAtMost(MAX_RESPONSE_BYTES_CEILING)
+            val maxResultChars = (get(ENV_MAX_RESULT_CHARS)?.toIntOrNull()?.takeIf { it > 0 } ?: DEFAULT_MAX_RESULT_CHARS)
+                .coerceIn(MIN_MAX_RESULT_CHARS, MAX_MAX_RESULT_CHARS)
             val origins = csv(env[ENV_HTTP_ALLOWED_ORIGINS]).filter { it != "*" }
 
             val filter = ToolFilter(
@@ -199,6 +226,7 @@ data class Config(
                 cloud = cloud,
                 requestTimeoutMillis = timeout,
                 maxResponseBytes = maxBytes,
+                maxResultChars = maxResultChars,
                 httpAuthToken = get(ENV_MCP_AUTH_TOKEN),
                 httpAllowedOrigins = origins,
                 filter = filter,

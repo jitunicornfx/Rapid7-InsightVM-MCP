@@ -159,6 +159,30 @@ class ConfigTest {
     }
 
     @Test
+    fun `the result budget has a floor, a ceiling and no unlimited value`() {
+        fun chars(value: String?) =
+            Config.fromEnv(cloudEnv + (if (value == null) emptyMap() else mapOf(Config.ENV_MAX_RESULT_CHARS to value))).maxResultChars
+        assertEquals(Config.DEFAULT_MAX_RESULT_CHARS, chars(null))
+        assertEquals(Config.DEFAULT_MAX_RESULT_CHARS, chars("abc"))
+        assertEquals(Config.DEFAULT_MAX_RESULT_CHARS, chars("0"))
+        assertEquals(Config.DEFAULT_MAX_RESULT_CHARS, chars("-5"))
+        assertEquals(Config.MIN_MAX_RESULT_CHARS, chars("1"), "a tiny value clamps up to something diagnostic")
+        assertEquals(Config.MAX_MAX_RESULT_CHARS, chars("99999999"), "there is no unlimited value")
+        assertEquals(50_000, chars("50000"))
+    }
+
+    @Test
+    fun `the wire byte cap is clamped so an env typo cannot exhaust the heap`() {
+        fun bytes(value: String) = Config.fromEnv(cloudEnv + (Config.ENV_MAX_RESPONSE_BYTES to value)).maxResponseBytes
+        assertEquals(Config.MAX_RESPONSE_BYTES_CEILING, bytes("99999999999"))
+        assertEquals(1234, bytes("1234"))
+        assertTrue(
+            Config.DEFAULT_MAX_RESPONSE_BYTES > Config.DEFAULT_MAX_RESULT_CHARS.toLong(),
+            "the wire guard must exceed the render budget, or trimming never sees a complete document",
+        )
+    }
+
+    @Test
     fun `invalid numeric settings fall back to defaults`() {
         val c = Config.fromEnv(cloudEnv + mapOf(Config.ENV_TIMEOUT_MS to "-5", Config.ENV_MAX_RESPONSE_BYTES to "abc"))
         assertEquals(Config.DEFAULT_TIMEOUT_MS, c.requestTimeoutMillis)
