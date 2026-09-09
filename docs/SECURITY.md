@@ -90,11 +90,57 @@ Out of scope: a compromised operator machine, a malicious bundled specification,
 
 ### Resource limits
 
-* Response bodies are streamed into a buffer capped at `INSIGHTVM_MAX_RESPONSE_BYTES` (5 MB default); the tool result
-  states when truncation happened.
-* Deeply nested hostile JSON cannot kill the session: `StackOverflowError` from the pretty-printer is caught and the raw
-  body is used.
+Two tiers, because they defend different things:
+
+* **Wire bytes** — response bodies are streamed into a buffer capped at `INSIGHTVM_MAX_RESPONSE_BYTES` (16 MiB
+  default, hard ceiling 256 MiB so an environment typo cannot exhaust the heap). This bounds memory only. The cap is
+  applied in `Long` arithmetic, and a body cut mid-character has its incomplete trailing UTF-8 sequence removed so
+  decoding cannot yield U+FFFD.
+* **Rendered characters** — `INSIGHTVM_MAX_RESULT_CHARS` (200,000, ~50k tokens) bounds what reaches the model, and is
+  measured *after* markup neutralisation so escaping cannot inflate a result past the ceiling. There is deliberately
+  no unlimited value; the floor is 2,000 so a misconfiguration cannot erase a diagnostic. An error body is never
+  trimmed below 4,000 characters, because a non-2xx body is what the model needs to correct itself.
+* The budget degrades through four rungs — pretty, compact, structural array trim, line-aware cut — and never throws:
+  `StackOverflowError` from deeply nested hostile JSON is caught at every rung, and a body above 12M characters is
+  never parsed into a tree at all. A structural trim keeps the document valid, parseable JSON and never touches
+  `links`, `page` or `metadata`.
+* Every truncation notice is server-authored — only integers are interpolated — and is emitted **outside** the
+  untrusted-data fence, so API content can never forge one. A cut never splits a surrogate pair.
+* Binary payloads are inlined only up to 4 KiB of base64; anything larger goes to a file (below).
 * All per-request work is bounded by `INSIGHTVM_TIMEOUT_MS`.
+
+### Spooled results
+
+`insightvm_export_to_file` is the only tool that writes to the local filesystem, and binary payloads spill through
+the same store. Both are removed by `INSIGHTVM_DISABLE_EXPORT=1`, and the export tool is also removed by
+`--read-only` (whose contract is GET tools only). It is registered with `readOnlyHint=false`, so a client still
+prompts for it.
+
+*No caller-controlled path.* Four independent controls:
+
+1. The input schema has no `path`, `file`, `filename`, `directory` or `output` property, and the handler reads only
+   its own declared keys. There is no code path from a tool argument to a filesystem location.
+2. The file name's label is server-derived (the catalog tool's own name, already validated against
+   `^[a-z0-9_]{1,64}$`) and is *still* sanitised: lower-cased, everything outside `[a-z0-9]` collapsed to `-`,
+   capped at 40 characters. `..` and `../../etc/passwd` cannot survive.
+3. `Files.createTempFile` creates the file with `O_CREAT|O_EXCL`, so it cannot follow a pre-planted symlink or
+   collide with a concurrent export under `--http`, and it rejects a prefix containing a path separator. The fixed
+   `insightvm-export-` prefix also means the name can never be a Windows reserved device name.
+4. A `normalize().startsWith(directory)` post-condition proves containment anyway.
+
+The directory is created lazily, hardened to `rwx------` (files `rw-------`) *before* the first file is written, and
+carries a `README.txt` warning — the only artefact that reaches someone who finds it later without having seen the
+tool's summary. Files are swept after `INSIGHTVM_SPOOL_RETENTION_HOURS`, and only files carrying this server's own
+prefix and suffixes are ever swept.
+
+An export cannot be used to reach a tool the operator hid: the target is resolved against the **registered
+selection**, not the raw catalog, so `--tags`, `--tools`, `--api` and `--read-only` all still apply. State-changing
+operations are refused; the only non-GET operations permitted are five hard-coded POST *search* endpoints, and
+`admin`/`destructive` operations are refused unconditionally regardless. Every page goes through the normal
+`ArgumentBinder`, so unknown-parameter rejection, type coercion, string bounds and path-segment encoding apply
+unchanged. Paging uses a page index or the API's own opaque cursor token — never a URL taken from a response body,
+so no request target is ever attacker-controlled. Runs are bounded by pages, records, bytes and wall-clock, and the
+volume must have 256 MiB free before the first API call is spent.
 
 ### Self-update
 
@@ -123,8 +169,14 @@ Known, accepted:
 * The request-size cap relies on `Content-Length`; a chunked upload is bounded by the SDK's own 4 MiB limit on the SSE
   message endpoint but not on the Streamable HTTP endpoint. Keep the server on loopback or behind a reverse proxy that
   enforces body limits if this matters.
-* `INSIGHTVM_MAX_RESPONSE_BYTES` bounds memory, not model context: a 5 MB response is still a 5 MB tool result. Lower it
-  for small-context clients.
+* A structural trim leaves the `page`/`metadata` object describing the full page the API returned, so its counts will
+  not match the number of records left in the document. Both the in-band `_mcp_truncated` marker and the
+  authoritative out-of-band notice say so explicitly.
+* Raising `INSIGHTVM_MAX_RESPONSE_BYTES` raises worst-case heap (roughly three times the cap while a body is decoded).
+  The 12M-character parse ceiling is the real guard; do not raise the wire cap without lowering it. Run with at least
+  `-Xmx512m`.
+* Spooled files hold tenant vulnerability data in cleartext on the server's disk. They are user-only and swept, but
+  anyone with that account can read them. Set `INSIGHTVM_DISABLE_EXPORT=1` where that is unacceptable.
 
 ## Reporting
 

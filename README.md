@@ -36,7 +36,13 @@ Everything is configured through environment variables. Configure one or both AP
 | `INSIGHTVM_ALLOW_ADMIN_COMMANDS` | | `0` | Register `execute_command` (arbitrary console command execution) |
 | `INSIGHTVM_ALLOW_HTTP` | | `0` | Permit cleartext `http://` API URLs (lab use only) |
 | `INSIGHTVM_TIMEOUT_MS` | | `60000` | Per-request timeout |
-| `INSIGHTVM_MAX_RESPONSE_BYTES` | | `5000000` | Response bodies beyond this are truncated |
+| `INSIGHTVM_MAX_RESULT_CHARS` | | `200000` | Characters of API data one tool result may carry (~50k tokens). See [Large results](#large-results) |
+| `INSIGHTVM_MAX_RESPONSE_BYTES` | | `16777216` | Memory guard on the wire, not a context budget — use the setting above for that |
+| `INSIGHTVM_KEEP_RECORD_LINKS` | | `0` | `1` keeps the per-record HATEOAS `links` that are stripped by default |
+| `INSIGHTVM_DEFAULT_PAGE_SIZE` | | `100` | `size` injected when a paged tool is called without one (clamped to 500) |
+| `INSIGHTVM_SPOOL_DIR` | | `~/.rapid7-insightvm-mcp/spool` | Where `insightvm_export_to_file` writes |
+| `INSIGHTVM_SPOOL_RETENTION_HOURS` | | `24` | Exported files older than this are swept at startup; `0` never sweeps |
+| `INSIGHTVM_DISABLE_EXPORT` | | `0` | `1` removes `insightvm_export_to_file`, the only tool that writes to disk |
 | `INSIGHTVM_DISABLE_UPDATE_CHECK` / `INSIGHTVM_DISABLE_AUTO_UPDATE` | | `0` | Update behaviour (see below) |
 
 See [`.env.example`](.env.example) for a template.
@@ -116,8 +122,59 @@ Tool names are the spec's `operationId` in snake_case; cloud (v4) tools carry a 
 | Console v3 | Asset Discovery, Policy Override, Administration, Vulnerability Result/Exception, Credential, Scan Template, Scan, Vulnerability Check, Root, Remediation | 61 | `get_sonar_queries`, `get_info`, `get_scans`, `get_asset_vulnerability_solutions` |
 | Cloud v4 | Scan / Asset / Site / Vulnerability / Health | 13 | `cloud_search_integration_assets`, `cloud_start_scan`, `cloud_health` |
 
-Two meta tools help navigate the set: `insightvm_server_info` (configuration, filters, counts) and
-`insightvm_list_tool_groups` (tools grouped by tag).
+Three tools are the server's own rather than the API's: `insightvm_server_info` (configuration, filters, counts),
+`insightvm_list_tool_groups` (tools grouped by tag) and `insightvm_export_to_file` (see below).
+
+## Large results
+
+InsightVM returns a lot of data. One page of assets is a few hundred kilobytes; a widely-exploited vulnerability's
+affected-asset list runs to megabytes. Measured on a 25,000-asset `get_affected_assets` response, and on the full
+46,821-asset estate:
+
+| | Cost |
+|---|---|
+| `get_affected_assets`, 25k assets, pretty-printed with links | 4.36 MB ≈ **1.2M tokens** |
+| the same response, links stripped and compacted | 316 KB ≈ **88k tokens** |
+| enumerating every asset by paging through the conversation | **~25M tokens** |
+| the same data via `insightvm_export_to_file` | **~1k tokens** |
+| a total count via `size=1` and `page.totalResources` | **~0.4k tokens** |
+
+Four mechanisms follow from that, in the order they apply:
+
+1. **Server-side filtering and counting come first.** For a count, call the tool with `size=1` and read
+   `page.totalResources` (v3) or `metadata.totalResources` (v4). To narrow, use `find_assets` /
+   `cloud_search_integration_assets`, which filter on the console rather than in the conversation.
+2. **Per-record `links` are stripped.** The v3 API attaches a HATEOAS `links` array to every record; its entry is
+   the record's own URL, derivable from its `id`. The top-level `links` (`rel=next`) and the `page`/`metadata`
+   object are always kept, so paging and totals still work. Pass `include_links=true`, or set
+   `INSIGHTVM_KEEP_RECORD_LINKS=1`, for the raw shape.
+3. **Page size is defaulted and clamped** — 100 when omitted (the specification's own default of 10 makes a model
+   page thousands of times), 500 maximum (above that a page cannot render inside the budget, so the console builds
+   records that are then thrown away).
+4. **Every result is budgeted** to `INSIGHTVM_MAX_RESULT_CHARS` through four rungs: pretty-print, compact,
+   drop trailing records from the largest array while keeping the document valid JSON, and finally cut at a line
+   boundary. Whatever happens, a server-authored notice is emitted **outside** the untrusted-data fence saying what
+   was dropped and how to get it more cheaply.
+
+### Reading a whole result set
+
+Paging bulk data through a conversation cannot be made cheap — only avoided. `insightvm_export_to_file` drives any
+read-only tool, follows every page on the server, writes NDJSON to a file and returns a short summary, so the token
+cost is the same whether the result is 1 MB or 1 GB:
+
+```jsonc
+insightvm_export_to_file({
+  "tool": "get_assets",              // any registered, non-mutating tool
+  "arguments": { "sort": ["id,ASC"] } // what you would pass that tool; not page/size/cursor
+})
+```
+
+It never takes a path: files are named by the server inside `INSIGHTVM_SPOOL_DIR`, created user-readable only, and
+swept after `INSIGHTVM_SPOOL_RETENTION_HOURS`. Each run is bounded by pages, records, bytes and wall-clock, and a
+run stopped by a cap returns a resume token plus the partial file. A `.manifest.json` sidecar records the query and
+the outcome. Binary payloads (`get_logs`, `download_report`) spill to the same directory instead of being inlined as
+base64. Set `INSIGHTVM_DISABLE_EXPORT=1` for a deployment that must never write to disk; `--read-only` also removes
+the tool.
 
 ### Working with a large tool set
 
@@ -142,11 +199,14 @@ flowchart LR
         direction TB
         T1[stdio] --> F
         T2["Streamable HTTP /mcp<br/>legacy SSE /sse"] --> G["Transport guard<br/>bearer · Host/Origin · CORS · size · throttle"] --> F
-        F["CatalogFilter<br/>--read-only · --tags · --api · --tools"] --> R["CatalogTools<br/>~343 generated tools + 2 meta tools"]
+        F["CatalogFilter<br/>--read-only · --tags · --api · --tools"] --> R["CatalogTools<br/>~343 generated tools + 3 server tools"]
         R --> B["ArgumentBinder<br/>schema coercion · path encoding · caps"]
-        B --> K["Rapid7Client (OkHttp)<br/>no redirects · response cap"]
+        B --> K["Rapid7Client (OkHttp)<br/>no redirects · wire cap"]
         K --> S["ResponseSanitizer<br/>HTML→text · markup neutralised · fenced"]
-        S --> R
+        S --> BU["ResultBudget<br/>links stripped · 200k chars<br/>pretty→compact→trim→cut"]
+        BU --> R
+        R --> X["insightvm_export_to_file<br/>pages server-side → NDJSON"]
+        X --> D[("spool directory")]
     end
 
     subgraph BuildTime["build time"]
@@ -180,6 +240,10 @@ Summarised here; details and residual risks in [docs/SECURITY.md](docs/SECURITY.
 * **Dangerous operations** — `execute_command` is unregistered unless `--allow-admin-commands` *and* then requires
   `confirm="EXECUTE"`; all mutations are flagged `destructiveHint` where applicable; `--read-only` removes them entirely.
 * **TLS** — strict by default; trust a private CA with `INSIGHTVM_CONSOLE_CA_CERT`; `INSECURE_TLS` is explicit and loud.
+* **Result size** — two tiers: a wire-byte memory guard and a character budget for what reaches the model, with a
+  degradation ladder that keeps trimmed JSON valid and always says what it dropped, outside the fence.
+* **Spooled files** — `insightvm_export_to_file` is the only tool that writes to disk. It takes no path, names files
+  itself inside a user-only directory, refuses state-changing operations, and cannot reach a tool the filters hid.
 
 ### Troubleshooting a start-up failure
 

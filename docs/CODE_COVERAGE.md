@@ -12,9 +12,9 @@ Coverage is measured with JaCoCo and **enforced**: `./gradlew check` fails below
 
 | Counter | Coverage |
 |---|---|
-| Line | 93.3 % |
-| Method | 90.7 % |
-| Branch | 84.5 % |
+| Line | 93.4 % |
+| Method | 90.8 % |
+| Branch | 82.1 % |
 
 | File | Line | Notes |
 |---|---|---|
@@ -22,6 +22,8 @@ Coverage is measured with JaCoCo and **enforced**: `./gradlew check` fails below
 | `Rapid7Client.kt`, `ResponseSanitizer.kt`, `HttpTransportSecurity.kt` | 100 % | |
 | `Config.kt`, `TlsSupport.kt` | 97–99 % | |
 | `UpdateChecker.kt` / `UpdateInstaller.kt` | 98 % / 89 % | ported suites |
+| `ResultBudget.kt` / `RecordLinks.kt` / `catalog/PagingDefaults.kt` | 96–100 % | the result-size machinery |
+| `SpoolStore.kt` / `tools/ExportTools.kt` | 90–93 % | filesystem and paging-loop failure branches |
 | `McpServerFactory.kt` | 86 % | notification delivery failure paths |
 | `Main.kt` | 73 % | the update-install branches need a real GitHub release; both transports *are* exercised end-to-end |
 
@@ -43,6 +45,15 @@ Coverage is measured with JaCoCo and **enforced**: `./gradlew check` fails below
   `McpServerFactoryTest`** — focused unit tests for each component; HTTP is stubbed with Ktor `MockEngine` through the
   `Rapid7Client(consoleEngine, cloudEngine)` seam.
 * **`UpdateCheckerTest`, `UpdateInstallerTest`, `UpdateNotificationTest`** — the self-update refusal suite, ported.
+* **`ResultBudgetTest`** — one test per rung of the degradation ladder, plus the error floor, the sample floor, the
+  parse ceiling, the never-trim keys, surrogate safety and the "no notice on the happy path" invariant that the 343
+  dynamic tests depend on.
+* **`RecordLinksTest`** — v3/v4/bare-array shapes, depth limits, and that a 100,000-deep record cannot overflow the
+  stack.
+* **`PagingDefaultsTest`** — injection, clamping, and that a non-numeric size is left for the binder to reject.
+* **`SpoolStoreTest`, `ExportToolsTest`** — label sanitisation and containment against hostile labels, the retention
+  sweep, all three paging modes, every cap and its resume token, and refusal of unknown, filtered-out and
+  state-changing tools.
 
 `src/test/resources/tls/test-ca.pem` is a throw-away self-signed certificate generated for the TLS tests; it has no
 private key in the repository and trusts nothing real.
