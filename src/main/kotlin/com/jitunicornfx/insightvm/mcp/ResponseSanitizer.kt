@@ -5,6 +5,7 @@ import com.jitunicornfx.insightvm.mcp.catalog.ApiFamily
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogOp
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import java.nio.file.Files
 import java.security.MessageDigest
 import java.util.Base64
 
@@ -89,16 +90,41 @@ object ResponseSanitizer {
     /** Remove C0/C1-ish control characters except tab and newline. */
     fun scrubControlCharacters(text: String): String = CONTROL.replace(text, "")
 
-    /** Format a binary payload as a JSON descriptor with a capped base64 prefix. */
-    fun describeBinary(bytes: ByteArray, contentType: String?, truncated: Boolean): String {
+    /**
+     * Format a binary payload as a JSON descriptor with a capped base64 prefix.
+     *
+     * When the payload is larger than can usefully be inlined and a [spool] store is available, the
+     * whole thing is written to a file and its path added to the descriptor — a log bundle or a
+     * report is something the operator wants on disk, and base64 in a conversation is the one form
+     * in which it is useless to everybody.
+     */
+    fun describeBinary(
+        bytes: ByteArray,
+        contentType: String?,
+        truncated: Boolean,
+        spool: SpoolStore? = null,
+        label: String = "binary",
+    ): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
         val inline = bytes.copyOf(minOf(bytes.size, MAX_INLINE_BINARY_BYTES))
+        var spilledTo: String? = null
+        var spillError: String? = null
+        if (spool != null && bytes.size > MAX_INLINE_BINARY_BYTES) {
+            runCatching {
+                val path = spool.newSpoolFile(label, SpoolStore.BINARY_SUFFIX)
+                Files.write(path, bytes)
+                path.toString()
+            }.onSuccess { spilledTo = it }
+                .onFailure { spillError = it.message ?: it::class.simpleName }
+        }
         return buildString {
             append("{\n")
             append("  \"contentType\": \"").append(contentType?.let(::escapeJson) ?: "application/octet-stream").append("\",\n")
             append("  \"bytes\": ").append(bytes.size).append(",\n")
             append("  \"sha256\": \"").append(digest).append("\",\n")
             append("  \"responseTruncated\": ").append(truncated).append(",\n")
+            spilledTo?.let { append("  \"path\": \"").append(escapeJson(it)).append("\",\n") }
+            spillError?.let { append("  \"pathError\": \"").append(escapeJson(it)).append("\",\n") }
             append("  \"base64Truncated\": ").append(inline.size < bytes.size).append(",\n")
             append("  \"base64\": \"").append(Base64.getEncoder().encodeToString(inline)).append("\"\n")
             append("}")
@@ -122,6 +148,7 @@ object ResponseSanitizer {
         family: ApiFamily,
         budget: ResultBudget = ResultBudget.active,
         keepRecordLinks: Boolean = false,
+        spool: SpoolStore? = null,
     ): CallToolResult {
         val ct = response.contentType?.lowercase().orEmpty()
         // The response's own content type wins; the catalog's documented type is only a fallback
@@ -132,7 +159,7 @@ object ResponseSanitizer {
         val isJson: Boolean
         when {
             binary -> {
-                sanitized = describeBinary(response.bytes!!, response.contentType, response.truncated)
+                sanitized = describeBinary(response.bytes!!, response.contentType, response.truncated, spool, op.name)
                 isJson = true
             }
             response.bytes != null -> {

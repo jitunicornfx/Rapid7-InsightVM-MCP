@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertContains
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
@@ -44,21 +45,52 @@ class CatalogToolsBehaviourTest {
     }
 
     @Test
-    fun `binary responses become a descriptor with capped base64`() = runBlocking {
+    fun `a large binary payload spills to a file instead of inlining base64`() = runBlocking {
         val payload = ByteArray(300_000) { (it % 251).toByte() }
-        val h = mcpHarness { Canned(bytes = payload, contentType = "application/zip") }
-        val result = h.call("get_logs", mapOf("name" to listOf("nsc.log", "audit.log")))
-        val text = h.text(result)
-        assertFalse(result.isError == true, text.take(500))
-        val json = JsonCodec.compact.parseToJsonElement(text.substringAfter(UNTRUSTED_BEGIN).substringBefore(UNTRUSTED_END).trim()).jsonObject
-        assertEquals("application/zip", json["contentType"]!!.jsonPrimitive.content)
-        assertEquals(300_000, json["bytes"]!!.jsonPrimitive.content.toInt())
-        assertEquals(64, json["sha256"]!!.jsonPrimitive.content.length)
-        assertEquals("true", json["base64Truncated"]!!.jsonPrimitive.content)
-        assertEquals("false", json["responseTruncated"]!!.jsonPrimitive.content)
-        val decoded = java.util.Base64.getDecoder().decode(json["base64"]!!.jsonPrimitive.content)
-        assertEquals(ResponseSanitizer.MAX_INLINE_BINARY_BYTES, decoded.size)
-        assertEquals(listOf("nsc.log", "audit.log"), h.lastRequest.url.parameters.getAll("name"))
+        val dir = kotlin.io.path.createTempDirectory("binary-spill")
+        try {
+            val h = mcpHarness(spool = SpoolStore(dir)) { Canned(bytes = payload, contentType = "application/zip") }
+            val result = h.call("get_logs", mapOf("name" to listOf("nsc.log", "audit.log")))
+            val text = h.text(result)
+            assertFalse(result.isError == true, text.take(500))
+            val json = JsonCodec.compact.parseToJsonElement(text.substringAfter(UNTRUSTED_BEGIN).substringBefore(UNTRUSTED_END).trim()).jsonObject
+            assertEquals("application/zip", json["contentType"]!!.jsonPrimitive.content)
+            assertEquals(300_000, json["bytes"]!!.jsonPrimitive.content.toInt())
+            assertEquals(64, json["sha256"]!!.jsonPrimitive.content.length)
+            assertEquals("true", json["base64Truncated"]!!.jsonPrimitive.content)
+            assertEquals("false", json["responseTruncated"]!!.jsonPrimitive.content)
+
+            // Only enough base64 to identify the payload; the whole thing is on disk.
+            val decoded = java.util.Base64.getDecoder().decode(json["base64"]!!.jsonPrimitive.content)
+            assertEquals(ResponseSanitizer.MAX_INLINE_BINARY_BYTES, decoded.size)
+            assertTrue(text.length < 20_000, "a 300 KB zip must not cost 400 KB of base64, was ${text.length}")
+
+            val spilled = java.nio.file.Path.of(json["path"]!!.jsonPrimitive.content)
+            assertEquals(dir.normalize(), spilled.normalize().parent)
+            assertContentEquals(payload, java.nio.file.Files.readAllBytes(spilled))
+            val onDisk = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(java.nio.file.Files.readAllBytes(spilled)).joinToString("") { "%02x".format(it) }
+            assertEquals(json["sha256"]!!.jsonPrimitive.content, onDisk, "the descriptor describes the file")
+            assertEquals(listOf("nsc.log", "audit.log"), h.lastRequest.url.parameters.getAll("name"))
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `a small binary payload is inlined and never spills`() = runBlocking {
+        val dir = kotlin.io.path.createTempDirectory("binary-small")
+        try {
+            val payload = ByteArray(10) { 1 }
+            val h = mcpHarness(spool = SpoolStore(dir)) { Canned(bytes = payload, contentType = "application/zip") }
+            val text = h.text(h.call("get_logs", mapOf("name" to listOf("nsc.log"))))
+            val json = JsonCodec.compact.parseToJsonElement(text.substringAfter(UNTRUSTED_BEGIN).substringBefore(UNTRUSTED_END).trim()).jsonObject
+            assertEquals("false", json["base64Truncated"]!!.jsonPrimitive.content)
+            assertNull(json["path"], "a payload this small is not worth a file")
+            assertTrue(dir.toFile().listFiles().orEmpty().none { it.name.endsWith(SpoolStore.BINARY_SUFFIX) })
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
     }
 
     @Test

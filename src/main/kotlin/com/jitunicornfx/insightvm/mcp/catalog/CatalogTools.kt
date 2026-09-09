@@ -46,7 +46,10 @@ object CatalogTools {
         val filter = config.filter.copy(families = config.activeFamilies.intersect(config.filter.families))
         val selected = CatalogFilter.select(catalogs, filter)
         val budget = ResultBudget(maxChars = config.maxResultChars)
-        selected.forEach { (family, op) -> server.registerOperation(client, family, op, config, budget) }
+        // A binary payload spills to the same directory the export tool writes to, so an operator who
+        // disabled filesystem writes gets none from this path either.
+        val binarySpool = spool.takeUnless { config.exportDisabled }
+        selected.forEach { (family, op) -> server.registerOperation(client, family, op, config, budget, binarySpool) }
         // The export tool writes to the local filesystem, so it is gated twice: an operator can turn
         // it off outright, and --read-only removes it because that flag promises GET tools only.
         val exportEnabled = !config.filter.readOnly && !config.exportDisabled
@@ -63,6 +66,7 @@ object CatalogTools {
         op: CatalogOp,
         config: Config,
         budget: ResultBudget = ResultBudget.active,
+        spool: SpoolStore? = null,
     ) {
         apiTool(
             name = op.name,
@@ -91,7 +95,7 @@ object CatalogTools {
                 rawContentType = bound.rawContentType ?: ContentType.Text.Plain,
                 accept = acceptFor(op),
             )
-            ResponseSanitizer.toToolResult(response, op, family, budget, keepLinks)
+            ResponseSanitizer.toToolResult(response, op, family, budget, keepLinks, spool)
         }
     }
 
