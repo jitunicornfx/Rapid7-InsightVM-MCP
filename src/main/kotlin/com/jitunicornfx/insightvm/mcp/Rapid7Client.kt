@@ -179,8 +179,10 @@ class Rapid7Client(
 
     private suspend fun HttpResponse.toApiResponse(): ApiResponse {
         val limit = config.maxResponseBytes
-        val (bytes, truncated) = readCapped(bodyAsChannel(), limit)
+        val (read, truncated) = readCapped(bodyAsChannel(), limit)
         val ct = contentType()
+        // Only a capped body can end mid-character; an untruncated one is well-formed by construction.
+        val bytes = if (truncated && charsetOf(ct) == Charsets.UTF_8) trimIncompleteUtf8(read) else read
         val ctString = ct?.toString()
         val textual = ct == null || isTextual(ct)
         return ApiResponse(
@@ -210,6 +212,31 @@ class Rapid7Client(
                 sub == "x-www-form-urlencoded"
         }
 
+        /**
+         * Drop a trailing incomplete UTF-8 sequence, so decoding a body that the cap split
+         * mid-character cannot produce a U+FFFD replacement (and cannot corrupt the final record of
+         * an exported file). Scans back at most three bytes; a well-formed body is returned as-is.
+         */
+        internal fun trimIncompleteUtf8(bytes: ByteArray): ByteArray {
+            if (bytes.isEmpty()) return bytes
+            // Walk back over continuation bytes (10xxxxxx) to the sequence's lead byte.
+            var lead = bytes.size - 1
+            while (lead >= 0 && (bytes[lead].toInt() and 0xC0) == 0x80) {
+                if (bytes.size - lead > 4) return bytes // more continuations than any sequence allows
+                lead--
+            }
+            if (lead < 0) return bytes
+            val b = bytes[lead].toInt() and 0xFF
+            val expected = when {
+                b and 0x80 == 0x00 -> 1
+                b and 0xE0 == 0xC0 -> 2
+                b and 0xF0 == 0xE0 -> 3
+                b and 0xF8 == 0xF0 -> 4
+                else -> return bytes // not a valid lead byte; leave it alone
+            }
+            return if (lead + expected > bytes.size) bytes.copyOf(lead) else bytes
+        }
+
         /** Read at most [limit] bytes from [channel]; returns the bytes and whether more remained. */
         internal suspend fun readCapped(channel: ByteReadChannel, limit: Long): Pair<ByteArray, Boolean> {
             val out = ByteArrayOutputStream()
@@ -219,9 +246,12 @@ class Rapid7Client(
                 val read = channel.readAvailable(buffer, 0, buffer.size)
                 if (read < 0) break
                 if (read == 0) continue
-                val room = (limit - out.size()).toInt()
-                if (read > room) {
-                    out.write(buffer, 0, room)
+                // Long arithmetic: `limit` comes from configuration and can exceed Int.MAX_VALUE,
+                // where narrowing the remaining room would wrap negative and throw on write().
+                val remaining: Long = limit - out.size()
+                if (read > remaining) {
+                    // Safe narrowing: remaining < read <= buffer.size.
+                    out.write(buffer, 0, remaining.toInt())
                     truncated = true
                     channel.cancel(null)
                     break

@@ -143,6 +143,45 @@ class Rapid7ClientTest {
     }
 
     @Test
+    fun `readCapped does not overflow on a limit above Int MAX_VALUE`() = runBlocking {
+        // (limit - out.size()) narrowed to Int wraps negative above 2^31 and throws on write().
+        val (bytes, truncated) = Rapid7Client.readCapped(ByteReadChannel(ByteArray(50_000) { 7 }), 3_000_000_000L)
+        assertEquals(50_000, bytes.size)
+        assertFalse(truncated)
+    }
+
+    @Test
+    fun `trimIncompleteUtf8 drops only a split trailing sequence`() {
+        // One 2-byte, one 3-byte and one 4-byte sequence, cut at every position inside each.
+        for (sample in listOf("eé", "e€", "e😀")) {
+            val full = sample.toByteArray(Charsets.UTF_8)
+            assertContentEquals(full, Rapid7Client.trimIncompleteUtf8(full), "complete input is untouched")
+            for (cut in 2 until full.size) {
+                val trimmed = Rapid7Client.trimIncompleteUtf8(full.copyOf(cut)).toString(Charsets.UTF_8)
+                assertEquals("e", trimmed, "split at $cut of $sample")
+                assertFalse(trimmed.contains('�'))
+            }
+        }
+        assertContentEquals(ByteArray(0), Rapid7Client.trimIncompleteUtf8(ByteArray(0)))
+        assertContentEquals("abc".toByteArray(), Rapid7Client.trimIncompleteUtf8("abc".toByteArray()))
+        // A continuation run longer than any sequence is left alone rather than eaten.
+        val stray = ByteArray(6) { 0x80.toByte() }
+        assertContentEquals(stray, Rapid7Client.trimIncompleteUtf8(stray))
+    }
+
+    @Test
+    fun `a truncated body never ends in a replacement character`() = runBlocking {
+        // The cap lands mid-euro-sign: 3 bytes of it, capped at 2.
+        val body = "aa€".toByteArray(Charsets.UTF_8)
+        val e = MockEngine { respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json")) }
+        val client = Rapid7Client(testConfig(maxResponseBytes = 4), consoleEngine = e, cloudEngine = engine())
+        val r = client.request(ApiFamily.CONSOLE, HttpMethod.Get, "/x")
+        assertTrue(r.truncated)
+        assertEquals("aa", r.text)
+        client.close()
+    }
+
+    @Test
     fun `isTextual classification`() {
         assertTrue(Rapid7Client.isTextual(ContentType.parse("text/html")))
         assertTrue(Rapid7Client.isTextual(ContentType.parse("application/json")))
