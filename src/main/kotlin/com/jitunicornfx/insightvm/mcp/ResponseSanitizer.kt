@@ -23,7 +23,13 @@ import java.util.Base64
  */
 object ResponseSanitizer {
 
-    const val MAX_INLINE_BINARY_BYTES = 262_144
+    /**
+     * How much of a binary payload is inlined as base64. Base64 costs 4 characters per 3 bytes and
+     * the model can do nothing with an opaque blob, so this is sized to identify a payload (magic
+     * bytes, a header) rather than to carry one — 256 KiB of base64 was 349,528 characters, well
+     * past the whole response budget on its own.
+     */
+    const val MAX_INLINE_BINARY_BYTES = 4_096
 
     private val SCRIPT_STYLE = Regex("(?is)<(script|style)\\b[^>]*>.*?</\\1\\s*>")
     private val COMMENT = Regex("(?s)<!--.*?-->")
@@ -101,31 +107,62 @@ object ResponseSanitizer {
 
     private fun escapeJson(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")
 
-    /** Convert an API response into a tool result, marking non-2xx responses as errors. */
-    fun toToolResult(response: ApiResponse, op: CatalogOp, family: ApiFamily): CallToolResult {
+    /**
+     * Convert an API response into a tool result, marking non-2xx responses as errors.
+     *
+     * Sanitisation runs BEFORE the budget: `neutralizeMarkup` turns `<` into `&lt;`, a 4x expansion
+     * on the worst input (InsightVM embeds HTML proofs inside JSON strings), so budgeting first
+     * would let a "200,000-character" result reach the model as 800,000. Neutralisation is
+     * JSON-validity-preserving — `<`/`>` are never structural — so the structural rung still has a
+     * real tree to trim.
+     */
+    fun toToolResult(
+        response: ApiResponse,
+        op: CatalogOp,
+        family: ApiFamily,
+        budget: ResultBudget = ResultBudget.active,
+    ): CallToolResult {
         val ct = response.contentType?.lowercase().orEmpty()
         // The response's own content type wins; the catalog's documented type is only a fallback
         // for responses that omit it.
         val effectiveType = ct.ifEmpty { op.responses.success }
-        val rendered: String = when {
-            response.bytes != null && !looksTextual(ct) ->
-                describeBinary(response.bytes, response.contentType, response.truncated)
-            response.bytes != null -> scrubControlCharacters(response.bytes.toString(Charsets.UTF_8))
-            effectiveType.startsWith("text/html") -> htmlToText(response.text.orEmpty())
-            effectiveType.contains("json") -> neutralizeMarkup(scrubControlCharacters(prettyOrRaw(response.text.orEmpty())))
-            else -> neutralizeMarkup(scrubControlCharacters(response.text.orEmpty()))
+        val binary = response.bytes != null && !looksTextual(ct)
+        val sanitized: String
+        val isJson: Boolean
+        when {
+            binary -> {
+                sanitized = describeBinary(response.bytes!!, response.contentType, response.truncated)
+                isJson = true
+            }
+            response.bytes != null -> {
+                sanitized = neutralizeMarkup(scrubControlCharacters(response.bytes.toString(Charsets.UTF_8)))
+                isJson = false
+            }
+            // htmlToText already scrubs and escapes; a second pass would double-escape.
+            effectiveType.startsWith("text/html") -> {
+                sanitized = htmlToText(response.text.orEmpty())
+                isJson = false
+            }
+            else -> {
+                sanitized = neutralizeMarkup(scrubControlCharacters(response.text.orEmpty()))
+                isJson = effectiveType.contains("json")
+            }
         }
+        val rendered = renderWithinBudget(sanitized, budget, response.ok, isJson)
         val text = buildString {
             if (!response.ok) {
                 append("${family.displayName} returned HTTP ${response.status}.")
                 statusHint(response.status, family)?.let { append(" $it") }
                 append("\n")
             }
-            if (rendered.isBlank()) {
+            if (rendered.text.isBlank()) {
                 append(if (response.ok) "Success (HTTP ${response.status}, empty response body)." else "(empty response body)")
             } else {
-                append(wrapUntrusted(rendered))
+                append(wrapUntrusted(rendered.text))
             }
+            // Server-authored, outside the fence, and only ever present when something was actually
+            // compacted, dropped or cut — the happy path must end at UNTRUSTED_END.
+            rendered.notice?.let { append("\n\n").append(it) }
             if (response.truncated && response.bytes == null) {
                 append("\n[Response body truncated at ${response.limitBytes} bytes; narrow the query (page size, filters) to see everything.]")
             }

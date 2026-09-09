@@ -41,11 +41,13 @@ fun testConfig(
     cloud: CloudConfig? = TEST_CLOUD,
     filter: ToolFilter = ToolFilter(),
     maxResponseBytes: Long = Config.DEFAULT_MAX_RESPONSE_BYTES,
+    maxResultChars: Int = Config.DEFAULT_MAX_RESULT_CHARS,
 ): Config = Config(
     console = console,
     cloud = cloud,
     filter = filter,
     maxResponseBytes = maxResponseBytes,
+    maxResultChars = maxResultChars,
     updateCheckDisabled = true,
     autoUpdateDisabled = true,
 )

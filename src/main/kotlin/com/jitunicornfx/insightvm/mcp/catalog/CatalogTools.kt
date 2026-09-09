@@ -3,6 +3,7 @@ package com.jitunicornfx.insightvm.mcp.catalog
 import com.jitunicornfx.insightvm.mcp.Config
 import com.jitunicornfx.insightvm.mcp.Rapid7Client
 import com.jitunicornfx.insightvm.mcp.ResponseSanitizer
+import com.jitunicornfx.insightvm.mcp.ResultBudget
 import com.jitunicornfx.insightvm.mcp.SERVER_NAME
 import com.jitunicornfx.insightvm.mcp.SERVER_VERSION
 import com.jitunicornfx.insightvm.mcp.apiTool
@@ -38,12 +39,18 @@ object CatalogTools {
     ): List<CatalogFilter.Selection> {
         val filter = config.filter.copy(families = config.activeFamilies.intersect(config.filter.families))
         val selected = CatalogFilter.select(catalogs, filter)
-        selected.forEach { (family, op) -> server.registerOperation(client, family, op) }
+        val budget = ResultBudget(maxChars = config.maxResultChars)
+        selected.forEach { (family, op) -> server.registerOperation(client, family, op, budget) }
         server.registerMetaTools(config, catalogs, selected)
         return selected
     }
 
-    internal fun Server.registerOperation(client: Rapid7Client, family: ApiFamily, op: CatalogOp) {
+    internal fun Server.registerOperation(
+        client: Rapid7Client,
+        family: ApiFamily,
+        op: CatalogOp,
+        budget: ResultBudget = ResultBudget.active,
+    ) {
         apiTool(
             name = op.name,
             description = InputSchemaBuilder.describe(op, family),
@@ -67,7 +74,7 @@ object CatalogTools {
                 rawContentType = bound.rawContentType ?: ContentType.Text.Plain,
                 accept = acceptFor(op),
             )
-            ResponseSanitizer.toToolResult(response, op, family)
+            ResponseSanitizer.toToolResult(response, op, family, budget)
         }
     }
 

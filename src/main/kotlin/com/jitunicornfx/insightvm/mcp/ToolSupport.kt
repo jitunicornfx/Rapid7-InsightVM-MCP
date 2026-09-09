@@ -46,21 +46,6 @@ fun seg(value: String): String {
     return value.encodeURLPathPart()
 }
 
-/** Pretty-print [raw] if it is valid JSON, otherwise return it unchanged. */
-internal fun prettyOrRaw(raw: String): String {
-    if (raw.isBlank()) return raw
-    return try {
-        val element = JsonCodec.pretty.parseToJsonElement(raw)
-        JsonCodec.pretty.encodeToString(JsonElement.serializer(), element)
-    } catch (_: StackOverflowError) {
-        // Deeply-nested hostile JSON can overflow the recursive parser. That is an Error, not an
-        // Exception, so it would escape apiTool's catch and tear down the session — fall back to raw.
-        raw
-    } catch (_: Exception) {
-        raw
-    }
-}
-
 // Prompt-injection shield: API responses carry third-party / attacker-authored text (asset host
 // names, vulnerability proofs, site descriptions, report names, policy rationale HTML, ...). It is
 // surfaced to the model as tool output, so it is wrapped in a clearly-delimited, warned envelope and
