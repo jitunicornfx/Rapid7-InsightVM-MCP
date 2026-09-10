@@ -5,6 +5,7 @@ import com.jitunicornfx.insightvm.mcp.JsonCodec
 import com.jitunicornfx.insightvm.mcp.NOTICE_TAG
 import com.jitunicornfx.insightvm.mcp.RECORD_ARRAY_KEYS
 import com.jitunicornfx.insightvm.mcp.Rapid7Client
+import com.jitunicornfx.insightvm.mcp.ResponseSanitizer
 import com.jitunicornfx.insightvm.mcp.SpoolStore
 import com.jitunicornfx.insightvm.mcp.apiTool
 import com.jitunicornfx.insightvm.mcp.booleanOrNull
@@ -81,6 +82,9 @@ object ExportTools {
     internal const val EXPORT_DEFAULT_SAMPLE_RECORDS = 3
     internal const val EXPORT_MAX_SAMPLE_RECORDS = 10
     internal const val EXPORT_SAMPLE_RECORD_CHARS = 2_000
+
+    /** Upper bound on the API-supplied cursor echoed back in a resume hint. */
+    internal const val EXPORT_CURSOR_ECHO_CHARS = 512
 
     /**
      * The non-GET operations an export may drive. InsightVM's bulk search endpoints are all POST
@@ -340,8 +344,30 @@ object ExportTools {
 
     internal fun pageInfo(root: JsonElement): JsonObject? = (root as? JsonObject)?.get("page") as? JsonObject
 
+    /**
+     * Render one sample record for the summary.
+     *
+     * Samples are the one place export puts raw API content in front of the model, so they get the
+     * same neutralisation every ordinary tool result gets. Neutralising BEFORE the cap keeps
+     * [EXPORT_SAMPLE_RECORD_CHARS] an honest bound on what is appended.
+     */
     private fun sampleOf(record: JsonElement): String =
-        JsonCodec.compact.encodeToString(JsonElement.serializer(), record).take(EXPORT_SAMPLE_RECORD_CHARS)
+        ResponseSanitizer.neutralizeMarkup(
+            ResponseSanitizer.scrubControlCharacters(
+                JsonCodec.compact.encodeToString(JsonElement.serializer(), record),
+            ),
+        ).take(EXPORT_SAMPLE_RECORD_CHARS)
+
+    /**
+     * An opaque continuation token, reduced to characters that cannot forge structure.
+     *
+     * The cursor comes from the API and is echoed OUTSIDE the untrusted fence, where the model reads
+     * everything as server-authored. Allow-listing beats escaping for an opaque token: it removes
+     * newlines, fence markers and the `[insightvm-mcp]` notice tag in one step, and the cap stops an
+     * unbounded field from crowding out the rest of the summary.
+     */
+    internal fun safeCursor(cursor: String): String =
+        cursor.filter { it.isLetterOrDigit() || it in "-_=.:+/" }.take(EXPORT_CURSOR_ECHO_CHARS)
 
     private fun mib(bytes: Long): String = "%.1f MiB".format(bytes / 1024.0 / 1024.0)
 
@@ -442,7 +468,7 @@ object ExportTools {
             append("\nThe run did not finish. Resume it by calling this tool again with the same 'tool' and ")
             append("'arguments' plus:\n")
             if (mode == ExportMode.PAGED_V3) append("  resume_from_page = $nextPage\n")
-            nextCursor?.let { append("  resume_from_cursor = \"$it\"\n") }
+            nextCursor?.let { append("  resume_from_cursor = \"${safeCursor(it)}\"\n") }
             append("Or raise the cap that stopped it.\n")
         }
         if (samples.isNotEmpty()) {
