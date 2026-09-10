@@ -128,10 +128,16 @@ prompts for it.
    `insightvm-export-` prefix also means the name can never be a Windows reserved device name.
 4. A `normalize().startsWith(directory)` post-condition proves containment anyway.
 
-The directory is created lazily, hardened to `rwx------` (files `rw-------`) *before* the first file is written, and
-carries a `README.txt` warning — the only artefact that reaches someone who finds it later without having seen the
-tool's summary. Files are swept after `INSIGHTVM_SPOOL_RETENTION_HOURS`, and only files carrying this server's own
-prefix and suffixes are ever swept.
+The directory is created lazily and carries a `README.txt` warning — the only artefact that reaches someone who finds it
+later without having seen the tool's summary. Files are swept after `INSIGHTVM_SPOOL_RETENTION_HOURS`, and only files
+carrying this server's own prefix and suffixes are ever swept.
+
+**Permissions are POSIX-only.** On POSIX filesystems the directory is hardened to `rwx------` (files `rw-------`)
+*before* the first file is written. On Windows — a primary target for this server — `PosixFileAttributeView` is
+unsupported, so the hardening step is deliberately a no-op and the spool inherits the ACL of its parent. Under the
+default location (`%USERPROFILE%\.rapid7-insightvm-mcp\spool`) that is normally the running account alone, but it is
+inherited rather than enforced: an operator who relocates the spool with `INSIGHTVM_SPOOL_DIR` owns that ACL. Treat the
+spool as sensitive storage on Windows and place it accordingly.
 
 An export cannot be used to reach a tool the operator hid: the target is resolved against the **registered
 selection**, not the raw catalog, so `--tags`, `--tools`, `--api` and `--read-only` all still apply. State-changing
