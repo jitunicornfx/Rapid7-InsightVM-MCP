@@ -397,23 +397,60 @@ class UpdateInstallerTest {
         assertEquals(originalDigest, sha256(target), "the JAR is untouched while the lock is held")
     }
 
+    /**
+     * The sidecar is never deleted, by anyone. It carries an OS lock that the kernel releases when
+     * the holder exits, so a leftover file blocks nothing — while unlinking a held one lets the next
+     * arrival lock a fresh file at the same path and install concurrently.
+     */
     @Test
-    fun `the lock sidecar is removed by its holder on release and kept while contended`() {
+    fun `the lock sidecar is never deleted and does not block a later acquisition`() {
         val target = serverJar(File(tempDir, "installed.jar"))
         val lockFile = File(tempDir, target.name + UpdateInstaller.LOCK_SUFFIX)
-        assertEquals(42, UpdateInstaller.withInstallLock(target) { assertTrue(lockFile.isFile); 42 })
-        assertFalse(lockFile.exists(), "holder deletes the sidecar on release")
 
-        // A contender that fails to acquire must leave the holder's sidecar alone.
+        assertEquals(42, UpdateInstaller.withInstallLock(target) { assertTrue(lockFile.isFile); 42 })
+        assertTrue(lockFile.isFile, "the sidecar outlives its holder")
+        assertEquals(0, lockFile.length(), "it is a pure lock carrier, never written to")
+
+        // A leftover sidecar must not stop the next install from acquiring.
+        assertEquals(7, UpdateInstaller.withInstallLock(target) { 7 })
+        assertTrue(lockFile.isFile)
+
+        // Mutual exclusion still holds while contended.
         UpdateInstaller.withInstallLock(target) {
             assertNull(UpdateInstaller.withInstallLock(target) { "inner" })
-            assertTrue(lockFile.isFile, "contender must not delete a lock it does not hold")
+            assertTrue(lockFile.isFile, "a contender must not delete a lock it does not hold")
         }
-        assertFalse(lockFile.exists())
+        assertTrue(lockFile.isFile)
+    }
+
+    /**
+     * Regression: the sweep used to delete the sidecar exempt from the age check and without any
+     * holder test, contradicting its own documentation. Windows refuses the delete while a handle is
+     * open, so the damage was POSIX-only and invisible here — the fix is to not sweep it at all,
+     * which is platform-independent and testable anywhere.
+     */
+    @Test
+    fun `cleanupStaleArtifacts never removes the lock sidecar, held or not`() {
+        val target = serverJar(File(tempDir, "installed.jar"))
+        val lockFile = File(tempDir, target.name + UpdateInstaller.LOCK_SUFFIX)
+        val now = System.currentTimeMillis()
+
+        // An ancient, entirely unheld sidecar: still not the sweep's business.
+        lockFile.writeText("")
+        assertTrue(lockFile.setLastModified(now - 30L * 24 * 60 * 60 * 1000))
+        assertEquals(emptyList(), UpdateInstaller.cleanupStaleArtifacts(target, now = now))
+        assertTrue(lockFile.isFile, "an unheld sidecar is harmless and must survive")
+
+        // And one that is actively held must survive a concurrent sweep, with the lock still valid.
+        UpdateInstaller.withInstallLock(target) {
+            assertEquals(emptyList(), UpdateInstaller.cleanupStaleArtifacts(target, now = now))
+            assertTrue(lockFile.isFile, "sweeping a held lock would break mutual exclusion")
+            assertNull(UpdateInstaller.withInstallLock(target) { "inner" }, "the lock still excludes")
+        }
     }
 
     @Test
-    fun `cleanupStaleArtifacts removes old staging, backup and lock files but nothing else`() {
+    fun `cleanupStaleArtifacts removes old staging and backup files but nothing else`() {
         val target = serverJar(File(tempDir, "installed.jar"))
         val hour = UpdateInstaller.STALE_ARTIFACT_AGE_MILLIS
         val now = System.currentTimeMillis()
@@ -432,8 +469,9 @@ class UpdateInstallerTest {
 
         val removed = UpdateInstaller.cleanupStaleArtifacts(target, now = now)
 
-        assertEquals(setOf(oldStaged.name, oldStaged2.name, oldBackup.name, lock.name), removed.toSet())
-        assertFalse(oldStaged.exists()); assertFalse(oldStaged2.exists()); assertFalse(oldBackup.exists()); assertFalse(lock.exists())
+        assertEquals(setOf(oldStaged.name, oldStaged2.name, oldBackup.name), removed.toSet())
+        assertFalse(oldStaged.exists()); assertFalse(oldStaged2.exists()); assertFalse(oldBackup.exists())
+        assertTrue(lock.isFile, "the lock sidecar is never swept")
         assertTrue(freshStaged.exists(), "a recent staging file may belong to a running sibling")
         assertTrue(otherServer.exists()); assertTrue(otherLock.exists()); assertTrue(unrelated.exists())
         assertTrue(target.isFile)
@@ -456,7 +494,10 @@ class UpdateInstallerTest {
         val outcome = UpdateInstaller.install(result, engineServing(source.readBytes()), target)
         assertTrue(outcome is UpdateInstaller.Outcome.Installed || outcome is UpdateInstaller.Outcome.Staged, outcome.toString())
         assertFalse(stale.exists(), "stale staging file swept")
-        assertFalse(File(tempDir, target.name + UpdateInstaller.LOCK_SUFFIX).exists(), "lock sidecar removed after install")
+        assertTrue(
+            File(tempDir, target.name + UpdateInstaller.LOCK_SUFFIX).isFile,
+            "the lock sidecar survives the install; deleting it is what would break mutual exclusion",
+        )
     }
 
     @Test

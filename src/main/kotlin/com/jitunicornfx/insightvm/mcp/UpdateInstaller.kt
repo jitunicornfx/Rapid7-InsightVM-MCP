@@ -71,10 +71,19 @@ object UpdateInstaller {
      * Age after which a leftover staging (`.new`) or backup (`.bak`) file beside the JAR is considered
      * abandoned. A staged update is normally applied when the process that downloaded it exits; if
      * that process was killed, the file stays behind forever — and every later download creates a
-     * fresh one. One hour comfortably exceeds any download-to-exit window while still letting a
-     * concurrently running sibling finish its own swap.
+     * fresh one, at ~20 MB each, which is what makes sweeping worth doing at all.
+     *
+     * The window cannot be derived from the download, only from the SESSION: a staged file stays
+     * pending until its process exits, and an MCP server can run for days. Because stdio deployment
+     * starts one JVM per client from the same JAR, a sibling starting later will sweep a pending
+     * stage whose owner is still alive, and that owner's shutdown hook then finds nothing to install.
+     * That costs a repeated download rather than correctness — the next check re-stages it — so this
+     * is a deliberate trade rather than a bound that can be made exact. A day is long enough that a
+     * normally-restarted server keeps its pending stage, and short enough that a killed one does not
+     * leave 20 MB sitting there indefinitely. [installStagedAtShutdown] says so out loud when it hits
+     * the losing case, so a user seeing repeated downloads can raise this rather than guess.
      */
-    const val STALE_ARTIFACT_AGE_MILLIS = 60L * 60 * 1000
+    const val STALE_ARTIFACT_AGE_MILLIS = 24L * 60 * 60 * 1000
 
     /** What happened, for logging and for the notification sent to the MCP client. */
     sealed interface Outcome {
@@ -120,30 +129,34 @@ object UpdateInstaller {
      */
     internal fun <T> withInstallLock(target: File, block: () -> T): T? {
         val lockFile = File(target.parentFile, target.name + LOCK_SUFFIX)
-        var acquired = false
-        try {
-            return runCatching {
-                RandomAccessFile(lockFile, "rw").use { raf ->
-                    raf.channel.use { channel ->
-                        val lock = runCatching { channel.tryLock() }.getOrNull() ?: return null
-                        acquired = true
-                        lock.use { block() }
-                    }
+        return runCatching {
+            RandomAccessFile(lockFile, "rw").use { raf ->
+                raf.channel.use { channel ->
+                    val lock = runCatching { channel.tryLock() }.getOrNull() ?: return null
+                    lock.use { block() }
                 }
-            }.getOrNull()
-        } finally {
-            // The sidecar only matters while held: the process that held it removes it on release so
-            // it does not linger beside the JAR. Only the holder may delete — unlinking a file another
-            // process has locked would let a third process lock a fresh file and run concurrently.
-            if (acquired) runCatching { lockFile.delete() }
-        }
+            }
+        }.getOrNull()
+        // The sidecar is deliberately NEVER deleted — not here, not by cleanupStaleArtifacts.
+        //
+        // It is a 0-byte file whose only job is to carry an OS lock, and the OS releases that lock
+        // when the holder exits, abnormal termination included. A leftover sidecar therefore blocks
+        // nothing: the next process reopens it and acquires it immediately. Deleting it buys no
+        // disk and no correctness, and costs both — on POSIX, unlink() ignores open handles and
+        // advisory locks, so removing it while anyone holds it lets the next arrival create a fresh
+        // file at the same path and lock that instead, and two installs then run concurrently.
+        // Windows refuses the delete while a handle is open, which is the only reason the previous
+        // "holder deletes on release" behaviour was not actively breaking mutual exclusion there.
     }
 
     /**
-     * Delete abandoned update artifacts beside [target]: staging files (`<jar>.*.new`), backups
-     * (`<jar>.bak`) and the lock sidecar, when older than [maxAgeMillis] (the lock is removed
-     * regardless of age if nothing holds it). Only files whose name starts with the JAR's own name
+     * Delete abandoned update artifacts beside [target] — staging files (`<jar>.*.new`) and backups
+     * (`<jar>.bak`) older than [maxAgeMillis]. Only files whose name starts with the JAR's own name
      * are considered, so neighbouring servers' files are never touched. Returns what was removed.
+     *
+     * The `.update.lock` sidecar is deliberately NOT swept: it is 0 bytes, it blocks nothing once
+     * its holder exits, and unlinking one that is still held breaks the mutual exclusion it exists
+     * to provide. See [withInstallLock].
      */
     fun cleanupStaleArtifacts(
         target: File,
@@ -158,10 +171,9 @@ object UpdateInstaller {
             if (!file.isFile || file == target || !file.name.startsWith(prefix)) continue
             val isStaged = file.name.endsWith(STAGED_SUFFIX)
             val isBackup = file.name == target.name + BACKUP_SUFFIX
-            val isLock = file.name == target.name + LOCK_SUFFIX
-            if (!isStaged && !isBackup && !isLock) continue
-            val stale = isLock || now - file.lastModified() >= maxAgeMillis
-            if (stale && runCatching { file.delete() }.getOrDefault(false)) removed += file.name
+            if (!isStaged && !isBackup) continue
+            if (now - file.lastModified() < maxAgeMillis) continue
+            if (runCatching { file.delete() }.getOrDefault(false)) removed += file.name
         }
         return removed
     }
@@ -391,7 +403,17 @@ object UpdateInstaller {
      * simply remains for the next start.
      */
     fun installStagedAtShutdown(staged: File, target: File, expectedSha256: String): Boolean {
-        if (!staged.isFile) return false
+        if (!staged.isFile) {
+            // Almost always means a sibling process swept it as stale while this one kept running.
+            // Silence here looks like "the update just never happened"; name it so the cause is
+            // visible and STALE_ARTIFACT_AGE_MILLIS is the obvious dial.
+            System.err.println(
+                "[insightvm-mcp] Staged update ${staged.name} is gone; nothing was installed. " +
+                    "It was most likely swept as stale by another server process started from this JAR. " +
+                    "The update will be downloaded again on the next check.",
+            )
+            return false
+        }
         // The staged file has been sitting on disk for the whole session, so re-verify it against
         // the digest that authorised it. looksLikeServerJar is an anti-brick sanity check, never the
         // integrity gate — any ZIP carrying the right entry name would satisfy it.

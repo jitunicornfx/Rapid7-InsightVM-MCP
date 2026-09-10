@@ -254,8 +254,9 @@ internal fun runServer(transport: Transport, host: String, port: Int, config: Co
     if (config.spoolRetentionHours > 0) {
         SpoolStore.active.sweepStale(config.spoolRetentionHours * 3_600_000L)
     }
-    // Leftovers from an interrupted self-update (".new" staging files, ".bak", the lock sidecar)
-    // would otherwise accumulate beside the JAR; sweep them before anything else.
+    // Leftovers from an interrupted self-update (".new" staging files and ".bak") would otherwise
+    // accumulate beside the JAR at ~20 MB each; sweep them before anything else. The ".update.lock"
+    // sidecar is deliberately left alone — see UpdateInstaller.withInstallLock.
     UpdateInstaller.runningJar()?.let { jar ->
         val removed = UpdateInstaller.cleanupStaleArtifacts(jar)
         if (removed.isNotEmpty()) System.err.println("[insightvm-mcp] Removed stale update files: ${removed.joinToString(", ")}")
