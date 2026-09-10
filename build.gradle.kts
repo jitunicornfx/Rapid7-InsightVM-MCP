@@ -118,8 +118,50 @@ val verifyCatalog = tasks.register<JavaExec>("verifyCatalog") {
     workingDir = projectDir
 }
 
+// The server version is declared in two places: `version` above, which names the release and the
+// JAR, and SERVER_VERSION in McpServerFactory.kt, which is what the MCP Implementation block, the
+// startup banner, the outbound User-Agent and — critically — the update comparison report. If those
+// drift, a release ships a JAR that reports a different version than it is; and because
+// UpdateChecker compares GitHub's latest release against SERVER_VERSION, the server would see its
+// own release as newer and reinstall it on every start. This check makes that state unreleasable.
+val verifyServerVersion = tasks.register("verifyServerVersion") {
+    group = "verification"
+    description = "Fails if SERVER_VERSION in McpServerFactory.kt disagrees with the project version."
+
+    val projectVersion = project.version.toString()
+    val factory = layout.projectDirectory.file(
+        "src/main/kotlin/com/jitunicornfx/insightvm/mcp/McpServerFactory.kt",
+    )
+    val marker = layout.buildDirectory.file("verification/server-version-ok.txt")
+
+    inputs.property("version", projectVersion)
+    inputs.file(factory)
+    // A marker output keeps the task up to date when neither the version nor the file has changed.
+    outputs.file(marker)
+
+    doLast {
+        // The trailing quote is not part of the pattern: [^"]+ already stops at it, which keeps this
+        // a raw string and avoids escaping backslashes.
+        val declared = Regex("""const\s+val\s+SERVER_VERSION\s*=\s*"([^"]+)""")
+            .find(factory.asFile.readText())?.groupValues?.get(1)
+            ?: throw GradleException(
+                "Could not find a `const val SERVER_VERSION = ...` declaration in " +
+                    "${factory.asFile.name}. If it changed shape, update verifyServerVersion to match.",
+            )
+        if (declared != projectVersion) {
+            throw GradleException(
+                "Server version mismatch: build.gradle.kts declares $projectVersion but " +
+                    "${factory.asFile.name} declares SERVER_VERSION = $declared. Set both to the same " +
+                    "value before releasing — a JAR that misreports its version makes the update check " +
+                    "treat its own release as newer and reinstall it on every start.",
+            )
+        }
+        marker.get().asFile.apply { parentFile.mkdirs() }.writeText(projectVersion + System.lineSeparator())
+    }
+}
+
 tasks.check {
-    dependsOn(tasks.jacocoTestCoverageVerification, verifyCatalog)
+    dependsOn(tasks.jacocoTestCoverageVerification, verifyCatalog, verifyServerVersion)
 }
 
 // The plain jar holds only this project's classes — it has no dependencies and is not runnable.
@@ -129,6 +171,9 @@ tasks.jar {
 }
 
 tasks.shadowJar {
+    // `./gradlew shadowJar` (the documented build command) does not run `check`, so the
+    // release artifact itself has to depend on the version check.
+    dependsOn(verifyServerVersion)
     archiveBaseName.set("rapid7-insightvm-mcp")
     archiveClassifier.set("all")
     archiveVersion.set(project.version.toString())

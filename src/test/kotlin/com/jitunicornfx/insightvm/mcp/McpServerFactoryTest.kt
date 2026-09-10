@@ -71,8 +71,9 @@ class McpServerFactoryTest {
     @Test
     fun `constants`() {
         assertEquals("rapid7-insightvm-mcp", SERVER_NAME)
-        // Deliberately NOT a hardcoded literal: that would only assert one constant against another
-        // and would keep passing while the Gradle version drifted away from both. The real guard is
+        // SERVER_VERSION is deliberately not asserted here: comparing it to a literal would only
+        // check one constant against another and would keep passing while build.gradle.kts drifted
+        // away from both. The Gradle `verifyServerVersion` task enforces that agreement instead.
         assertEquals("$SERVER_NAME.update", UPDATE_LOGGER_NAME)
     }
 }
