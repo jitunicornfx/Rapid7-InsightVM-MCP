@@ -8,13 +8,13 @@ Coverage is measured with JaCoCo and **enforced**: `./gradlew check` fails below
 ./gradlew jacocoTestCoverageVerification   # the gate on its own
 ```
 
-## Baseline at v0.2.0
+## Baseline at v0.2.1
 
 | Counter | Coverage |
 |---|---|
 | Line | 93.3 % |
 | Method | 92.1 % |
-| Branch | 81.9 % |
+| Branch | 81.7 % |
 
 | File | Line | Notes |
 |---|---|---|
