@@ -112,4 +112,31 @@ class PagingDefaultsTest {
         // Nothing this policy touches is destructive or admin, so it can never widen a dangerous call.
         assertTrue((console + cloud).filter { PagingDefaults.isPaged(it) }.none { it.admin })
     }
+
+    /**
+     * Regression: the clamp must cover every numeric form the binder will forward.
+     *
+     * `ArgumentBinder.coerceScalar` accepts a whole-valued double and a Long for an `integer`
+     * parameter, so `size=1e6` and `size=99999999999` used to fail `toIntOrNull` here, fall through
+     * untouched, and reach the API unbounded — `size` is declared `integer` with no `maximum` in all
+     * 48 paged operations, which makes MAX_PAGE_SIZE the only bound there is.
+     */
+    @Test
+    fun `oversized page sizes are clamped in every numeric form the binder accepts`() {
+        val op = TEST_CATALOGS.getValue(ApiFamily.CONSOLE).ops.first { PagingDefaults.hasSize(it) }
+        fun sizeAfter(raw: String): String? =
+            PagingDefaults.apply(op, buildJsonObject { put("size", JsonPrimitive(raw)) })["size"]?.jsonPrimitive?.content
+
+        assertEquals("500", sizeAfter("1000000"), "plain integer")
+        assertEquals("500", sizeAfter("1e6"), "scientific notation")
+        assertEquals("500", sizeAfter("1000000.0"), "whole-valued double")
+        assertEquals("500", sizeAfter("99999999999"), "beyond Int range")
+        assertEquals("1", sizeAfter("-5"), "negative saturates to the floor")
+        assertEquals("1", sizeAfter("0"), "zero saturates to the floor")
+        assertEquals("250", sizeAfter("250"), "an in-range value is left alone")
+        // Genuinely non-numeric input is still passed through untouched so the binder — not this
+        // file — raises the actionable error.
+        assertEquals("abc", sizeAfter("abc"), "non-numeric is left for the binder to reject")
+        assertEquals("NaN", sizeAfter("NaN"), "NaN is left for the binder to reject")
+    }
 }
