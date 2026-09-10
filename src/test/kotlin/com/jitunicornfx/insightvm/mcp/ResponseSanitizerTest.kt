@@ -99,4 +99,33 @@ class ResponseSanitizerTest {
         assertContains(text(failed), "Cloud Integrations API v4 returned HTTP 503.")
         assertContains(text(failed), "(empty response body)")
     }
+
+    /**
+     * Regression: markup that arrives JSON-escaped must not come back literal.
+     *
+     * `neutralizeMarkup` runs on the raw wire text, where `<` contains no `<` for it to rewrite;
+     * the budget then parses that text and re-encodes the tree, and the encoder emits the decoded
+     * `<` verbatim. Escaping therefore round-tripped straight through the XSS defence. The test
+     * above only ever used a literal `<script>`, which is why this survived.
+     */
+    @Test
+    fun `JSON-escaped markup cannot survive the budget re-encode`() {
+        // Six literal characters each — backslash, u, 0, 0, 3, c — not a Kotlin unicode escape.
+        val lt = "\\u003c"
+        val gt = "\\u003e"
+        val wire = "{\"proof\":\"${lt}script${gt}alert(1)${lt}/script${gt}\",\"host\":\"${lt}img src=x onerror=alert(1)${gt}\"}"
+        val out = text(ResponseSanitizer.toToolResult(ApiResponse(200, true, "application/json", text = wire), op, ApiFamily.CONSOLE))
+        assertFalse(out.contains('<'), "escaped markup was re-encoded as a literal '<'")
+        assertFalse(out.contains('>'), "escaped markup was re-encoded as a literal '>'")
+        assertContains(out, "&lt;script&gt;alert(1)&lt;/script&gt;")
+        assertContains(out, "&lt;img src=x onerror=alert(1)&gt;")
+    }
+
+    /** The encoder also re-emits DEL, which `scrubControlCharacters` had already removed. */
+    @Test
+    fun `JSON-escaped control characters cannot survive the budget re-encode`() {
+        val wire = "{\"note\":\"a\\u007fb\"}"
+        val out = text(ResponseSanitizer.toToolResult(ApiResponse(200, true, "application/json", text = wire), op, ApiFamily.CONSOLE))
+        assertFalse(out.contains(''), "escaped DEL was re-encoded literally")
+    }
 }

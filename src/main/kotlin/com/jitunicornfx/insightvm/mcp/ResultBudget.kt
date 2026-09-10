@@ -169,8 +169,23 @@ internal fun parseOrNull(raw: String): JsonElement? = try {
     null
 }
 
+/**
+ * Encode [element], neutralising the ENCODER'S OUTPUT rather than trusting the upstream pass.
+ *
+ * `ResponseSanitizer.neutralizeMarkup` only ever sees the raw wire body, where markup that arrived
+ * JSON-escaped (`<script>`) carries no `<` for it to rewrite. Parsing decodes that escape
+ * and the encoder re-emits it literally, so escaping round-tripped straight through the XSS defence
+ * on the default rung of all 343 tools. Re-running it here closes that, and this is the right layer:
+ * every JSON rung renders through this function, and every length in this file is measured through
+ * it too, so the budget arithmetic stays self-consistent under the expansion.
+ *
+ * Both passes are idempotent here — the upstream pass already rewrote any literal `<`, and `&lt;`
+ * contains nothing further to rewrite — so double-escaping is not possible.
+ */
 internal fun encodeOrNull(json: Json, element: JsonElement): String? = try {
-    json.encodeToString(JsonElement.serializer(), element)
+    ResponseSanitizer.neutralizeMarkup(
+        ResponseSanitizer.scrubControlCharacters(json.encodeToString(JsonElement.serializer(), element)),
+    )
 } catch (_: StackOverflowError) {
     null
 } catch (_: Exception) {
@@ -293,8 +308,9 @@ private fun lineAwareCut(text: String, limit: Int, budget: ResultBudget, wasJson
 }
 
 // ---------------------------------------------------------------------------
-// Notices. Server-authored: no API content is interpolated into any of them, and none contains the
-// envelope markers, so they are safe to emit outside the fence.
+// Notices. Server-authored: every value interpolated into one is either an integer this server
+// computed or a name reduced by `safeNoticeKey`, and none contains the envelope markers, so they are
+// safe to emit outside the fence.
 // ---------------------------------------------------------------------------
 
 internal const val NOTICE_TAG = "[insightvm-mcp]"
@@ -315,8 +331,20 @@ private fun compactedNotice(limit: Int): String =
     "$NOTICE_TAG Large result rendered as COMPACT JSON (not pretty-printed) to fit the " +
         "$limit-character response budget. No data was dropped."
 
+/**
+ * Reduce an API-supplied JSON key to something that cannot forge structure in a notice.
+ *
+ * The trimmed array's key is the one piece of response-derived text any notice carries, and notices
+ * are emitted OUTSIDE the untrusted fence, where the model reads them as server-authored. InsightVM
+ * itself only ever uses fixed keys (`resources`, `data`), so this changes nothing in practice — it
+ * is what makes the "no API content is interpolated" rule above true by construction rather than by
+ * assumption about a remote server's behaviour.
+ */
+private fun safeNoticeKey(key: String): String =
+    key.filter { it.isLetterOrDigit() || it == '_' || it == '-' }.take(64).ifEmpty { "top-level" }
+
 private fun droppedNotice(key: String?, kept: Int, total: Int, limit: Int): String {
-    val what = key ?: "top-level"
+    val what = key?.let(::safeNoticeKey) ?: "top-level"
     return "$NOTICE_TAG This result was TRUNCATED to fit the $limit-character response budget " +
         "(${Config.ENV_MAX_RESULT_CHARS}). The data block above is still valid, parseable JSON.\n" +
         "Returned $kept of $total $what entries; ${total - kept} were dropped from the end.\n" +
