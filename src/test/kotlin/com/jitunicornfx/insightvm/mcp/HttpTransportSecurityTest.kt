@@ -89,6 +89,40 @@ class HttpTransportSecurityTest {
         assertEquals(HttpStatusCode.Unauthorized, c.options("/mcp") { header(HttpHeaders.Host, "localhost") }.status)
     }
 
+    /**
+     * Pins what a preflight may advertise, as a property rather than an exact string.
+     *
+     * Ktor 3.6.0 (KTOR-2912) began adding the CORS-safelisted methods GET/POST/HEAD to
+     * Access-Control-Allow-Methods by default. That is benign here — browsers never preflight those —
+     * but it showed that a dependency bump can change this header with no test noticing. This fails
+     * if any future version advertises a method the transport does not serve, and it checks the half
+     * that matters most: an origin that is NOT allow-listed gets no CORS grant at all.
+     */
+    @Test
+    fun `cors advertises only the methods the transport serves, and nothing to unlisted origins`() =
+        app(loopbackToken.copy(allowedOrigins = listOf("http://localhost:5173"))) { c ->
+            val allowed = c.options("/mcp") {
+                header(HttpHeaders.Host, "localhost:3072")
+                header(HttpHeaders.Origin, "http://localhost:5173")
+                header(HttpHeaders.AccessControlRequestMethod, "DELETE")
+            }
+            val methods = allowed.headers[HttpHeaders.AccessControlAllowMethods].orEmpty()
+                .split(',').map { it.trim().uppercase() }.filter { it.isNotEmpty() }.toSet()
+            assertTrue("DELETE" in methods, "session teardown must stay reachable: $methods")
+            val served = setOf("GET", "POST", "DELETE", "OPTIONS", "HEAD")
+            assertTrue(methods.all { it in served }, "preflight advertised methods the transport does not serve: ${methods - served}")
+            for (verb in listOf("PUT", "PATCH", "TRACE", "CONNECT")) assertFalse(verb in methods, "$verb must never be advertised")
+            assertNull(allowed.headers[HttpHeaders.AccessControlAllowCredentials], "credentialed CORS is never granted")
+
+            val unlisted = c.options("/mcp") {
+                header(HttpHeaders.Host, "localhost:3072")
+                header(HttpHeaders.Origin, "https://evil.example")
+                header(HttpHeaders.AccessControlRequestMethod, "POST")
+            }
+            assertNull(unlisted.headers[HttpHeaders.AccessControlAllowOrigin], "an unlisted origin must get no CORS grant")
+            assertNull(unlisted.headers[HttpHeaders.AccessControlAllowMethods])
+        }
+
     @Test
     fun `bearer token is required and compared exactly`() = app(loopbackToken) { c ->
         val missing = c.get("/mcp") { header(HttpHeaders.Host, "localhost") }
