@@ -755,6 +755,47 @@ class ExportToolsTest {
         assertFalse(Files.exists(shared.resolve(SpoolStore.README_NAME)), "nothing is written into it")
     }
 
+    /**
+     * The Windows twin of the test above. An existing directory keeps its own ACL there, which is the
+     * operator's business, but one this account cannot create files in used to be accepted: prepare()
+     * returned at once off POSIX and the README write swallowed the denial, so the export fetched page 1
+     * and only then failed with a bare AccessDeniedException. An elevated first run leaves exactly such
+     * a directory behind for every later run without elevation.
+     */
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    fun `on Windows an export refuses a spool directory this account cannot write to`() = runBlocking {
+        val locked = Files.createDirectory(dir.resolve("locked"))
+        val view = Files.getFileAttributeView(locked, java.nio.file.attribute.AclFileAttributeView::class.java)
+        val original = view.acl
+        // Read-only for the owner. As owner this account keeps the right to change the ACL back.
+        view.acl = listOf(
+            java.nio.file.attribute.AclEntry.newBuilder()
+                .setType(java.nio.file.attribute.AclEntryType.ALLOW)
+                .setPrincipal(Files.getOwner(locked))
+                .setPermissions(
+                    java.nio.file.attribute.AclEntryPermission.READ_DATA,
+                    java.nio.file.attribute.AclEntryPermission.READ_ATTRIBUTES,
+                    java.nio.file.attribute.AclEntryPermission.READ_NAMED_ATTRS,
+                    java.nio.file.attribute.AclEntryPermission.READ_ACL,
+                    java.nio.file.attribute.AclEntryPermission.SYNCHRONIZE,
+                )
+                .build(),
+        )
+        try {
+            val h = mcpHarness(testConfig(), spool = SpoolStore(locked)) { Canned(body = v3Page(0, 1, totalPages = 1)) }
+            val result = h.call(ExportTools.EXPORT_TOOL, mapOf("tool" to "get_assets"))
+            val text = h.text(result)
+            assertEquals(true, result.isError, text)
+            assertContains(text, "Refusing to export")
+            assertContains(text, "cannot create files")
+            assertContains(text, Config.ENV_SPOOL_DIR)
+            assertTrue(h.requests.isEmpty(), "the spool is checked before a single API call is spent")
+        } finally {
+            view.acl = original
+        }
+    }
+
     /** Regression: the manifest was created with the process umask (usually rw-r--r--) and never hardened. */
     @Test
     @EnabledOnOs(OS.LINUX, OS.MAC)

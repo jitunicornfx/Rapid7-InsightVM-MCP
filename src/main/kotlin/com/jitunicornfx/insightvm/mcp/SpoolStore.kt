@@ -15,6 +15,7 @@ import java.nio.file.attribute.AclEntryPermission
 import java.nio.file.attribute.AclEntryType
 import java.nio.file.attribute.AclFileAttributeView
 import java.nio.file.attribute.FileAttribute
+import java.nio.file.attribute.GroupPrincipal
 import java.nio.file.attribute.PosixFileAttributeView
 import java.nio.file.attribute.PosixFileAttributes
 import java.nio.file.attribute.PosixFilePermission
@@ -109,8 +110,12 @@ open class SpoolStore(val directory: Path) {
      * opened during it keeps its access.
      *
      * The account is a probe file's owner, never a name lookup: lookups do not take SIDs, and
-     * well-known account names are localised. Run elevated, a new file's owner is the Administrators
-     * group, so the directory is then private to that group.
+     * well-known account names are localised.
+     *
+     * Run elevated, a new file's owner is the Administrators GROUP, not the user. A spool private to
+     * that group locks the same user out on every later run without elevation, whose token carries
+     * Administrators only as a deny-only group — so a group owner falls back to the parent's ACL, which
+     * is what every spool had before it could be born private, and says so on stderr.
      *
      * Best-effort: when this fails the directory is created the ordinary way and inherits its parent's
      * ACL, as it always did, with a warning on stderr.
@@ -119,6 +124,14 @@ open class SpoolStore(val directory: Path) {
         val failure = try {
             val parent = requireNotNull(directory.toAbsolutePath().parent) { "no parent directory" }
             val owner = probeOwner(parent)
+            if (owner is GroupPrincipal) {
+                Files.createDirectory(directory)
+                warn(
+                    "Created $directory while running elevated, so it inherits the ACL of its parent directory " +
+                        "rather than being private to ${owner.name}: that would lock out every later run without elevation.",
+                )
+                return
+            }
             Files.createDirectory(directory, ownerOnlyAcl(owner))
             self = owner
             // The replacement is measured behaviour, not a documented contract, so it is read back.
@@ -145,10 +158,18 @@ open class SpoolStore(val directory: Path) {
      * On POSIX it must be owned by the account running this server, and no other account may write to
      * it: one that can could replace or link a file between an export writing it and the operator
      * reading it. Its mode is left as it is, because tightening a directory the operator named is not
-     * this server's call. On Windows an existing directory keeps the ACL it has.
+     * this server's call.
+     *
+     * On Windows an existing directory keeps the ACL it has, but it must still accept a file from this
+     * account. Otherwise the refusal came only after an export had fetched its first page, as a bare
+     * AccessDeniedException, because the README write swallows the denial. The probe runs on every call
+     * there: it is the check itself, and an ACL can change between exports.
      */
     private fun verifyExisting() {
-        if (!posix) return
+        if (!posix) {
+            probeOrRefuse()
+            return
+        }
         val attributes = Files.readAttributes(directory, PosixFileAttributes::class.java)
         val permissions = attributes.permissions()
         if (PosixFilePermission.GROUP_WRITE in permissions || PosixFilePermission.OTHERS_WRITE in permissions) {
@@ -158,13 +179,7 @@ open class SpoolStore(val directory: Path) {
             )
         }
         // The probe goes in only after the mode check, so into a directory no other account can write to.
-        val me = self ?: try {
-            probeOwner(directory).also { self = it }
-        } catch (e: IOException) {
-            throw UnsafeSpoolDirectoryException(
-                "this account cannot create files in the spool directory $directory (${e::class.simpleName})",
-            )
-        }
+        val me = self ?: probeOrRefuse().also { self = it }
         if (attributes.owner() != me) {
             throw UnsafeSpoolDirectoryException(
                 "the spool directory $directory is owned by ${attributes.owner().name}, not by the account " +
@@ -178,7 +193,16 @@ open class SpoolStore(val directory: Path) {
      * once. Asking the filesystem is right for a numeric UID with no account name, an elevated Windows
      * token and a localised Windows alike.
      */
-    private fun probeOwner(dir: Path): UserPrincipal {
+    /** [probeOwner] in the spool itself, turning "cannot create a file here" into a refusal that names it. */
+    private fun probeOrRefuse(): UserPrincipal = try {
+        probeOwner(directory)
+    } catch (e: IOException) {
+        throw UnsafeSpoolDirectoryException(
+            "this account cannot create files in the spool directory $directory (${e::class.simpleName})",
+        )
+    }
+
+    internal open fun probeOwner(dir: Path): UserPrincipal {
         val probe = Files.createTempFile(dir, PROBE_PREFIX, PROBE_SUFFIX)
         try {
             return Files.getOwner(probe)

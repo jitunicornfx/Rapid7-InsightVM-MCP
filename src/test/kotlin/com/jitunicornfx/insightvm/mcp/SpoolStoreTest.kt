@@ -7,10 +7,14 @@ import java.io.IOException
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.AclEntry
 import java.nio.file.attribute.AclEntryFlag
+import java.nio.file.attribute.AclEntryPermission
 import java.nio.file.attribute.AclEntryType
 import java.nio.file.attribute.AclFileAttributeView
 import java.nio.file.attribute.PosixFilePermissions
+import java.nio.file.attribute.UserPrincipal
+import java.util.EnumSet
 import kotlin.io.path.createTempDirectory
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -252,6 +256,49 @@ class SpoolStoreTest {
         assertTrue(file.toFile().setLastModified(System.currentTimeMillis() - 48 * 3_600_000L))
         s.sweepStale(24 * 3_600_000L)
         assertFalse(Files.exists(file), "swept")
+    }
+
+    /**
+     * Regression: run elevated, a new file's owner is the Administrators GROUP, so the spool was born
+     * private to that group. A later run of the same user without elevation carries Administrators only
+     * as a deny-only group, so it could no longer write into its own spool: every export and binary
+     * spill failed until someone repaired the ACL by hand. A group owner now falls back to the parent's
+     * ACL, which is what every spool had before it could be born private.
+     *
+     * The probe is overridden with the real Administrators principal to stand in for an elevated token;
+     * this test process itself runs without elevation, which is exactly the later run that was locked out.
+     */
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    fun `on Windows an elevated first run does not lock later runs out of the spool`() {
+        val admins = runCatching {
+            dir.fileSystem.userPrincipalLookupService.lookupPrincipalByGroupName("Administrators")
+        }.getOrNull()
+        assumeTrue(admins != null, "the Administrators group name is localised on this system")
+        val created = dir.resolve("spool")
+        val elevated = object : SpoolStore(created) {
+            override fun probeOwner(dir: Path): UserPrincipal = admins!!
+        }
+        val view = { Files.getFileAttributeView(created, AclFileAttributeView::class.java) }
+        try {
+            elevated.prepare()
+            val principals = view().acl.map { it.principal() }.distinct()
+            assertNotEquals(listOf<UserPrincipal>(admins!!), principals, "private to a group a later run may hold only as deny-only")
+
+            val file = SpoolStore(created).newSpoolFile("get_assets")
+            Files.writeString(file, "x")
+            assertEquals("x", Files.readString(file), "a run without elevation can still use the spool")
+        } finally {
+            // Only needed when the regression is present: give the owner access back so cleanup works.
+            runCatching {
+                if (Files.exists(created)) {
+                    view().acl = listOf(
+                        AclEntry.newBuilder().setType(AclEntryType.ALLOW).setPrincipal(Files.getOwner(created))
+                            .setPermissions(EnumSet.allOf(AclEntryPermission::class.java)).build(),
+                    )
+                }
+            }
+        }
     }
 
     @Test

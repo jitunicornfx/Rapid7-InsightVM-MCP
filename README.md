@@ -281,8 +281,10 @@ Summarised here; details and residual risks in [docs/SECURITY.md](docs/SECURITY.
 * **Result size** — two tiers: a wire-byte memory guard and a character budget for what reaches the model, with a
   degradation ladder that keeps trimmed JSON valid and always says what it dropped, outside the fence.
 * **Spooled files** — `insightvm_export_to_file` is the only tool that writes to disk. It takes no path, names files
-  itself inside a user-only directory, refuses state-changing and secret-returning operations, and cannot reach a tool
-  the filters hid.
+  itself inside the spool directory, refuses state-changing and secret-returning operations, and cannot reach a tool
+  the filters hid. A spool directory the server creates is born private to its account; one that already exists is
+  used only if this account can write to it and, on POSIX, owns it and no other account can write to it. Its mode is
+  never changed.
 
 ### Troubleshooting a start-up failure
 

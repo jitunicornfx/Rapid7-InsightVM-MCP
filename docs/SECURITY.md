@@ -190,15 +190,19 @@ in it, is open to another account:
   bits), and every file in it is `rw-------`.
 * On Windows it is created with an access list of one inheritable entry for the account that created it, which
   replaces the ACL it would have inherited; every file created inside inherits only that entry. The account is read
-  from a probe file's owner rather than looked up by name, so it is the Administrators group when the server runs
-  elevated. This is best-effort: if the access list cannot be applied, the directory is created with its parent's
-  ACL, as before, and a warning goes to stderr. Java cannot mark the ACL protected, so a later change to the parent
+  from a probe file's owner rather than looked up by name. Run elevated, that owner is the Administrators *group*,
+  and a spool private to it would lock the same user out of every later run without elevation (where the token holds
+  Administrators only as a deny-only group), so an elevated run creates the directory with its parent's ACL instead,
+  and says so on stderr. This is best-effort: if the access list cannot be applied, the directory is likewise
+  created with its parent's ACL, as before, and a warning goes to stderr. Java cannot mark the ACL protected, so a later change to the parent
   directory's inheritable permissions, which Windows propagates to its children, can add inherited entries back.
 
 A directory that already existed is the operator's and is never changed. On POSIX it is used only when it is owned by
 the account running the server and neither group nor others can write to it; otherwise the export is refused, before
 any API call, with a message naming `INSIGHTVM_SPOOL_DIR`, and a binary spill reports `pathError` instead of a path.
 On Windows an existing directory keeps its own ACL: an operator who points `INSIGHTVM_SPOOL_DIR` at one owns that ACL.
+It must still accept a file from this account — checked with a probe file on every use — or the export is refused
+the same way, before any API call.
 The `README.txt` and each manifest are created with `CREATE_NEW` and `NOFOLLOW_LINKS`, so neither is written through
 a planted symlink or over an existing file, and both are `rw-------` on POSIX.
 
