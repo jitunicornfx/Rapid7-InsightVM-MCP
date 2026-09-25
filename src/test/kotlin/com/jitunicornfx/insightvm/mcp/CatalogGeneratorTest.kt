@@ -225,11 +225,12 @@ class CatalogGeneratorTest {
             ),
             ref.asset,
         )
-        // Names are aliased to the field tables' spelling; types are kept as written, brackets tidied.
+        // Names are aliased to the field tables' spelling; types are kept as written, brackets tidied. An
+        // array the table lists under `value` is the filter schema's `values` — see SearchCriteriaTables.
         assertEquals(
             mapOf(
                 "is" to mapOf("value" to "string"),
-                "in" to mapOf("value" to "Array[string]"),
+                "in" to mapOf("values" to "Array[string]"),
                 "in-range" to mapOf("lower" to "numeric", "upper" to "numeric"),
                 "is-less-than" to mapOf("value" to "numeric (days)"),
             ),
@@ -356,8 +357,13 @@ class CatalogGeneratorTest {
         assertEquals(listOf("is", "in-range", "is-less-than", "in", "does-not-include"), enumOf(asset, "operator"))
         assertEquals("string", asset.at("properties", "field").str("type"))
         assertEquals(
-            buildJsonObject { put("description", "The single value to match using the operator. A string, number or array, depending on the operator.") },
+            buildJsonObject { put("description", "The single value to match using the operator. A string or number, depending on the operator.") },
             asset.at("properties", "value"),
+        )
+        assertEquals(
+            "An array of values to match using the operator. Used by the operators that take a list: in.",
+            asset.at("properties", "values").str("description"),
+            "the schema's own array property, named for the operators that read it",
         )
         assertEquals(buildJsonObject { put("description", "The lower value to match in a range criteria. A string or number, depending on the operator.") }, asset.at("properties", "lower"))
         assertEquals(buildJsonObject { put("description", "A string or number, depending on the operator.") }, asset.at("properties", "upper"))
@@ -419,7 +425,7 @@ class CatalogGeneratorTest {
 
     /** Regression: v4's "Search Criteria" section, the only place it explains the two chunks, never reached a tool. */
     @Test
-    fun `build rules - the v4 search-criteria section is added to the two search bodies`() {
+    fun `build rules - the v4 search-criteria section is added to the asset search body only`() {
         val intro = "# Overview\nx\n## Sorting\ns\n## Search Criteria\n\nUse search criteria.\n" +
             "- A `vulnerability` chunk by itself does not change the number of assets returned.\n" +
             "- `{\"asset\": \"risk > 0.0\", \"vulnerability\": \"cvss_score >= 9\"}`\n\n## Responses\nr\n"
@@ -441,8 +447,10 @@ class CatalogGeneratorTest {
         }
         val bodies = CatalogGenerator.buildCatalog(ApiFamily.CLOUD, spec(paths, info = intro), "s", "f").ops.associate { it.path to it.body!!.schema.str("description") }
         assertEquals(note, bodies["/v4/integration/assets"])
-        assertEquals("Criteria for searching vulnerabilities. $note", bodies["/v4/integration/vulnerabilities"])
-        assertEquals("Site criteria.", bodies["/v4/integration/sites"], "only the asset and vulnerability searches")
+        // The section is about the asset search's two chunks and its examples send {"asset": ...}; the
+        // vulnerabilities search has a vulnerability chunk alone, so it keeps its own text.
+        assertEquals("Criteria for searching vulnerabilities.", bodies["/v4/integration/vulnerabilities"])
+        assertEquals("Site criteria.", bodies["/v4/integration/sites"], "only the asset search")
         // Without the section, nothing is added.
         assertNull(CatalogGenerator.buildCatalog(ApiFamily.CLOUD, spec(paths), "s", "f").ops.first { it.path == "/v4/integration/assets" }.body!!.schema.str("description"))
     }
@@ -1167,7 +1175,7 @@ class CatalogGeneratorTest {
         assertEquals(26, operators.size)
         assertTrue("is-greater-than" in operators && "in-range" in operators && "does-not-include" in operators, operators.toString())
         for (property in listOf("value", "lower", "upper")) {
-            assertNull(find.at("properties", property)["type"], "$property is typed although an operator may take a string, number or array")
+            assertNull(find.at("properties", property)["type"], "$property is typed although an operator may take a string or a number")
         }
         assertEquals(JsonObject(emptyMap()), find.at("properties", "values", "items"))
 
@@ -1202,15 +1210,19 @@ class CatalogGeneratorTest {
         assertContains(v3.op("create_asset_group").description, CatalogGenerator.ASSET_CRITERIA_POINTER)
         assertContains(v3.op("set_site_discovery_search_criteria").body!!.schema.at("properties", "filters").str("description")!!, CatalogGenerator.DISCOVERY_CRITERIA_POINTER)
 
-        for (op in listOf("cloud_search_integration_assets", "cloud_search_integration_vulnerabilities")) {
-            val note = v4.op(op).body!!.schema.str("description")!!
-            assertContains(note, "A `vulnerability` chunk by itself does not change the number of assets returned", message = op)
-            assertContains(note, "\"vulnerability\": \"cvss_score >= 9\"", message = op)
-            assertFalse(note.endsWith("…"), "$op: the note was cut")
-        }
-        assertTrue(v4.op("cloud_search_integration_vulnerabilities").body!!.schema.str("description")!!.startsWith("Criteria for searching vulnerabilities. Use search criteria"))
+        val note = v4.op("cloud_search_integration_assets").body!!.schema.str("description")!!
+        assertContains(note, "A `vulnerability` chunk by itself does not change the number of assets returned")
+        assertContains(note, "\"vulnerability\": \"cvss_score >= 9\"")
+        assertFalse(note.endsWith("…"), "the note was cut")
+        // Regression: the note describes an `asset` chunk and gave {"asset": ...} examples, and was also put
+        // on the vulnerabilities search, whose VulnerabilitySearch body has no `asset` property. The model
+        // then sent one, which the endpoint does not define.
+        val vulnerabilities = v4.op("cloud_search_integration_vulnerabilities").body!!.schema
+        assertEquals(setOf("vulnerability"), vulnerabilities.at("properties").keys)
+        val vulnerabilitiesText = vulnerabilities.str("description")!!
+        assertFalse(vulnerabilitiesText.contains("`asset`") || vulnerabilitiesText.contains("\"asset\""), vulnerabilitiesText)
         assertEquals(
-            listOf("cloud_search_integration_assets", "cloud_search_integration_vulnerabilities"),
+            listOf("cloud_search_integration_assets"),
             v4.ops.filter { it.body?.schema?.str("description")?.contains("two independent chunks") == true }.map { it.name },
         )
     }
@@ -1229,7 +1241,12 @@ class CatalogGeneratorTest {
         assertEquals(25, reference.operators.size)
         assertEquals(mapOf("lower" to "numeric", "upper" to "numeric"), reference.operators["in-range"])
         assertEquals(mapOf("value" to "numeric (days)"), reference.operators["is-within-the-last"])
-        assertEquals(mapOf("value" to "Array[string]"), reference.operators["in"])
+        // The spec's Operator Properties table lists these arrays under `value`, but its filter schema says
+        // `value` is "the single value" and has a separate array property, `values`. The schema wins.
+        for (listOperator in listOf("in", "not-in", "includes")) {
+            assertEquals(mapOf("values" to "Array[string]"), reference.operators[listOperator], listOperator)
+        }
+        assertTrue(reference.operators.values.none { reads -> reads["value"]?.startsWith("Array") == true }, "no array is left under `value`")
         assertEquals(emptyMap(), reference.operators["is-applied"])
         for ((alias, name) in SearchCriteriaTables.OPERATOR_ALIASES) {
             assertNotNull(reference.operators[name], "$alias → $name")

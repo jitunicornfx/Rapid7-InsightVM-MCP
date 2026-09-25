@@ -466,11 +466,11 @@
             "description": "The upper value to match in a range criteria. A string or number, depending on the operator."
            },
            "value": {
-            "description": "The single value to match using the operator. A string, number or array, depending on the operator."
+            "description": "The single value to match using the operator. A string or number, depending on the operator."
            },
            "values": {
             "type": "array",
-            "description": "An array of values to match using the operator.",
+            "description": "An array of values to match using the operator. Used by the operators that take a list: in, not-in, includes.",
             "items": {}
            }
           },
@@ -715,11 +715,11 @@
             "description": "The upper value to match in a range criteria. A string or number, depending on the operator."
            },
            "value": {
-            "description": "The single value to match using the operator. A string, number or array, depending on the operator."
+            "description": "The single value to match using the operator. A string or number, depending on the operator."
            },
            "values": {
             "type": "array",
-            "description": "An array of values to match using the operator.",
+            "description": "An array of values to match using the operator. Used by the operators that take a list: in, not-in, includes.",
             "items": {}
            }
           },
@@ -1112,11 +1112,11 @@
           "description": "The upper value to match in a range criteria. A string or number, depending on the operator."
          },
          "value": {
-          "description": "The single value to match using the operator. A string, number or array, depending on the operator."
+          "description": "The single value to match using the operator. A string or number, depending on the operator."
          },
          "values": {
           "type": "array",
-          "description": "An array of values to match using the operator.",
+          "description": "An array of values to match using the operator. Used by the operators that take a list: in, not-in, includes.",
           "items": {}
          }
         },
@@ -1706,11 +1706,11 @@
           "description": "The upper value to match in a range criteria. A string or number, depending on the operator."
          },
          "value": {
-          "description": "The single value to match using the operator. A string, number or array, depending on the operator."
+          "description": "The single value to match using the operator. A string or number, depending on the operator."
          },
          "values": {
           "type": "array",
-          "description": "An array of values to match using the operator.",
+          "description": "An array of values to match using the operator. Used by the operators that take a list: in, not-in, includes.",
           "items": {}
          }
         },
@@ -13288,11 +13288,11 @@
           "description": "The upper value to match in a range criteria. A string or number, depending on the operator."
          },
          "value": {
-          "description": "The single value to match using the operator. A string, number or array, depending on the operator."
+          "description": "The single value to match using the operator. A string or number, depending on the operator."
          },
          "values": {
           "type": "array",
-          "description": "An array of values to match using the operator.",
+          "description": "An array of values to match using the operator. Used by the operators that take a list: in, not-in.",
           "items": {}
          }
         },
@@ -17308,11 +17308,11 @@
             "description": "The upper value to match in a range criteria. A string or number, depending on the operator."
            },
            "value": {
-            "description": "The single value to match using the operator. A string, number or array, depending on the operator."
+            "description": "The single value to match using the operator. A string or number, depending on the operator."
            },
            "values": {
             "type": "array",
-            "description": "An array of values to match using the operator.",
+            "description": "An array of values to match using the operator. Used by the operators that take a list: in, not-in, includes.",
             "items": {}
            }
           },
@@ -17571,11 +17571,11 @@
             "description": "The upper value to match in a range criteria. A string or number, depending on the operator."
            },
            "value": {
-            "description": "The single value to match using the operator. A string, number or array, depending on the operator."
+            "description": "The single value to match using the operator. A string or number, depending on the operator."
            },
            "values": {
             "type": "array",
-            "description": "An array of values to match using the operator.",
+            "description": "An array of values to match using the operator. Used by the operators that take a list: in, not-in, includes.",
             "items": {}
            }
           },
@@ -18111,11 +18111,11 @@
           "description": "The upper value to match in a range criteria. A string or number, depending on the operator."
          },
          "value": {
-          "description": "The single value to match using the operator. A string, number or array, depending on the operator."
+          "description": "The single value to match using the operator. A string or number, depending on the operator."
          },
          "values": {
           "type": "array",
-          "description": "An array of values to match using the operator.",
+          "description": "An array of values to match using the operator. Used by the operators that take a list: in, not-in, includes.",
           "items": {}
          }
         },

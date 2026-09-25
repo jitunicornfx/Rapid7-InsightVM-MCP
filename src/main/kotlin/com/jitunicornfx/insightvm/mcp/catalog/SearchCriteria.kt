@@ -5,8 +5,8 @@ import kotlinx.serialization.json.Json
 
 /**
  * The Security Console's search-criteria reference: the fields a filter can name, the operators each
- * field accepts, the values an enumerated field takes, and the properties (`value`, `lower`, `upper`)
- * each operator reads. The console documents it only in its specification's introduction, which no
+ * field accepts, the values an enumerated field takes, and the properties (`value`, `values`,
+ * `lower`, `upper`) each operator reads. The console documents it only in its specification's introduction, which no
  * operation or schema carries, so the filter schemas said "See Search Criteria" and nothing more.
  * [CatalogGenerator] extracts the tables into `catalog/search-criteria.json`, and the
  * [CatalogTools.SEARCH_CRITERIA_TOOL] tool serves them.
@@ -65,8 +65,14 @@ object SearchCriteria {
         }
     }
 
-    /** The filter properties an operator can read, in the order the console documents them. */
+    /** The value columns of the specification's Operator Properties table, in its order. */
     val VALUE_PROPERTIES = listOf("value", "lower", "upper")
+
+    /**
+     * The filter properties an operator can read: the table's columns plus `values`, the filter
+     * schema's array property, where a list the table lists under `value` belongs.
+     */
+    val READ_PROPERTIES = listOf("value", "values", "lower", "upper")
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -106,8 +112,11 @@ object SearchCriteria {
             reference.discovery.flatMap { it.connectionTypes }
         names.firstOrNull { !NAME.matches(it) }?.let { throw IllegalStateException("Search-criteria reference has an invalid name '$it'") }
         check(fields.all { it.operators.isNotEmpty() }) { "Search-criteria reference lists a field with no operator" }
-        check(reference.operators.values.all { it.keys.all { p -> p in VALUE_PROPERTIES } }) {
-            "Search-criteria reference names an operator property other than ${VALUE_PROPERTIES.joinToString()}"
+        check(reference.operators.values.all { it.keys.all { p -> p in READ_PROPERTIES } }) {
+            "Search-criteria reference names an operator property other than ${READ_PROPERTIES.joinToString()}"
+        }
+        check(reference.operators.values.none { it["value"]?.startsWith("Array") == true }) {
+            "Search-criteria reference puts a list under 'value', which the filter schema defines as a single value; lists go in 'values'"
         }
         val text = fields.flatMap { it.values } + reference.discovery.map { it.name } + reference.operators.values.flatMap { it.values }
         check(text.none { MARKUP.containsMatchIn(it) }) { "Search-criteria reference contains markup" }

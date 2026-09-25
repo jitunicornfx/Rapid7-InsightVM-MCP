@@ -18,14 +18,14 @@
    "value": "string"
   },
   "in": {
-   "value": "Array[string]"
+   "values": "Array[string]"
   },
   "in-range": {
    "lower": "numeric",
    "upper": "numeric"
   },
   "includes": {
-   "value": "Array[string]"
+   "values": "Array[string]"
   },
   "is": {
    "value": "string"
@@ -63,7 +63,7 @@
    "value": "string"
   },
   "not-in": {
-   "value": "Array[string]"
+   "values": "Array[string]"
   },
   "not-in-range": {
    "lower": "numeric",

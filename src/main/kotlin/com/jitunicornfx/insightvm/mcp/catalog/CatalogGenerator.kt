@@ -145,8 +145,13 @@ object CatalogGenerator {
      * The v4 searches whose body gains the introduction's "Search Criteria" section. It is the only
      * place v4 says that a `vulnerability` chunk alone does not narrow the assets returned, and it
      * holds the query-language examples.
+     *
+     * Only the asset search: the section is about its two chunks, `asset` and `vulnerability`, and its
+     * examples send `{"asset": ...}`. The vulnerabilities search takes a VulnerabilitySearch body with a
+     * `vulnerability` chunk alone, so the same text there told the model to send a property that
+     * endpoint does not define.
      */
-    private val SEARCH_NOTE_OPS = setOf("POST" to "/v4/integration/assets", "POST" to "/v4/integration/vulnerabilities")
+    private val SEARCH_NOTE_OPS = setOf("POST" to "/v4/integration/assets")
 
     /** One spec → one catalog file. */
     data class Source(val family: ApiFamily, val specFile: String, val outputFile: String)
@@ -420,13 +425,24 @@ object CatalogGenerator {
                 return JsonObject(schema - "type" + ("description" to JsonPrimitive(text.joinToString(" "))))
             }
             val values = prop("values")
+            // `value` is "the single value"; a list goes in `values`, named for the operators that read one,
+            // since the spec's own operator table says the opposite (see SearchCriteriaTables).
+            val listOperators = fields.flatMap { it.operators }.distinct().filter { reference.operators[it]?.containsKey("values") == true }
+            val valuesText = listOfNotNull(
+                (values["description"] as? JsonPrimitive)?.contentOrNull,
+                listOperators.takeIf { it.isNotEmpty() }?.let { "Used by the operators that take a list: ${it.joinToString(", ")}." },
+            ).joinToString(" ")
             return mapOf(
                 "field" to JsonObject(prop("field") + ("enum" to enumOf(fields.map { it.name }))),
                 "operator" to JsonObject(prop("operator") + ("enum" to enumOf(fields.flatMap { it.operators }))),
-                "value" to untyped("value", "string, number or array"),
+                "value" to untyped("value", "string or number"),
                 "lower" to untyped("lower", "string or number"),
                 "upper" to untyped("upper", "string or number"),
-                "values" to JsonObject(values + ("items" to JsonObject(((values["items"] as? JsonObject) ?: JsonObject(emptyMap())) - "type"))),
+                // The item's own text only repeats the array's, so it goes with the object type.
+                "values" to JsonObject(
+                    values + ("description" to JsonPrimitive(valuesText)) +
+                        ("items" to JsonObject(((values["items"] as? JsonObject) ?: JsonObject(emptyMap())) - "type" - "description")),
+                ),
             )
         }
         return mapOf(

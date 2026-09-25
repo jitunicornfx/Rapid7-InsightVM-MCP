@@ -674,6 +674,9 @@ class CatalogToolsBehaviourTest {
         assertEquals(26, operatorLines.size, "every operator a field uses, once")
         assertContains(all, "- alternate-address-type: in. Values: 0=IPv4, 1=IPv6\n")
         assertContains(all, "- is-applied: no value")
+        // A list goes in the filter schema's `values`, never in `value` ("the single value").
+        assertContains(all, "- in: values=Array[string]")
+        assertFalse(all.contains("value=Array"), "an array was steered into the single-value property")
         assertContains(all, "- does-not-include: not documented in the specification")
         assertFalse(all.contains('<'), "no markup: $all")
 

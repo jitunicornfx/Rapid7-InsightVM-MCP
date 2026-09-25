@@ -158,7 +158,10 @@ class CatalogTest {
         assertTrue(bad(good.copy(asset = listOf(CriteriaField("risk score", listOf("is"))))).contains("invalid name 'risk score'"))
         assertTrue(bad(good.copy(asset = listOf(CriteriaField("risk-score", listOf("is<b>"))))).contains("invalid name"))
         assertTrue(bad(good.copy(asset = listOf(CriteriaField("risk-score", emptyList())))).contains("no operator"))
-        assertTrue(bad(good.copy(operators = mapOf("is" to mapOf("values" to "string")))).contains("operator property"))
+        assertTrue(bad(good.copy(operators = mapOf("is" to mapOf("min" to "string")))).contains("operator property"))
+        // A list under `value` is the specification's own contradiction; the reference keeps it in `values`.
+        assertTrue(bad(good.copy(operators = mapOf("is" to mapOf("value" to "Array[string]")))).contains("'values'"))
+        SearchCriteria.validate(good.copy(operators = mapOf("is" to mapOf("values" to "Array[string]"))))
         assertTrue(bad(good.copy(asset = listOf(CriteriaField("risk-score", listOf("is"), listOf("<script>"))))).contains("markup"))
         assertTrue(bad(good.copy(operators = mapOf("is" to mapOf("value" to "<b>string</b>")))).contains("markup"))
         assertFailsWith<IllegalStateException> { SearchCriteria.parse("{not json") }
