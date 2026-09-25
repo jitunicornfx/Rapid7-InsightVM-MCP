@@ -236,7 +236,8 @@ catalog that is committed and verified by the build; one generic dispatcher regi
 Summarised here; details and residual risks in [docs/SECURITY.md](docs/SECURITY.md).
 
 * **Prompt injection** — every API body is wrapped in an explicit *untrusted data* fence with an instruction preamble;
-  fence markers inside the data are neutralised. Tool descriptions come from the bundled spec with markup stripped.
+  fence markers inside the data are neutralised. Tool descriptions come from the bundled spec with markup stripped or
+  neutralised.
 * **XSS / markup** — HTML responses are reduced to escaped text; `<`/`>` are neutralised in all JSON/text output so nothing
   from the API can render as markup in a client.
 * **Request integrity** — URLs are built only from catalog templates; path values are percent-encoded (`;` included)

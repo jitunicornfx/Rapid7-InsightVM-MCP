@@ -25,8 +25,11 @@ Out of scope: a compromised operator machine, a malicious bundled specification,
   (`ToolSupport.wrapUntrusted`). Occurrences of the fence markers inside the data are rewritten so a payload cannot
   close the fence early. A regression test asserts the closing marker appears exactly once, at the very end.
 * Tool names, descriptions and parameter descriptions come from the bundled OpenAPI documents. The generator strips
-  HTML, decodes entities, removes control characters and caps length; the loader re-validates that no `<`/`>` survived
-  (`CatalogLoader.validate`). Nothing the API returns at runtime ever becomes part of a tool definition.
+  the layout HTML they use, decodes entities, removes control characters and caps length. It then neutralises anything
+  that could still open markup: a `<` before a letter, `/`, `!` or `?` becomes `‹`, so an encoded `&lt;script&gt;`
+  ends up as `‹script›`. A bare `<` or `>` cannot start a tag and is left alone, because the v4 query language is
+  written with it (`cvss_score >= 9`). The loader re-validates that no markup opener survived in a tool's summary or
+  description (`CatalogLoader.validate`). Nothing the API returns at runtime ever becomes part of a tool definition.
 * The two meta tools only emit server-authored JSON built from the catalog.
 
 ### XSS / markup (data → client UI)

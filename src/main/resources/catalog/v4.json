@@ -128,11 +128,13 @@
      "name": "sort",
      "in": "query",
      "required": false,
-     "array": false,
+     "array": true,
      "schema": {
-      "type": "string",
-      "format": "<property>[,ASC|DESC]",
-      "description": "The criteria to sort the records by, in the format: ` [,ASC|DESC]`. The default sort order is ascending. Multiple sort criteria can be specified using multiple sort query parameters."
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "The criteria to sort the records by, in the format: `‹property›[,ASC|DESC]`. The default sort order is ascending. Multiple sort criteria can be specified using multiple sort query parameters."
      }
     }
    ],
@@ -142,13 +144,12 @@
     "schema": {
      "properties": {
       "asset": {
-       "description": "Example {\"asset\": \"last_scan_end ›= '2025-09-13T00:02:01Z' && cvss_score ›= 9\"} Filter for assets that have vulnerabilities matching the asset criteria."
+       "description": "Example {\"asset\": \"last_scan_end >= '2025-09-13T00:02:01Z' && cvss_score >= 9\"} Filter for assets that have vulnerabilities matching the asset criteria."
       },
       "vulnerability": {
-       "description": "Example {\"asset\": \"last_assessed_for_vulnerabilities ›= '2025-09-13T00:02:01Z'\", \"vulnerability\": \"cvss_score ›= 9\"} Filter the results to include assets which have vulnerabilities matching the asset criteria and subsequently filter for individual vulnerabilities that meet the vulnerability criteria."
+       "description": "Example {\"asset\": \"last_assessed_for_vulnerabilities >= '2025-09-13T00:02:01Z'\", \"vulnerability\": \"cvss_score >= 9\"} Filter the results to include assets which have vulnerabilities matching the asset criteria and subsequently filter for individual vulnerabilities that meet the vulnerability criteria."
       }
      },
-     "description": "${assetvulnerabilityqueryresource.description}, ${asset.vulnerability.query.resource.description}",
      "type": "object"
     }
    },
@@ -175,13 +176,8 @@
      "required": true,
      "array": false,
      "schema": {
-      "properties": {
-       "id": {
-        "description": "${assetkey.id.description}, ${asset.key.id.description}"
-       }
-      },
-      "description": "The identifier of the asset to retrieve the details for.",
-      "type": "string"
+      "type": "string",
+      "description": "The identifier of the asset to retrieve the details for."
      }
     },
     {
@@ -316,17 +312,20 @@
       "asset_ids": {
        "uniqueItems": true,
        "description": "The identifiers of the assets to scan.",
-       "items": {}
+       "items": {},
+       "type": "array"
       },
       "credential_sources": {
        "uniqueItems": true,
        "description": "The names of the sites on the Nexpose console to pull asset credentials from.",
-       "items": {}
+       "items": {},
+       "type": "array"
       },
       "engine_ids": {
        "uniqueItems": true,
        "description": "The identifiers of the engines to use for the scan.",
-       "items": {}
+       "items": {},
+       "type": "array"
       },
       "exclusions": {
        "type": "object",
@@ -341,7 +340,8 @@
       "solution_ids": {
        "uniqueItems": true,
        "description": "The identifiers of the solutions used to reduce the scope of the scan.",
-       "items": {}
+       "items": {},
+       "type": "array"
       },
       "start_time": {
        "description": "The time at which to start the scan."
@@ -349,7 +349,8 @@
       "vulnerability_ids": {
        "uniqueItems": true,
        "description": "The identifiers of the vulnerabilities used to reduce the scope of the scan.",
-       "items": {}
+       "items": {},
+       "type": "array"
       }
      },
      "description": "The payload for starting a scan.",
@@ -418,11 +419,6 @@
      "required": true,
      "array": false,
      "schema": {
-      "properties": {
-       "id": {
-        "description": "${scan.engine.id.id.description}, ${scanengineid.id.description}"
-       }
-      },
       "description": "The identifier of the scan engine to retrieve.",
       "type": "string"
      }
@@ -452,11 +448,6 @@
      "required": true,
      "array": false,
      "schema": {
-      "properties": {
-       "id": {
-        "description": "${scan.engine.id.id.description}, ${scanengineid.id.description}"
-       }
-      },
       "description": "The identifier of the scan engine to update.",
       "type": "string"
      }
@@ -469,10 +460,10 @@
      "properties": {
       "properties": {
        "description": "List of property names to remove from a scan engine.",
-       "items": {}
+       "items": {},
+       "type": "array"
       }
      },
-     "description": "${removescanengineconfigurationproperty.description}, ${remove.scan.engine.configuration.property.description}",
      "type": "object"
     }
    },
@@ -499,11 +490,6 @@
      "required": true,
      "array": false,
      "schema": {
-      "properties": {
-       "id": {
-        "description": "${scan.engine.id.id.description}, ${scanengineid.id.description}"
-       }
-      },
       "description": "The identifier of the scan engine to update.",
       "type": "string"
      }
@@ -525,11 +511,11 @@
           "description": "Value the configuration property should be set to."
          }
         },
-        "description": "${scan.engine.configuration.property.input.description}, ${scanengineconfigurationpropertyinput.description}"
-       }
+        "type": "object"
+       },
+       "type": "array"
       }
      },
-     "description": "${updateenginepropertiesform.description}, ${update.engine.properties.form.description}",
      "type": "object"
     }
    },
@@ -556,11 +542,6 @@
      "required": true,
      "array": false,
      "schema": {
-      "properties": {
-       "id": {
-        "description": "${scanid.id.description}, ${scan.id.id.description}"
-       }
-      },
       "description": "The identifier of the scan to retrieve.",
       "type": "string"
      }
@@ -601,11 +582,6 @@
      "required": true,
      "array": false,
      "schema": {
-      "properties": {
-       "id": {
-        "description": "${scanid.id.description}, ${scan.id.id.description}"
-       }
-      },
       "description": "The identifier of the scan to stop.",
       "type": "string"
      }
@@ -663,11 +639,13 @@
      "name": "sort",
      "in": "query",
      "required": false,
-     "array": false,
+     "array": true,
      "schema": {
-      "type": "string",
-      "format": "<property>[,ASC|DESC]",
-      "description": "The criteria to sort the records by, in the format: ` [,ASC|DESC]`. The default sort order is ascending. Multiple sort criteria can be specified using multiple sort query parameters."
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "The criteria to sort the records by, in the format: `‹property›[,ASC|DESC]`. The default sort order is ascending. Multiple sort criteria can be specified using multiple sort query parameters."
      }
     }
    ],
@@ -723,11 +701,13 @@
      "name": "sort",
      "in": "query",
      "required": false,
-     "array": false,
+     "array": true,
      "schema": {
-      "type": "string",
-      "format": "<property>[,ASC|DESC]",
-      "description": "The criteria to sort the records by, in the format: ` [,ASC|DESC]`. The default sort order is ascending. Multiple sort criteria can be specified using multiple sort query parameters."
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "The criteria to sort the records by, in the format: `‹property›[,ASC|DESC]`. The default sort order is ascending. Multiple sort criteria can be specified using multiple sort query parameters."
      }
     }
    ],

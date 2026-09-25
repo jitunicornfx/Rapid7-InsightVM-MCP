@@ -111,20 +111,7 @@
      }
     }
    ],
-   "body": {
-    "contentType": "application/json",
-    "required": false,
-    "schema": {
-     "type": "object",
-     "properties": {
-      "license": {
-       "type": "string",
-       "format": "binary",
-       "description": "The contents of a license (.lic) file. This should be sent with a content type of `multipart/form-data`."
-      }
-     }
-    }
-   },
+   "body": null,
    "responses": {
     "success": "application/json",
     "binary": false
@@ -375,7 +362,6 @@
          "type": "array",
          "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
          "items": {
-          "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
           "properties": {
            "field": {
             "type": "string",
@@ -401,11 +387,11 @@
             "type": "array",
             "description": "An array of values to match using the operator.",
             "items": {
-             "type": "object",
-             "description": "An array of values to match using the operator."
+             "type": "object"
             }
            }
-          }
+          },
+          "type": "object"
          }
         },
         "match": {
@@ -416,7 +402,8 @@
           "all"
          ]
         }
-       }
+       },
+       "type": "object"
       },
       "type": {
        "type": "string",
@@ -428,7 +415,8 @@
       },
       "vulnerabilities": {
        "description": "Summary information for distinct vulnerabilities found on the assets.",
-       "properties": {}
+       "properties": {},
+       "type": "object"
       }
      },
      "required": [
@@ -548,7 +536,6 @@
          "type": "array",
          "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
          "items": {
-          "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
           "properties": {
            "field": {
             "type": "string",
@@ -574,11 +561,11 @@
             "type": "array",
             "description": "An array of values to match using the operator.",
             "items": {
-             "type": "object",
-             "description": "An array of values to match using the operator."
+             "type": "object"
             }
            }
-          }
+          },
+          "type": "object"
          }
         },
         "match": {
@@ -589,7 +576,8 @@
           "all"
          ]
         }
-       }
+       },
+       "type": "object"
       },
       "type": {
        "type": "string",
@@ -601,7 +589,8 @@
       },
       "vulnerabilities": {
        "description": "Summary information for distinct vulnerabilities found on the assets.",
-       "properties": {}
+       "properties": {},
+       "type": "object"
       }
      },
      "required": [
@@ -865,7 +854,6 @@
        "type": "array",
        "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
        "items": {
-        "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
         "properties": {
          "field": {
           "type": "string",
@@ -891,11 +879,11 @@
           "type": "array",
           "description": "An array of values to match using the operator.",
           "items": {
-           "type": "object",
-           "description": "An array of values to match using the operator."
+           "type": "object"
           }
          }
-        }
+        },
+        "type": "object"
        }
       },
       "match": {
@@ -1377,7 +1365,6 @@
        "type": "array",
        "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
        "items": {
-        "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
         "properties": {
          "field": {
           "type": "string",
@@ -1403,11 +1390,11 @@
           "type": "array",
           "description": "An array of values to match using the operator.",
           "items": {
-           "type": "object",
-           "description": "An array of values to match using the operator."
+           "type": "object"
           }
          }
-        }
+        },
+        "type": "object"
        }
       },
       "match": {
@@ -2514,11 +2501,6 @@
      "required": true,
      "array": false,
      "schema": {
-      "properties": {
-       "id": {
-        "type": "object"
-       }
-      },
       "type": "string",
       "description": "The identifier of the web application."
      }
@@ -2982,7 +2964,8 @@
           "other"
          ]
         }
-       }
+       },
+       "type": "object"
       }
      },
      "type": "object"
@@ -3132,11 +3115,6 @@
      "array": false,
      "schema": {
       "description": "The identifier of the authentication source.",
-      "properties": {
-       "id": {
-        "type": "object"
-       }
-      },
       "type": "string"
      }
     }
@@ -3166,11 +3144,6 @@
      "array": false,
      "schema": {
       "description": "The identifier of the authentication source.",
-      "properties": {
-       "id": {
-        "type": "object"
-       }
-      },
       "type": "string"
      }
     }
@@ -4904,7 +4877,8 @@
       },
       "review": {
        "description": "Details regarding the review and/or approval of the policy override.",
-       "properties": {}
+       "properties": {},
+       "type": "object"
       },
       "scope": {
        "description": "The scope of the policy override. Indicates which assets' policy compliance results are to be affected by the override.",
@@ -4958,7 +4932,8 @@
         "newResult",
         "rule",
         "type"
-       ]
+       ],
+       "type": "object"
       },
       "state": {
        "type": "string",
@@ -4981,7 +4956,8 @@
        },
        "required": [
         "comment"
-       ]
+       ],
+       "type": "object"
       }
      },
      "required": [
@@ -5515,8 +5491,7 @@
          "type": "array",
          "description": "The email address of additional recipients to distribute the report to.",
          "items": {
-          "type": "string",
-          "description": "The email address of additional recipients to distribute the report to."
+          "type": "string"
          }
         },
         "assetAccess": {
@@ -5548,9 +5523,11 @@
            "type": "string",
            "description": "SMTP sender address."
           }
-         }
+         },
+         "type": "object"
         }
-       }
+       },
+       "type": "object"
       },
       "enclave": {
        "type": "string",
@@ -5566,8 +5543,7 @@
            "type": "array",
            "description": "The vulnerability categories to exclude. Defaults to no categories.",
            "items": {
-            "type": "string",
-            "description": "The vulnerability categories to exclude. Defaults to no categories."
+            "type": "string"
            },
            "uniqueItems": true
           },
@@ -5575,12 +5551,12 @@
            "type": "array",
            "description": "The vulnerability categories to include. Defaults to all categories.",
            "items": {
-            "type": "string",
-            "description": "The vulnerability categories to include. Defaults to all categories."
+            "type": "string"
            },
            "uniqueItems": true
           }
-         }
+         },
+         "type": "object"
         },
         "severity": {
          "type": "string",
@@ -5596,7 +5572,6 @@
          "description": "The vulnerability statuses to include. Defaults to [ `vulnerable`, `vulnerable-version`, `potentially-vulnerable` ].",
          "items": {
           "type": "string",
-          "description": "The vulnerability statuses to include. Defaults to [ `vulnerable`, `vulnerable-version`, `potentially-vulnerable` ].",
           "enum": [
            "vulnerable",
            "vulnerable-version",
@@ -5606,7 +5581,8 @@
          },
          "uniqueItems": true
         }
-       }
+       },
+       "type": "object"
       },
       "format": {
        "type": "string",
@@ -5678,7 +5654,8 @@
          "required": [
           "every",
           "interval"
-         ]
+         ],
+         "type": "object"
         },
         "start": {
          "type": "string",
@@ -5694,7 +5671,8 @@
           "none"
          ]
         }
-       }
+       },
+       "type": "object"
       },
       "language": {
        "type": "string",
@@ -5728,7 +5706,8 @@
          "type": {
           "type": "string"
          }
-        }
+        },
+        "type": "object"
        }
       },
       "name": {
@@ -5775,15 +5754,8 @@
          ]
         },
         "from": {
-         "type": "object",
-         "description": "The start date of the trend, which can either be a duration or a specific date and time.",
-         "enum": [
-          "P1Y",
-          "P6M",
-          "P3M",
-          "P1M",
-          "<date>"
-         ]
+         "type": "string",
+         "description": "The start of the trend: a duration (P1Y, P6M, P3M or P1M) or an ISO-8601 date."
         },
         "interval": {
          "type": "integer",
@@ -5795,7 +5767,8 @@
          "format": "date",
          "description": "The end date of the trend (empty if `from` is a duration)."
         }
-       }
+       },
+       "type": "object"
       },
       "remediation": {
        "description": "If the template is `prioritized-remediations`, `prioritized-remediations-with-details`, `top-policy-remediations`, or `top-policy-remediations-with-details` the remediation display settings.",
@@ -5817,7 +5790,8 @@
           "riskscore"
          ]
         }
-       }
+       },
+       "type": "object"
       },
       "riskTrend": {
        "description": "Configuration details for risk trending output.",
@@ -5838,7 +5812,8 @@
             "none"
            ]
           }
-         }
+         },
+         "type": "object"
         },
         "assetGroupMembership": {
          "type": "string",
@@ -5861,15 +5836,8 @@
          "description": "Whether to include a trend for the 5 highest-risk assets in the scope of the report."
         },
         "from": {
-         "type": "object",
-         "description": "The start date of the risk trend, which can either be a duration or a specific date and time.",
-         "enum": [
-          "P1Y",
-          "P6M",
-          "P3M",
-          "P1M",
-          "<date>"
-         ]
+         "type": "string",
+         "description": "The start of the trend: a duration (P1Y, P6M, P3M or P1M) or an ISO-8601 date."
         },
         "sites": {
          "type": "string",
@@ -5900,7 +5868,8 @@
          "format": "date",
          "description": "The end date of the risk trend (empty if `from` is a duration)."
         }
-       }
+       },
+       "type": "object"
       },
       "scope": {
        "description": "The scope of the report. Scope is an object that has the following properties that vary by format and template: assets Array[integer ‹int32›] The identifiers of the assets to report on. sites Array[integer ‹int32›] The identifiers of the sites to report on. assetGroups Array[integer ‹int32›] The identifiers of the asset to report on. tags Array[integer ‹int32›] The identifiers of the tag to repor…",
@@ -5910,8 +5879,7 @@
          "description": "Identifiers of the asset groups in the scope of the report.",
          "items": {
           "type": "integer",
-          "format": "int32",
-          "description": "Identifiers of the asset groups in the scope of the report."
+          "format": "int32"
          }
         },
         "assets": {
@@ -5919,8 +5887,7 @@
          "description": "Identifiers of the assets in the scope of the report.",
          "items": {
           "type": "integer",
-          "format": "int64",
-          "description": "Identifiers of the assets in the scope of the report."
+          "format": "int64"
          }
         },
         "scan": {
@@ -5933,8 +5900,7 @@
          "description": "Identifiers of the sites in the scope of the report.",
          "items": {
           "type": "integer",
-          "format": "int32",
-          "description": "Identifiers of the sites in the scope of the report."
+          "format": "int32"
          }
         },
         "tags": {
@@ -5942,11 +5908,11 @@
          "description": "Identifiers of the tags in the scope of the report.",
          "items": {
           "type": "integer",
-          "format": "int32",
-          "description": "Identifiers of the tags in the scope of the report."
+          "format": "int32"
          }
         }
-       }
+       },
+       "type": "object"
       },
       "storage": {
        "description": "The additional storage location and path.",
@@ -5955,7 +5921,8 @@
          "type": "string",
          "description": "The location to storage an additional copy of the report. This is a sub-path post-fixed to `$(install_dir)/nsc/reports/$(user)/`. Variables such as `$(report_name)`, `$(date)`, and `$(time)` may be used to generate the directory structure."
         }
-       }
+       },
+       "type": "object"
       },
       "template": {
        "type": "string",
@@ -5970,8 +5937,7 @@
        "description": "The identifiers of the users granted explicit access to the report.",
        "items": {
         "type": "integer",
-        "format": "int32",
-        "description": "The identifiers of the users granted explicit access to the report."
+        "format": "int32"
        }
       },
       "version": {
@@ -6115,8 +6081,7 @@
          "type": "array",
          "description": "The email address of additional recipients to distribute the report to.",
          "items": {
-          "type": "string",
-          "description": "The email address of additional recipients to distribute the report to."
+          "type": "string"
          }
         },
         "assetAccess": {
@@ -6148,9 +6113,11 @@
            "type": "string",
            "description": "SMTP sender address."
           }
-         }
+         },
+         "type": "object"
         }
-       }
+       },
+       "type": "object"
       },
       "enclave": {
        "type": "string",
@@ -6166,8 +6133,7 @@
            "type": "array",
            "description": "The vulnerability categories to exclude. Defaults to no categories.",
            "items": {
-            "type": "string",
-            "description": "The vulnerability categories to exclude. Defaults to no categories."
+            "type": "string"
            },
            "uniqueItems": true
           },
@@ -6175,12 +6141,12 @@
            "type": "array",
            "description": "The vulnerability categories to include. Defaults to all categories.",
            "items": {
-            "type": "string",
-            "description": "The vulnerability categories to include. Defaults to all categories."
+            "type": "string"
            },
            "uniqueItems": true
           }
-         }
+         },
+         "type": "object"
         },
         "severity": {
          "type": "string",
@@ -6196,7 +6162,6 @@
          "description": "The vulnerability statuses to include. Defaults to [ `vulnerable`, `vulnerable-version`, `potentially-vulnerable` ].",
          "items": {
           "type": "string",
-          "description": "The vulnerability statuses to include. Defaults to [ `vulnerable`, `vulnerable-version`, `potentially-vulnerable` ].",
           "enum": [
            "vulnerable",
            "vulnerable-version",
@@ -6206,7 +6171,8 @@
          },
          "uniqueItems": true
         }
-       }
+       },
+       "type": "object"
       },
       "format": {
        "type": "string",
@@ -6278,7 +6244,8 @@
          "required": [
           "every",
           "interval"
-         ]
+         ],
+         "type": "object"
         },
         "start": {
          "type": "string",
@@ -6294,7 +6261,8 @@
           "none"
          ]
         }
-       }
+       },
+       "type": "object"
       },
       "language": {
        "type": "string",
@@ -6328,7 +6296,8 @@
          "type": {
           "type": "string"
          }
-        }
+        },
+        "type": "object"
        }
       },
       "name": {
@@ -6375,15 +6344,8 @@
          ]
         },
         "from": {
-         "type": "object",
-         "description": "The start date of the trend, which can either be a duration or a specific date and time.",
-         "enum": [
-          "P1Y",
-          "P6M",
-          "P3M",
-          "P1M",
-          "<date>"
-         ]
+         "type": "string",
+         "description": "The start of the trend: a duration (P1Y, P6M, P3M or P1M) or an ISO-8601 date."
         },
         "interval": {
          "type": "integer",
@@ -6395,7 +6357,8 @@
          "format": "date",
          "description": "The end date of the trend (empty if `from` is a duration)."
         }
-       }
+       },
+       "type": "object"
       },
       "remediation": {
        "description": "If the template is `prioritized-remediations`, `prioritized-remediations-with-details`, `top-policy-remediations`, or `top-policy-remediations-with-details` the remediation display settings.",
@@ -6417,7 +6380,8 @@
           "riskscore"
          ]
         }
-       }
+       },
+       "type": "object"
       },
       "riskTrend": {
        "description": "Configuration details for risk trending output.",
@@ -6438,7 +6402,8 @@
             "none"
            ]
           }
-         }
+         },
+         "type": "object"
         },
         "assetGroupMembership": {
          "type": "string",
@@ -6461,15 +6426,8 @@
          "description": "Whether to include a trend for the 5 highest-risk assets in the scope of the report."
         },
         "from": {
-         "type": "object",
-         "description": "The start date of the risk trend, which can either be a duration or a specific date and time.",
-         "enum": [
-          "P1Y",
-          "P6M",
-          "P3M",
-          "P1M",
-          "<date>"
-         ]
+         "type": "string",
+         "description": "The start of the trend: a duration (P1Y, P6M, P3M or P1M) or an ISO-8601 date."
         },
         "sites": {
          "type": "string",
@@ -6500,7 +6458,8 @@
          "format": "date",
          "description": "The end date of the risk trend (empty if `from` is a duration)."
         }
-       }
+       },
+       "type": "object"
       },
       "scope": {
        "description": "The scope of the report. Scope is an object that has the following properties that vary by format and template: assets Array[integer ‹int32›] The identifiers of the assets to report on. sites Array[integer ‹int32›] The identifiers of the sites to report on. assetGroups Array[integer ‹int32›] The identifiers of the asset to report on. tags Array[integer ‹int32›] The identifiers of the tag to repor…",
@@ -6510,8 +6469,7 @@
          "description": "Identifiers of the asset groups in the scope of the report.",
          "items": {
           "type": "integer",
-          "format": "int32",
-          "description": "Identifiers of the asset groups in the scope of the report."
+          "format": "int32"
          }
         },
         "assets": {
@@ -6519,8 +6477,7 @@
          "description": "Identifiers of the assets in the scope of the report.",
          "items": {
           "type": "integer",
-          "format": "int64",
-          "description": "Identifiers of the assets in the scope of the report."
+          "format": "int64"
          }
         },
         "scan": {
@@ -6533,8 +6490,7 @@
          "description": "Identifiers of the sites in the scope of the report.",
          "items": {
           "type": "integer",
-          "format": "int32",
-          "description": "Identifiers of the sites in the scope of the report."
+          "format": "int32"
          }
         },
         "tags": {
@@ -6542,11 +6498,11 @@
          "description": "Identifiers of the tags in the scope of the report.",
          "items": {
           "type": "integer",
-          "format": "int32",
-          "description": "Identifiers of the tags in the scope of the report."
+          "format": "int32"
          }
         }
-       }
+       },
+       "type": "object"
       },
       "storage": {
        "description": "The additional storage location and path.",
@@ -6555,7 +6511,8 @@
          "type": "string",
          "description": "The location to storage an additional copy of the report. This is a sub-path post-fixed to `$(install_dir)/nsc/reports/$(user)/`. Variables such as `$(report_name)`, `$(date)`, and `$(time)` may be used to generate the directory structure."
         }
-       }
+       },
+       "type": "object"
       },
       "template": {
        "type": "string",
@@ -6570,8 +6527,7 @@
        "description": "The identifiers of the users granted explicit access to the report.",
        "items": {
         "type": "integer",
-        "format": "int32",
-        "description": "The identifiers of the users granted explicit access to the report."
+        "format": "int32"
        }
       },
       "version": {
@@ -6803,11 +6759,6 @@
      "required": true,
      "array": false,
      "schema": {
-      "properties": {
-       "id": {
-        "type": "object"
-       }
-      },
       "type": "string",
       "description": "The identifier of the role."
      }
@@ -6837,11 +6788,6 @@
      "required": true,
      "array": false,
      "schema": {
-      "properties": {
-       "id": {
-        "type": "object"
-       }
-      },
       "type": "string",
       "description": "The identifier of the role."
      }
@@ -6871,11 +6817,6 @@
      "required": true,
      "array": false,
      "schema": {
-      "properties": {
-       "id": {
-        "type": "object"
-       }
-      },
       "type": "string",
       "description": "The identifier of the role."
      }
@@ -6902,7 +6843,8 @@
         "key": {
          "type": "string"
         }
-       }
+       },
+       "type": "object"
       },
       "id": {
        "type": "string",
@@ -6923,14 +6865,14 @@
         "key": {
          "type": "string"
         }
-       }
+       },
+       "type": "object"
       },
       "privileges": {
        "type": "array",
        "description": "The privileges granted to the role.",
        "items": {
         "type": "string",
-        "description": "The privileges granted to the role.",
         "enum": [
          "all-permissions",
          "create-reports",
@@ -7006,11 +6948,6 @@
      "required": true,
      "array": false,
      "schema": {
-      "properties": {
-       "id": {
-        "type": "object"
-       }
-      },
       "type": "string",
       "description": "The identifier of the role."
      }
@@ -7905,19 +7842,18 @@
            "type": "array",
            "description": "The categories of vulnerability checks to disable during a scan.",
            "items": {
-            "type": "string",
-            "description": "The categories of vulnerability checks to disable during a scan."
+            "type": "string"
            }
           },
           "enabled": {
            "type": "array",
            "description": "The categories of vulnerability checks to enable during a scan.",
            "items": {
-            "type": "string",
-            "description": "The categories of vulnerability checks to enable during a scan."
+            "type": "string"
            }
           }
-         }
+         },
+         "type": "object"
         },
         "correlate": {
          "type": "boolean",
@@ -7942,7 +7878,8 @@
             "description": "The identifier of the vulnerability check."
            }
           }
-         }
+         },
+         "type": "object"
         },
         "potential": {
          "type": "boolean",
@@ -7955,25 +7892,25 @@
            "type": "array",
            "description": "The types of vulnerability checks to disable during a scan.",
            "items": {
-            "type": "string",
-            "description": "The types of vulnerability checks to disable during a scan."
+            "type": "string"
            }
           },
           "enabled": {
            "type": "array",
            "description": "The types of vulnerability checks to enable during a scan.",
            "items": {
-            "type": "string",
-            "description": "The types of vulnerability checks to enable during a scan."
+            "type": "string"
            }
           }
-         }
+         },
+         "type": "object"
         },
         "unsafe": {
          "type": "boolean",
          "description": "Whether checks considered \"unsafe\" are assessed during a scan."
         }
-       }
+       },
+       "type": "object"
       },
       "database": {
        "description": "Settings for discovery databases.",
@@ -7986,15 +7923,15 @@
          "type": "array",
          "description": "Database name (SID) for an Oracle database instance.",
          "items": {
-          "type": "string",
-          "description": "Database name (SID) for an Oracle database instance."
+          "type": "string"
          }
         },
         "postgres": {
          "type": "string",
          "description": "Database name for PostgesSQL database instance."
         }
-       }
+       },
+       "type": "object"
       },
       "description": {
        "type": "string",
@@ -8041,8 +7978,7 @@
            "description": "TCP ports to send packets and perform discovery. Defaults to no ports.",
            "items": {
             "type": "integer",
-            "format": "int32",
-            "description": "TCP ports to send packets and perform discovery. Defaults to no ports."
+            "format": "int32"
            }
           },
           "treatTcpResetAsAsset": {
@@ -8054,11 +7990,11 @@
            "description": "UDP ports to send packets and perform discovery. Defaults to no ports.",
            "items": {
             "type": "integer",
-            "format": "int32",
-            "description": "UDP ports to send packets and perform discovery. Defaults to no ports."
+            "format": "int32"
            }
           }
-         }
+         },
+         "type": "object"
         },
         "performance": {
          "description": "Discovery performance settings used during a scan.",
@@ -8084,7 +8020,8 @@
              "maximum": 15000,
              "minimum": 0
             }
-           }
+           },
+           "type": "object"
           },
           "parallelism": {
            "description": "The number of discovery connection requests to be sent to target host simultaneously. These settings has no effect if values have been set for `scanDelay`.",
@@ -8103,7 +8040,8 @@
              "maximum": 1000,
              "minimum": 0
             }
-           }
+           },
+           "type": "object"
           },
           "retryLimit": {
            "type": "integer",
@@ -8123,7 +8061,8 @@
              "type": "string",
              "description": "The maximum duration to wait between sending packets to each target host. The value is specified as a ISO8601 duration and can range from `PT0S` (0ms) to `P30S` (30s). Defaults to `PT0S`."
             }
-           }
+           },
+           "type": "object"
           },
           "timeout": {
            "description": "The duration to wait between retry attempts.",
@@ -8140,9 +8079,11 @@
              "type": "string",
              "description": "The minimum time to wait between retries. The value is specified as a ISO8601 duration and can range from `PT0.5S` (500ms) to `P30S` (30s). Defaults to `PT0.5S`."
             }
-           }
+           },
+           "type": "object"
           }
-         }
+         },
+         "type": "object"
         },
         "service": {
          "description": "Service discovery settings used during a scan.",
@@ -8183,7 +8124,8 @@
               "none"
              ]
             }
-           }
+           },
+           "type": "object"
           },
           "udp": {
            "description": "UDP service discovery settings.",
@@ -8206,11 +8148,14 @@
               "none"
              ]
             }
-           }
+           },
+           "type": "object"
           }
-         }
+         },
+         "type": "object"
         }
-       }
+       },
+       "type": "object"
       },
       "discoveryOnly": {
        "type": "boolean",
@@ -8258,7 +8203,8 @@
          "type": "boolean",
          "description": "Whether Asset Reporting Format (ARF) results are stored. If you are required to submit reports of your policy scan results to the U.S. government in ARF for SCAP certification, you will need to store SCAP data so that it can be exported in this format. Note that stored SCAP data can accumulate rapidly, which can have a significant impact on file storage. Defaults to `false`."
         }
-       }
+       },
+       "type": "object"
       },
       "policyEnabled": {
        "type": "boolean",
@@ -8287,7 +8233,8 @@
          "type": "string",
          "description": "Regular expression to match a potential false negative login response."
         }
-       }
+       },
+       "type": "object"
       },
       "vulnerabilityEnabled": {
        "type": "boolean",
@@ -8407,19 +8354,18 @@
            "type": "array",
            "description": "The categories of vulnerability checks to disable during a scan.",
            "items": {
-            "type": "string",
-            "description": "The categories of vulnerability checks to disable during a scan."
+            "type": "string"
            }
           },
           "enabled": {
            "type": "array",
            "description": "The categories of vulnerability checks to enable during a scan.",
            "items": {
-            "type": "string",
-            "description": "The categories of vulnerability checks to enable during a scan."
+            "type": "string"
            }
           }
-         }
+         },
+         "type": "object"
         },
         "correlate": {
          "type": "boolean",
@@ -8444,7 +8390,8 @@
             "description": "The identifier of the vulnerability check."
            }
           }
-         }
+         },
+         "type": "object"
         },
         "potential": {
          "type": "boolean",
@@ -8457,25 +8404,25 @@
            "type": "array",
            "description": "The types of vulnerability checks to disable during a scan.",
            "items": {
-            "type": "string",
-            "description": "The types of vulnerability checks to disable during a scan."
+            "type": "string"
            }
           },
           "enabled": {
            "type": "array",
            "description": "The types of vulnerability checks to enable during a scan.",
            "items": {
-            "type": "string",
-            "description": "The types of vulnerability checks to enable during a scan."
+            "type": "string"
            }
           }
-         }
+         },
+         "type": "object"
         },
         "unsafe": {
          "type": "boolean",
          "description": "Whether checks considered \"unsafe\" are assessed during a scan."
         }
-       }
+       },
+       "type": "object"
       },
       "database": {
        "description": "Settings for discovery databases.",
@@ -8488,15 +8435,15 @@
          "type": "array",
          "description": "Database name (SID) for an Oracle database instance.",
          "items": {
-          "type": "string",
-          "description": "Database name (SID) for an Oracle database instance."
+          "type": "string"
          }
         },
         "postgres": {
          "type": "string",
          "description": "Database name for PostgesSQL database instance."
         }
-       }
+       },
+       "type": "object"
       },
       "description": {
        "type": "string",
@@ -8543,8 +8490,7 @@
            "description": "TCP ports to send packets and perform discovery. Defaults to no ports.",
            "items": {
             "type": "integer",
-            "format": "int32",
-            "description": "TCP ports to send packets and perform discovery. Defaults to no ports."
+            "format": "int32"
            }
           },
           "treatTcpResetAsAsset": {
@@ -8556,11 +8502,11 @@
            "description": "UDP ports to send packets and perform discovery. Defaults to no ports.",
            "items": {
             "type": "integer",
-            "format": "int32",
-            "description": "UDP ports to send packets and perform discovery. Defaults to no ports."
+            "format": "int32"
            }
           }
-         }
+         },
+         "type": "object"
         },
         "performance": {
          "description": "Discovery performance settings used during a scan.",
@@ -8586,7 +8532,8 @@
              "maximum": 15000,
              "minimum": 0
             }
-           }
+           },
+           "type": "object"
           },
           "parallelism": {
            "description": "The number of discovery connection requests to be sent to target host simultaneously. These settings has no effect if values have been set for `scanDelay`.",
@@ -8605,7 +8552,8 @@
              "maximum": 1000,
              "minimum": 0
             }
-           }
+           },
+           "type": "object"
           },
           "retryLimit": {
            "type": "integer",
@@ -8625,7 +8573,8 @@
              "type": "string",
              "description": "The maximum duration to wait between sending packets to each target host. The value is specified as a ISO8601 duration and can range from `PT0S` (0ms) to `P30S` (30s). Defaults to `PT0S`."
             }
-           }
+           },
+           "type": "object"
           },
           "timeout": {
            "description": "The duration to wait between retry attempts.",
@@ -8642,9 +8591,11 @@
              "type": "string",
              "description": "The minimum time to wait between retries. The value is specified as a ISO8601 duration and can range from `PT0.5S` (500ms) to `P30S` (30s). Defaults to `PT0.5S`."
             }
-           }
+           },
+           "type": "object"
           }
-         }
+         },
+         "type": "object"
         },
         "service": {
          "description": "Service discovery settings used during a scan.",
@@ -8685,7 +8636,8 @@
               "none"
              ]
             }
-           }
+           },
+           "type": "object"
           },
           "udp": {
            "description": "UDP service discovery settings.",
@@ -8708,11 +8660,14 @@
               "none"
              ]
             }
-           }
+           },
+           "type": "object"
           }
-         }
+         },
+         "type": "object"
         }
-       }
+       },
+       "type": "object"
       },
       "discoveryOnly": {
        "type": "boolean",
@@ -8760,7 +8715,8 @@
          "type": "boolean",
          "description": "Whether Asset Reporting Format (ARF) results are stored. If you are required to submit reports of your policy scan results to the U.S. government in ARF for SCAP certification, you will need to store SCAP data so that it can be exported in this format. Note that stored SCAP data can accumulate rapidly, which can have a significant impact on file storage. Defaults to `false`."
         }
-       }
+       },
+       "type": "object"
       },
       "policyEnabled": {
        "type": "boolean",
@@ -8789,7 +8745,8 @@
          "type": "string",
          "description": "Regular expression to match a potential false negative login response."
         }
-       }
+       },
+       "type": "object"
       },
       "vulnerabilityEnabled": {
        "type": "boolean",
@@ -9012,7 +8969,7 @@
      "description": "The specification of a shared credential.",
      "properties": {
       "account": {
-       "description": "Specify the type of service to authenticate as well as all of the information required by that service.",
+       "description": "Specify the type of service to authenticate as well as all of the information required by that service. Fields by service: as400: domain, password, username; cifs: domain, password, username; cifshash: domain, ntlmHash, username; cvs: domain, password, username; db2: database, password, username; ftp: password, username; http: password, realm, username; ms-sql: database, domain, password, useWindowsAuthentication, username; mysql: database, password, username; notes: notesIDPassword, username; oracle: enumerateSids, oracleListenerPassword, password, sid, username; oracle-service-name: password, serviceName, username; pop: password, username; postgresql: database, password, username; remote-exec: password, username; snmp: communityName; snmpv3: authenticationType, password, privacyPassword, privacyType, username; ssh: password, permissionElevation, permissionElevationPassword, permissionElevationUsername, username; ssh-key: pemKey, permissionElevation, permissionElevationPassword, permissionElevationUsername, privateKeyPassword, username; sybase: database, domain, password, useWindowsAuthentication, username; telnet: password, username; kerberos: password, realm, username; hana: database, password, username; scan-assistant: password, pemCert, pemExpiration, pkcs12_data; vmware: password, username.",
        "properties": {
         "service": {
          "type": "string",
@@ -9044,8 +9001,136 @@
           "scan-assistant",
           "vmware"
          ]
+        },
+        "domain": {
+         "type": "string",
+         "description": "The address of the domain. (service: as400, cifs, cifshash, cvs, ms-sql, sybase)"
+        },
+        "password": {
+         "type": "string",
+         "description": "The password for the account that will be used for authenticating. Note: This property is not returned in responses for security. (service: as400, cifs, cvs, db2, ftp, http, ms-sql, mysql, oracle, oracle-service-name, pop, postgresql, remote-exec, snmpv3, ssh, sybase, telnet, kerberos, hana, scan-assistant, vmware)",
+         "writeOnly": true
+        },
+        "username": {
+         "type": "string",
+         "description": "The username for the account that will be used for authenticating. (service: as400, cifs, cifshash, cvs, db2, ftp, http, ms-sql, mysql, notes, oracle, oracle-service-name, pop, postgresql, remote-exec, snmpv3, ssh, ssh-key, sybase, telnet, kerberos, hana, vmware)"
+        },
+        "ntlmHash": {
+         "type": "string",
+         "description": "The NTLM password hash. Note: This property is not returned in responses for security. (service: cifshash)",
+         "writeOnly": true
+        },
+        "database": {
+         "type": "string",
+         "description": "The name of the database. (service: db2, ms-sql, mysql, postgresql, sybase, hana)"
+        },
+        "realm": {
+         "type": "string",
+         "description": "The realm. (service: http, kerberos)"
+        },
+        "useWindowsAuthentication": {
+         "type": "boolean",
+         "description": "Boolean flag signaling whether to connect to the database using Windows authentication. When set to `true`, Windows authentication is attempted; when set to `false`, SQL authentication is attempted. (service: ms-sql, sybase)"
+        },
+        "notesIDPassword": {
+         "type": "string",
+         "description": "The password for the account that will be used for authenticating. Note: This property is not returned in responses for security. (service: notes)",
+         "writeOnly": true
+        },
+        "enumerateSids": {
+         "type": "boolean",
+         "description": "Boolean flag instructing the scan engine to attempt to enumerate SIDs from your environment. If set to `true`, set the Oracle Net Listener password in property `oracleListenerPassword`. (service: oracle)"
+        },
+        "oracleListenerPassword": {
+         "type": "string",
+         "description": "The Oracle Net Listener password. Used to enumerate SIDs from your environment. (service: oracle)",
+         "writeOnly": true
+        },
+        "sid": {
+         "type": "string",
+         "description": "The name of the database. If not specified, a default database name will be used during authentication. (service: oracle)"
+        },
+        "serviceName": {
+         "type": "string",
+         "description": "The service name of the database. If not specified, a default database name will be used during authentication. (service: oracle-service-name)"
+        },
+        "communityName": {
+         "type": "string",
+         "description": "The community name that will be used for authenticating. Note: This property is not returned in responses for security. (service: snmp)",
+         "writeOnly": true
+        },
+        "authenticationType": {
+         "type": "string",
+         "description": "The authentication protocols available to use in SNMP v3. (service: snmpv3)",
+         "enum": [
+          "no-authentication",
+          "md5",
+          "sha"
+         ]
+        },
+        "privacyPassword": {
+         "type": "string",
+         "description": "The privacy password for the account that will be used for authenticating. Is required when the property `authenticationType` is set to valid value other than `\"no-authentication\"`. Note: This proper… (service: snmpv3)",
+         "writeOnly": true
+        },
+        "privacyType": {
+         "type": "string",
+         "description": "The privacy protocols available to use in SNMP v3. (service: snmpv3)",
+         "enum": [
+          "no-privacy",
+          "des",
+          "aes-128",
+          "aes-192",
+          "aes-192-with-3-des-key-extension",
+          "aes-256",
+          "aes-256-with-3-des-key-extension"
+         ]
+        },
+        "permissionElevation": {
+         "type": "string",
+         "description": "Elevate scan engine permissions to administrative or root access, which is necessary to obtain certain data during the scan. Defaults to `\"none\"` if not specified. (service: ssh, ssh-key)",
+         "enum": [
+          "none",
+          "sudo",
+          "sudosu",
+          "su",
+          "pbrun",
+          "privileged-exec"
+         ]
+        },
+        "permissionElevationPassword": {
+         "type": "string",
+         "description": "The password for the account with elevated permissions. This property must not be specified when the property `permissionElevation` is set to either `\"none\"` or `\"pbrun\"`; otherwise the property is r… (service: ssh, ssh-key)",
+         "writeOnly": true
+        },
+        "permissionElevationUsername": {
+         "type": "string",
+         "description": "The user name for the account with elevated permissions. This property must not be specified when the property `permissionElevation` is set to either `\"none\"` or `\"pbrun\"`; otherwise the property is… (service: ssh, ssh-key)"
+        },
+        "pemKey": {
+         "type": "string",
+         "description": "The PEM-format private key. Note: This property is not returned in responses for security. (service: ssh-key)",
+         "writeOnly": true
+        },
+        "privateKeyPassword": {
+         "type": "string",
+         "description": "The password for private key. Note: This property is not returned in responses for security. (service: ssh-key)",
+         "writeOnly": true
+        },
+        "pemCert": {
+         "type": "string",
+         "description": "The public key certificate in Privacy-Enhanced Mail (PEM) format, represented as a plaintext string. (service: scan-assistant)"
+        },
+        "pemExpiration": {
+         "type": "string",
+         "description": "The expiration date of the PEM-formatted public key certificate. (service: scan-assistant)"
+        },
+        "pkcs12_data": {
+         "type": "string",
+         "description": "The binary data of an optionally password-protected Public-Key Cryptography Standards (PKCS) #12 container file (with a .p12 or .pfx extension) for a private key and its associated public key certifi… (service: scan-assistant)"
         }
-       }
+       },
+       "type": "object"
       },
       "description": {
        "type": "string",
@@ -9080,8 +9165,7 @@
        "description": "List of site identifiers. These sites are explicitly assigned access to the shared scan credential, allowing the site to use the credential for authentication during a scan. This property can only be set if the value of property `siteAssignment` is set to `\"specific-sites\"`. When the property `siteAssignment` is set to `\"all-sites\"`, this property will be `null`.",
        "items": {
         "type": "integer",
-        "format": "int32",
-        "description": "List of site identifiers. These sites are explicitly assigned access to the shared scan credential, allowing the site to use the credential for authentication during a scan. This property can only be set if the value of property `siteAssignment` is set to `\"specific-sites\"`. When the property `siteAssignment` is set to `\"all-sites\"`, this property will be `null`."
+        "format": "int32"
        }
       }
      },
@@ -9189,7 +9273,7 @@
      "description": "The specification of a shared credential.",
      "properties": {
       "account": {
-       "description": "Specify the type of service to authenticate as well as all of the information required by that service.",
+       "description": "Specify the type of service to authenticate as well as all of the information required by that service. Fields by service: as400: domain, password, username; cifs: domain, password, username; cifshash: domain, ntlmHash, username; cvs: domain, password, username; db2: database, password, username; ftp: password, username; http: password, realm, username; ms-sql: database, domain, password, useWindowsAuthentication, username; mysql: database, password, username; notes: notesIDPassword, username; oracle: enumerateSids, oracleListenerPassword, password, sid, username; oracle-service-name: password, serviceName, username; pop: password, username; postgresql: database, password, username; remote-exec: password, username; snmp: communityName; snmpv3: authenticationType, password, privacyPassword, privacyType, username; ssh: password, permissionElevation, permissionElevationPassword, permissionElevationUsername, username; ssh-key: pemKey, permissionElevation, permissionElevationPassword, permissionElevationUsername, privateKeyPassword, username; sybase: database, domain, password, useWindowsAuthentication, username; telnet: password, username; kerberos: password, realm, username; hana: database, password, username; scan-assistant: password, pemCert, pemExpiration, pkcs12_data; vmware: password, username.",
        "properties": {
         "service": {
          "type": "string",
@@ -9221,8 +9305,136 @@
           "scan-assistant",
           "vmware"
          ]
+        },
+        "domain": {
+         "type": "string",
+         "description": "The address of the domain. (service: as400, cifs, cifshash, cvs, ms-sql, sybase)"
+        },
+        "password": {
+         "type": "string",
+         "description": "The password for the account that will be used for authenticating. Note: This property is not returned in responses for security. (service: as400, cifs, cvs, db2, ftp, http, ms-sql, mysql, oracle, oracle-service-name, pop, postgresql, remote-exec, snmpv3, ssh, sybase, telnet, kerberos, hana, scan-assistant, vmware)",
+         "writeOnly": true
+        },
+        "username": {
+         "type": "string",
+         "description": "The username for the account that will be used for authenticating. (service: as400, cifs, cifshash, cvs, db2, ftp, http, ms-sql, mysql, notes, oracle, oracle-service-name, pop, postgresql, remote-exec, snmpv3, ssh, ssh-key, sybase, telnet, kerberos, hana, vmware)"
+        },
+        "ntlmHash": {
+         "type": "string",
+         "description": "The NTLM password hash. Note: This property is not returned in responses for security. (service: cifshash)",
+         "writeOnly": true
+        },
+        "database": {
+         "type": "string",
+         "description": "The name of the database. (service: db2, ms-sql, mysql, postgresql, sybase, hana)"
+        },
+        "realm": {
+         "type": "string",
+         "description": "The realm. (service: http, kerberos)"
+        },
+        "useWindowsAuthentication": {
+         "type": "boolean",
+         "description": "Boolean flag signaling whether to connect to the database using Windows authentication. When set to `true`, Windows authentication is attempted; when set to `false`, SQL authentication is attempted. (service: ms-sql, sybase)"
+        },
+        "notesIDPassword": {
+         "type": "string",
+         "description": "The password for the account that will be used for authenticating. Note: This property is not returned in responses for security. (service: notes)",
+         "writeOnly": true
+        },
+        "enumerateSids": {
+         "type": "boolean",
+         "description": "Boolean flag instructing the scan engine to attempt to enumerate SIDs from your environment. If set to `true`, set the Oracle Net Listener password in property `oracleListenerPassword`. (service: oracle)"
+        },
+        "oracleListenerPassword": {
+         "type": "string",
+         "description": "The Oracle Net Listener password. Used to enumerate SIDs from your environment. (service: oracle)",
+         "writeOnly": true
+        },
+        "sid": {
+         "type": "string",
+         "description": "The name of the database. If not specified, a default database name will be used during authentication. (service: oracle)"
+        },
+        "serviceName": {
+         "type": "string",
+         "description": "The service name of the database. If not specified, a default database name will be used during authentication. (service: oracle-service-name)"
+        },
+        "communityName": {
+         "type": "string",
+         "description": "The community name that will be used for authenticating. Note: This property is not returned in responses for security. (service: snmp)",
+         "writeOnly": true
+        },
+        "authenticationType": {
+         "type": "string",
+         "description": "The authentication protocols available to use in SNMP v3. (service: snmpv3)",
+         "enum": [
+          "no-authentication",
+          "md5",
+          "sha"
+         ]
+        },
+        "privacyPassword": {
+         "type": "string",
+         "description": "The privacy password for the account that will be used for authenticating. Is required when the property `authenticationType` is set to valid value other than `\"no-authentication\"`. Note: This proper… (service: snmpv3)",
+         "writeOnly": true
+        },
+        "privacyType": {
+         "type": "string",
+         "description": "The privacy protocols available to use in SNMP v3. (service: snmpv3)",
+         "enum": [
+          "no-privacy",
+          "des",
+          "aes-128",
+          "aes-192",
+          "aes-192-with-3-des-key-extension",
+          "aes-256",
+          "aes-256-with-3-des-key-extension"
+         ]
+        },
+        "permissionElevation": {
+         "type": "string",
+         "description": "Elevate scan engine permissions to administrative or root access, which is necessary to obtain certain data during the scan. Defaults to `\"none\"` if not specified. (service: ssh, ssh-key)",
+         "enum": [
+          "none",
+          "sudo",
+          "sudosu",
+          "su",
+          "pbrun",
+          "privileged-exec"
+         ]
+        },
+        "permissionElevationPassword": {
+         "type": "string",
+         "description": "The password for the account with elevated permissions. This property must not be specified when the property `permissionElevation` is set to either `\"none\"` or `\"pbrun\"`; otherwise the property is r… (service: ssh, ssh-key)",
+         "writeOnly": true
+        },
+        "permissionElevationUsername": {
+         "type": "string",
+         "description": "The user name for the account with elevated permissions. This property must not be specified when the property `permissionElevation` is set to either `\"none\"` or `\"pbrun\"`; otherwise the property is… (service: ssh, ssh-key)"
+        },
+        "pemKey": {
+         "type": "string",
+         "description": "The PEM-format private key. Note: This property is not returned in responses for security. (service: ssh-key)",
+         "writeOnly": true
+        },
+        "privateKeyPassword": {
+         "type": "string",
+         "description": "The password for private key. Note: This property is not returned in responses for security. (service: ssh-key)",
+         "writeOnly": true
+        },
+        "pemCert": {
+         "type": "string",
+         "description": "The public key certificate in Privacy-Enhanced Mail (PEM) format, represented as a plaintext string. (service: scan-assistant)"
+        },
+        "pemExpiration": {
+         "type": "string",
+         "description": "The expiration date of the PEM-formatted public key certificate. (service: scan-assistant)"
+        },
+        "pkcs12_data": {
+         "type": "string",
+         "description": "The binary data of an optionally password-protected Public-Key Cryptography Standards (PKCS) #12 container file (with a .p12 or .pfx extension) for a private key and its associated public key certifi… (service: scan-assistant)"
         }
-       }
+       },
+       "type": "object"
       },
       "description": {
        "type": "string",
@@ -9257,8 +9469,7 @@
        "description": "List of site identifiers. These sites are explicitly assigned access to the shared scan credential, allowing the site to use the credential for authentication during a scan. This property can only be set if the value of property `siteAssignment` is set to `\"specific-sites\"`. When the property `siteAssignment` is set to `\"all-sites\"`, this property will be `null`.",
        "items": {
         "type": "integer",
-        "format": "int32",
-        "description": "List of site identifiers. These sites are explicitly assigned access to the shared scan credential, allowing the site to use the credential for authentication during a scan. This property can only be set if the value of property `siteAssignment` is set to `\"specific-sites\"`. When the property `siteAssignment` is set to `\"all-sites\"`, this property will be `null`."
+        "format": "int32"
        }
       }
      },
@@ -9394,7 +9605,8 @@
               "description": "The identifier of the asset group."
              }
             }
-           }
+           },
+           "type": "object"
           },
           "excludedTargets": {
            "description": "Addresses to be excluded from the site's scan. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation.",
@@ -9403,11 +9615,11 @@
              "type": "array",
              "description": "List of addresses. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation.",
              "items": {
-              "type": "string",
-              "description": "List of addresses. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation."
+              "type": "string"
              }
             }
-           }
+           },
+           "type": "object"
           },
           "includedAssetGroups": {
            "description": "Assets associated with these asset groups will be included in the site's scan.",
@@ -9421,7 +9633,8 @@
               "description": "The identifier of the asset group."
              }
             }
-           }
+           },
+           "type": "object"
           },
           "includedTargets": {
            "description": "Addresses to be included in the site's scan. At least one address must be specified in a static site. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation.",
@@ -9430,13 +9643,14 @@
              "type": "array",
              "description": "List of addresses. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation.",
              "items": {
-              "type": "string",
-              "description": "List of addresses. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation."
+              "type": "string"
              }
             }
-           }
+           },
+           "type": "object"
           }
-         }
+         },
+         "type": "object"
         },
         "connection": {
          "description": "Specify discovery connection settings for a dynamic site. Property is required when creating a dynamic site.",
@@ -9449,9 +9663,11 @@
          },
          "required": [
           "id"
-         ]
+         ],
+         "type": "object"
         }
-       }
+       },
+       "type": "object"
       },
       "scanTemplateId": {
        "type": "string",
@@ -9785,7 +10001,8 @@
         "paused",
         "started",
         "stopped"
-       ]
+       ],
+       "type": "object"
       },
       "enabledVulnerabilityEvents": {
        "description": "Allows the user to specify which vulnerability result events generate an alert. Default values will be chosen if property is not specified as apart of the request. The default values are documented in the properties of `enabledVulnerabilityEvents`.",
@@ -9817,7 +10034,8 @@
         "potentialVulnerabilities",
         "unconfirmedVulnerabilities",
         "vulnerabilitySeverity"
-       ]
+       ],
+       "type": "object"
       },
       "id": {
        "type": "integer",
@@ -9851,8 +10069,7 @@
        "type": "array",
        "description": "The recipient list. At least one recipient must be specified. Each recipient must be a valid e-mail address.",
        "items": {
-        "type": "string",
-        "description": "The recipient list. At least one recipient must be specified. Each recipient must be a valid e-mail address."
+        "type": "string"
        }
       },
       "relayServer": {
@@ -9945,7 +10162,8 @@
          "paused",
          "started",
          "stopped"
-        ]
+        ],
+        "type": "object"
        },
        "enabledVulnerabilityEvents": {
         "description": "Allows the user to specify which vulnerability result events generate an alert. Default values will be chosen if property is not specified as apart of the request. The default values are documented in the properties of `enabledVulnerabilityEvents`.",
@@ -9977,7 +10195,8 @@
          "potentialVulnerabilities",
          "unconfirmedVulnerabilities",
          "vulnerabilitySeverity"
-        ]
+        ],
+        "type": "object"
        },
        "id": {
         "type": "integer",
@@ -10011,8 +10230,7 @@
         "type": "array",
         "description": "The recipient list. At least one recipient must be specified. Each recipient must be a valid e-mail address.",
         "items": {
-         "type": "string",
-         "description": "The recipient list. At least one recipient must be specified. Each recipient must be a valid e-mail address."
+         "type": "string"
         }
        },
        "relayServer": {
@@ -10030,7 +10248,8 @@
        "notification",
        "recipients",
        "relayServer"
-      ]
+      ],
+      "type": "object"
      }
     }
    },
@@ -10195,7 +10414,8 @@
         "paused",
         "started",
         "stopped"
-       ]
+       ],
+       "type": "object"
       },
       "enabledVulnerabilityEvents": {
        "description": "Allows the user to specify which vulnerability result events generate an alert. Default values will be chosen if property is not specified as apart of the request. The default values are documented in the properties of `enabledVulnerabilityEvents`.",
@@ -10227,7 +10447,8 @@
         "potentialVulnerabilities",
         "unconfirmedVulnerabilities",
         "vulnerabilitySeverity"
-       ]
+       ],
+       "type": "object"
       },
       "id": {
        "type": "integer",
@@ -10261,8 +10482,7 @@
        "type": "array",
        "description": "The recipient list. At least one recipient must be specified. Each recipient must be a valid e-mail address.",
        "items": {
-        "type": "string",
-        "description": "The recipient list. At least one recipient must be specified. Each recipient must be a valid e-mail address."
+        "type": "string"
        }
       },
       "relayServer": {
@@ -10416,7 +10636,8 @@
         "paused",
         "started",
         "stopped"
-       ]
+       ],
+       "type": "object"
       },
       "enabledVulnerabilityEvents": {
        "description": "Allows the user to specify which vulnerability result events generate an alert. Default values will be chosen if property is not specified as apart of the request. The default values are documented in the properties of `enabledVulnerabilityEvents`.",
@@ -10448,7 +10669,8 @@
         "potentialVulnerabilities",
         "unconfirmedVulnerabilities",
         "vulnerabilitySeverity"
-       ]
+       ],
+       "type": "object"
       },
       "id": {
        "type": "integer",
@@ -10564,7 +10786,8 @@
          "paused",
          "started",
          "stopped"
-        ]
+        ],
+        "type": "object"
        },
        "enabledVulnerabilityEvents": {
         "description": "Allows the user to specify which vulnerability result events generate an alert. Default values will be chosen if property is not specified as apart of the request. The default values are documented in the properties of `enabledVulnerabilityEvents`.",
@@ -10596,7 +10819,8 @@
          "potentialVulnerabilities",
          "unconfirmedVulnerabilities",
          "vulnerabilitySeverity"
-        ]
+        ],
+        "type": "object"
        },
        "id": {
         "type": "integer",
@@ -10633,7 +10857,8 @@
        "name",
        "notification",
        "server"
-      ]
+      ],
+      "type": "object"
      }
     }
    },
@@ -10802,7 +11027,8 @@
         "paused",
         "started",
         "stopped"
-       ]
+       ],
+       "type": "object"
       },
       "enabledVulnerabilityEvents": {
        "description": "Allows the user to specify which vulnerability result events generate an alert. Default values will be chosen if property is not specified as apart of the request. The default values are documented in the properties of `enabledVulnerabilityEvents`.",
@@ -10834,7 +11060,8 @@
         "potentialVulnerabilities",
         "unconfirmedVulnerabilities",
         "vulnerabilitySeverity"
-       ]
+       ],
+       "type": "object"
       },
       "id": {
        "type": "integer",
@@ -11003,7 +11230,8 @@
         "paused",
         "started",
         "stopped"
-       ]
+       ],
+       "type": "object"
       },
       "enabledVulnerabilityEvents": {
        "description": "Allows the user to specify which vulnerability result events generate an alert. Default values will be chosen if property is not specified as apart of the request. The default values are documented in the properties of `enabledVulnerabilityEvents`.",
@@ -11035,7 +11263,8 @@
         "potentialVulnerabilities",
         "unconfirmedVulnerabilities",
         "vulnerabilitySeverity"
-       ]
+       ],
+       "type": "object"
       },
       "id": {
        "type": "integer",
@@ -11146,7 +11375,8 @@
          "paused",
          "started",
          "stopped"
-        ]
+        ],
+        "type": "object"
        },
        "enabledVulnerabilityEvents": {
         "description": "Allows the user to specify which vulnerability result events generate an alert. Default values will be chosen if property is not specified as apart of the request. The default values are documented in the properties of `enabledVulnerabilityEvents`.",
@@ -11178,7 +11408,8 @@
          "potentialVulnerabilities",
          "unconfirmedVulnerabilities",
          "vulnerabilitySeverity"
-        ]
+        ],
+        "type": "object"
        },
        "id": {
         "type": "integer",
@@ -11214,7 +11445,8 @@
        "name",
        "notification",
        "server"
-      ]
+      ],
+      "type": "object"
      }
     }
    },
@@ -11379,7 +11611,8 @@
         "paused",
         "started",
         "stopped"
-       ]
+       ],
+       "type": "object"
       },
       "enabledVulnerabilityEvents": {
        "description": "Allows the user to specify which vulnerability result events generate an alert. Default values will be chosen if property is not specified as apart of the request. The default values are documented in the properties of `enabledVulnerabilityEvents`.",
@@ -11411,7 +11644,8 @@
         "potentialVulnerabilities",
         "unconfirmedVulnerabilities",
         "vulnerabilitySeverity"
-       ]
+       ],
+       "type": "object"
       },
       "id": {
        "type": "integer",
@@ -11590,7 +11824,6 @@
        "type": "array",
        "description": "All addresses discovered on the asset.",
        "items": {
-        "description": "All addresses discovered on the asset.",
         "properties": {
          "ip": {
           "type": "string",
@@ -11600,7 +11833,8 @@
           "type": "string",
           "description": "The Media Access Control (MAC) address. The format is six groups of two hexadecimal digits separated by colons."
          }
-        }
+        },
+        "type": "object"
        }
       },
       "configurations": {
@@ -11620,7 +11854,8 @@
         },
         "required": [
          "name"
-        ]
+        ],
+        "type": "object"
        }
       },
       "cpe": {
@@ -11649,7 +11884,8 @@
         },
         "required": [
          "name"
-        ]
+        ],
+        "type": "object"
        }
       },
       "date": {
@@ -11684,7 +11920,8 @@
            },
            "required": [
             "name"
-           ]
+           ],
+           "type": "object"
           }
          },
          "name": {
@@ -11708,7 +11945,8 @@
         "required": [
          "name",
          "type"
-        ]
+        ],
+        "type": "object"
        }
       },
       "hostName": {
@@ -11719,7 +11957,6 @@
        "type": "array",
        "description": "Additional host names for the asset.",
        "items": {
-        "description": "Additional host names for the asset.",
         "properties": {
          "name": {
           "type": "string",
@@ -11741,7 +11978,8 @@
         },
         "required": [
          "name"
-        ]
+        ],
+        "type": "object"
        }
       },
       "id": {
@@ -11753,7 +11991,6 @@
        "type": "array",
        "description": "Unique identifiers found on the asset, such as hardware or operating system identifiers.",
        "items": {
-        "description": "Unique identifiers found on the asset, such as hardware or operating system identifiers.",
         "properties": {
          "id": {
           "type": "string",
@@ -11766,7 +12003,8 @@
         },
         "required": [
          "id"
-        ]
+        ],
+        "type": "object"
        }
       },
       "ip": {
@@ -11809,7 +12047,8 @@
           },
           "required": [
            "name"
-          ]
+          ],
+          "type": "object"
          }
         },
         "cpe": {
@@ -11875,7 +12114,8 @@
          },
          "required": [
           "part"
-         ]
+         ],
+         "type": "object"
         },
         "description": {
          "type": "string",
@@ -11910,13 +12150,13 @@
          "type": "string",
          "description": "The version of the operating system."
         }
-       }
+       },
+       "type": "object"
       },
       "services": {
        "type": "array",
        "description": "The services discovered on the asset.",
        "items": {
-        "description": "The services discovered on the asset.",
         "properties": {
          "configurations": {
           "type": "array",
@@ -11935,14 +12175,14 @@
            },
            "required": [
             "name"
-           ]
+           ],
+           "type": "object"
           }
          },
          "databases": {
           "type": "array",
           "description": "The databases enumerated on the service.",
           "items": {
-           "description": "The databases enumerated on the service.",
            "properties": {
             "description": {
              "type": "string",
@@ -11960,7 +12200,8 @@
            },
            "required": [
             "name"
-           ]
+           ],
+           "type": "object"
           }
          },
          "family": {
@@ -12005,7 +12246,6 @@
           "type": "array",
           "description": "The group accounts enumerated on the service.",
           "items": {
-           "description": "The group accounts enumerated on the service.",
            "properties": {
             "id": {
              "type": "integer",
@@ -12019,7 +12259,8 @@
            },
            "required": [
             "name"
-           ]
+           ],
+           "type": "object"
           }
          },
          "users": {
@@ -12041,7 +12282,8 @@
              "type": "string",
              "description": "The name of the user account."
             }
-           }
+           },
+           "type": "object"
           }
          },
          "vendor": {
@@ -12056,7 +12298,6 @@
           "type": "array",
           "description": "The web applications found on the service.",
           "items": {
-           "description": "The web applications found on the service.",
            "properties": {
             "id": {
              "type": "integer",
@@ -12067,8 +12308,39 @@
              "type": "array",
              "description": "The pages discovered on the web application.",
              "items": {
-              "type": "object",
-              "description": "WebPage (nested object; see the Rapid7 API documentation)"
+              "properties": {
+               "linkType": {
+                "type": "string",
+                "description": "The type of link used to traverse or detect the page.",
+                "enum": [
+                 "seed",
+                 "html-ref",
+                 "robots",
+                 "js-string",
+                 "query-param",
+                 "pdf",
+                 "css",
+                 "implied-dir",
+                 "rss",
+                 "redirection",
+                 "sitemap",
+                 "backup",
+                 "vck-rewrite",
+                 "non-ref-guess",
+                 "soft-404"
+                ]
+               },
+               "path": {
+                "type": "string",
+                "description": "The path to the page (URI)."
+               },
+               "response": {
+                "type": "integer",
+                "format": "int32",
+                "description": "The HTTP response code observed with retrieving the page."
+               }
+              },
+              "type": "object"
              }
             },
             "root": {
@@ -12079,27 +12351,27 @@
              "type": "string",
              "description": "The virtual host of the web application."
             }
-           }
+           },
+           "type": "object"
           }
          }
         },
         "required": [
          "port",
          "protocol"
-        ]
+        ],
+        "type": "object"
        }
       },
       "software": {
        "type": "array",
        "description": "The software discovered on the asset.",
        "items": {
-        "description": "The software discovered on the asset.",
         "properties": {
          "configurations": {
           "type": "array",
           "description": "The attributes of the software.",
           "items": {
-           "description": "The attributes of the software.",
            "properties": {
             "name": {
              "type": "string",
@@ -12112,7 +12384,8 @@
            },
            "required": [
             "name"
-           ]
+           ],
+           "type": "object"
           }
          },
          "cpe": {
@@ -12178,7 +12451,8 @@
           },
           "required": [
            "part"
-          ]
+          ],
+          "type": "object"
          },
          "description": {
           "type": "string",
@@ -12209,7 +12483,8 @@
           "type": "string",
           "description": "The version of the software."
          }
-        }
+        },
+        "type": "object"
        }
       },
       "type": {
@@ -12241,14 +12516,14 @@
         },
         "required": [
          "name"
-        ]
+        ],
+        "type": "object"
        }
       },
       "users": {
        "type": "array",
        "description": "The user accounts enumerated on the asset.",
        "items": {
-        "description": "The user accounts enumerated on the asset.",
         "properties": {
          "fullName": {
           "type": "string",
@@ -12263,12 +12538,14 @@
           "type": "string",
           "description": "The name of the user account."
          }
-        }
+        },
+        "type": "object"
        }
       },
       "vulnerabilities": {
        "description": "Summary information for vulnerabilities on the asset.",
-       "properties": {}
+       "properties": {},
+       "type": "object"
       }
      },
      "required": [
@@ -12467,7 +12744,6 @@
        "type": "array",
        "description": "Filters used to match assets from a discovery connection. See Discovery Connection Search Criteria for more information on the structure and format.",
        "items": {
-        "description": "Filters used to match assets from a discovery connection. See Discovery Connection Search Criteria for more information on the structure and format.",
         "properties": {
          "field": {
           "type": "string",
@@ -12493,11 +12769,11 @@
           "type": "array",
           "description": "An array of values to match using the operator.",
           "items": {
-           "type": "object",
-           "description": "An array of values to match using the operator."
+           "type": "object"
           }
          }
-        }
+        },
+        "type": "object"
        }
       },
       "match": {
@@ -13397,7 +13673,8 @@
             "description": "The identifier of the asset group."
            }
           }
-         }
+         },
+         "type": "object"
         },
         "excludedTargets": {
          "description": "Addresses to be excluded from the site's scan. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation.",
@@ -13406,11 +13683,11 @@
            "type": "array",
            "description": "List of addresses. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation.",
            "items": {
-            "type": "string",
-            "description": "List of addresses. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation."
+            "type": "string"
            }
           }
-         }
+         },
+         "type": "object"
         },
         "includedAssetGroups": {
          "description": "Allows users to specify a subset of the site's included asset groups to be included in the scan. If the property is defined, then at least one valid already defined as an included asset group must be specified.",
@@ -13424,7 +13701,8 @@
             "description": "The identifier of the asset group."
            }
           }
-         }
+         },
+         "type": "object"
         },
         "includedTargets": {
          "description": "Allows users to specify a subset of the site's scan targets to be included in the scan. If the property is defined, then at least one address must be specified.",
@@ -13433,13 +13711,14 @@
            "type": "array",
            "description": "List of addresses. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation.",
            "items": {
-            "type": "string",
-            "description": "List of addresses. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation."
+            "type": "string"
            }
           }
-         }
+         },
+         "type": "object"
         }
-       }
+       },
+       "type": "object"
       },
       "duration": {
        "type": "string",
@@ -13510,7 +13789,8 @@
        "required": [
         "every",
         "interval"
-       ]
+       ],
+       "type": "object"
       },
       "scanEngineId": {
        "type": "integer",
@@ -13592,7 +13872,8 @@
              "description": "The identifier of the asset group."
             }
            }
-          }
+          },
+          "type": "object"
          },
          "excludedTargets": {
           "description": "Addresses to be excluded from the site's scan. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation.",
@@ -13601,11 +13882,11 @@
             "type": "array",
             "description": "List of addresses. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation.",
             "items": {
-             "type": "string",
-             "description": "List of addresses. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation."
+             "type": "string"
             }
            }
-          }
+          },
+          "type": "object"
          },
          "includedAssetGroups": {
           "description": "Allows users to specify a subset of the site's included asset groups to be included in the scan. If the property is defined, then at least one valid already defined as an included asset group must be specified.",
@@ -13619,7 +13900,8 @@
              "description": "The identifier of the asset group."
             }
            }
-          }
+          },
+          "type": "object"
          },
          "includedTargets": {
           "description": "Allows users to specify a subset of the site's scan targets to be included in the scan. If the property is defined, then at least one address must be specified.",
@@ -13628,13 +13910,14 @@
             "type": "array",
             "description": "List of addresses. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation.",
             "items": {
-             "type": "string",
-             "description": "List of addresses. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation."
+             "type": "string"
             }
            }
-          }
+          },
+          "type": "object"
          }
-        }
+        },
+        "type": "object"
        },
        "duration": {
         "type": "string",
@@ -13705,7 +13988,8 @@
         "required": [
          "every",
          "interval"
-        ]
+        ],
+        "type": "object"
        },
        "scanEngineId": {
         "type": "integer",
@@ -13730,7 +14014,8 @@
        "enabled",
        "onScanRepeat",
        "start"
-      ]
+      ],
+      "type": "object"
      }
     }
    },
@@ -13877,7 +14162,8 @@
             "description": "The identifier of the asset group."
            }
           }
-         }
+         },
+         "type": "object"
         },
         "excludedTargets": {
          "description": "Addresses to be excluded from the site's scan. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation.",
@@ -13886,11 +14172,11 @@
            "type": "array",
            "description": "List of addresses. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation.",
            "items": {
-            "type": "string",
-            "description": "List of addresses. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation."
+            "type": "string"
            }
           }
-         }
+         },
+         "type": "object"
         },
         "includedAssetGroups": {
          "description": "Allows users to specify a subset of the site's included asset groups to be included in the scan. If the property is defined, then at least one valid already defined as an included asset group must be specified.",
@@ -13904,7 +14190,8 @@
             "description": "The identifier of the asset group."
            }
           }
-         }
+         },
+         "type": "object"
         },
         "includedTargets": {
          "description": "Allows users to specify a subset of the site's scan targets to be included in the scan. If the property is defined, then at least one address must be specified.",
@@ -13913,13 +14200,14 @@
            "type": "array",
            "description": "List of addresses. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation.",
            "items": {
-            "type": "string",
-            "description": "List of addresses. Each address is a string that can represent either a hostname, ipv4 address, ipv4 address range, ipv6 address, or CIDR notation."
+            "type": "string"
            }
           }
-         }
+         },
+         "type": "object"
         }
-       }
+       },
+       "type": "object"
       },
       "duration": {
        "type": "string",
@@ -13990,7 +14278,8 @@
        "required": [
         "every",
         "interval"
-       ]
+       ],
+       "type": "object"
       },
       "scanEngineId": {
        "type": "integer",
@@ -14231,8 +14520,7 @@
        "type": "array",
        "description": "The hosts that should be included as a part of the scan. This should be a mixture of IP Addresses and Hostnames as a String array.",
        "items": {
-        "type": "string",
-        "description": "The hosts that should be included as a part of the scan. This should be a mixture of IP Addresses and Hostnames as a String array."
+        "type": "string"
        }
       },
       "name": {
@@ -14421,7 +14709,7 @@
      "description": "The specification of a site credential.",
      "properties": {
       "account": {
-       "description": "Specify the type of service to authenticate as well as all of the information required by that service.",
+       "description": "Specify the type of service to authenticate as well as all of the information required by that service. Fields by service: as400: domain, password, username; cifs: domain, password, username; cifshash: domain, ntlmHash, username; cvs: domain, password, username; db2: database, password, username; ftp: password, username; http: password, realm, username; ms-sql: database, domain, password, useWindowsAuthentication, username; mysql: database, password, username; notes: notesIDPassword, username; oracle: enumerateSids, oracleListenerPassword, password, sid, username; oracle-service-name: password, serviceName, username; pop: password, username; postgresql: database, password, username; remote-exec: password, username; snmp: communityName; snmpv3: authenticationType, password, privacyPassword, privacyType, username; ssh: password, permissionElevation, permissionElevationPassword, permissionElevationUsername, username; ssh-key: pemKey, permissionElevation, permissionElevationPassword, permissionElevationUsername, privateKeyPassword, username; sybase: database, domain, password, useWindowsAuthentication, username; telnet: password, username; kerberos: password, realm, username; hana: database, password, username; scan-assistant: password, pemCert, pemExpiration, pkcs12_data; vmware: password, username.",
        "properties": {
         "service": {
          "type": "string",
@@ -14453,8 +14741,136 @@
           "scan-assistant",
           "vmware"
          ]
+        },
+        "domain": {
+         "type": "string",
+         "description": "The address of the domain. (service: as400, cifs, cifshash, cvs, ms-sql, sybase)"
+        },
+        "password": {
+         "type": "string",
+         "description": "The password for the account that will be used for authenticating. Note: This property is not returned in responses for security. (service: as400, cifs, cvs, db2, ftp, http, ms-sql, mysql, oracle, oracle-service-name, pop, postgresql, remote-exec, snmpv3, ssh, sybase, telnet, kerberos, hana, scan-assistant, vmware)",
+         "writeOnly": true
+        },
+        "username": {
+         "type": "string",
+         "description": "The username for the account that will be used for authenticating. (service: as400, cifs, cifshash, cvs, db2, ftp, http, ms-sql, mysql, notes, oracle, oracle-service-name, pop, postgresql, remote-exec, snmpv3, ssh, ssh-key, sybase, telnet, kerberos, hana, vmware)"
+        },
+        "ntlmHash": {
+         "type": "string",
+         "description": "The NTLM password hash. Note: This property is not returned in responses for security. (service: cifshash)",
+         "writeOnly": true
+        },
+        "database": {
+         "type": "string",
+         "description": "The name of the database. (service: db2, ms-sql, mysql, postgresql, sybase, hana)"
+        },
+        "realm": {
+         "type": "string",
+         "description": "The realm. (service: http, kerberos)"
+        },
+        "useWindowsAuthentication": {
+         "type": "boolean",
+         "description": "Boolean flag signaling whether to connect to the database using Windows authentication. When set to `true`, Windows authentication is attempted; when set to `false`, SQL authentication is attempted. (service: ms-sql, sybase)"
+        },
+        "notesIDPassword": {
+         "type": "string",
+         "description": "The password for the account that will be used for authenticating. Note: This property is not returned in responses for security. (service: notes)",
+         "writeOnly": true
+        },
+        "enumerateSids": {
+         "type": "boolean",
+         "description": "Boolean flag instructing the scan engine to attempt to enumerate SIDs from your environment. If set to `true`, set the Oracle Net Listener password in property `oracleListenerPassword`. (service: oracle)"
+        },
+        "oracleListenerPassword": {
+         "type": "string",
+         "description": "The Oracle Net Listener password. Used to enumerate SIDs from your environment. (service: oracle)",
+         "writeOnly": true
+        },
+        "sid": {
+         "type": "string",
+         "description": "The name of the database. If not specified, a default database name will be used during authentication. (service: oracle)"
+        },
+        "serviceName": {
+         "type": "string",
+         "description": "The service name of the database. If not specified, a default database name will be used during authentication. (service: oracle-service-name)"
+        },
+        "communityName": {
+         "type": "string",
+         "description": "The community name that will be used for authenticating. Note: This property is not returned in responses for security. (service: snmp)",
+         "writeOnly": true
+        },
+        "authenticationType": {
+         "type": "string",
+         "description": "The authentication protocols available to use in SNMP v3. (service: snmpv3)",
+         "enum": [
+          "no-authentication",
+          "md5",
+          "sha"
+         ]
+        },
+        "privacyPassword": {
+         "type": "string",
+         "description": "The privacy password for the account that will be used for authenticating. Is required when the property `authenticationType` is set to valid value other than `\"no-authentication\"`. Note: This proper… (service: snmpv3)",
+         "writeOnly": true
+        },
+        "privacyType": {
+         "type": "string",
+         "description": "The privacy protocols available to use in SNMP v3. (service: snmpv3)",
+         "enum": [
+          "no-privacy",
+          "des",
+          "aes-128",
+          "aes-192",
+          "aes-192-with-3-des-key-extension",
+          "aes-256",
+          "aes-256-with-3-des-key-extension"
+         ]
+        },
+        "permissionElevation": {
+         "type": "string",
+         "description": "Elevate scan engine permissions to administrative or root access, which is necessary to obtain certain data during the scan. Defaults to `\"none\"` if not specified. (service: ssh, ssh-key)",
+         "enum": [
+          "none",
+          "sudo",
+          "sudosu",
+          "su",
+          "pbrun",
+          "privileged-exec"
+         ]
+        },
+        "permissionElevationPassword": {
+         "type": "string",
+         "description": "The password for the account with elevated permissions. This property must not be specified when the property `permissionElevation` is set to either `\"none\"` or `\"pbrun\"`; otherwise the property is r… (service: ssh, ssh-key)",
+         "writeOnly": true
+        },
+        "permissionElevationUsername": {
+         "type": "string",
+         "description": "The user name for the account with elevated permissions. This property must not be specified when the property `permissionElevation` is set to either `\"none\"` or `\"pbrun\"`; otherwise the property is… (service: ssh, ssh-key)"
+        },
+        "pemKey": {
+         "type": "string",
+         "description": "The PEM-format private key. Note: This property is not returned in responses for security. (service: ssh-key)",
+         "writeOnly": true
+        },
+        "privateKeyPassword": {
+         "type": "string",
+         "description": "The password for private key. Note: This property is not returned in responses for security. (service: ssh-key)",
+         "writeOnly": true
+        },
+        "pemCert": {
+         "type": "string",
+         "description": "The public key certificate in Privacy-Enhanced Mail (PEM) format, represented as a plaintext string. (service: scan-assistant)"
+        },
+        "pemExpiration": {
+         "type": "string",
+         "description": "The expiration date of the PEM-formatted public key certificate. (service: scan-assistant)"
+        },
+        "pkcs12_data": {
+         "type": "string",
+         "description": "The binary data of an optionally password-protected Public-Key Cryptography Standards (PKCS) #12 container file (with a .p12 or .pfx extension) for a private key and its associated public key certifi… (service: scan-assistant)"
         }
-       }
+       },
+       "type": "object"
       },
       "description": {
        "type": "string",
@@ -14531,7 +14947,7 @@
       "description": "The specification of a site credential.",
       "properties": {
        "account": {
-        "description": "Specify the type of service to authenticate as well as all of the information required by that service.",
+        "description": "Specify the type of service to authenticate as well as all of the information required by that service. Fields by service: as400: domain, password, username; cifs: domain, password, username; cifshash: domain, ntlmHash, username; cvs: domain, password, username; db2: database, password, username; ftp: password, username; http: password, realm, username; ms-sql: database, domain, password, useWindowsAuthentication, username; mysql: database, password, username; notes: notesIDPassword, username; oracle: enumerateSids, oracleListenerPassword, password, sid, username; oracle-service-name: password, serviceName, username; pop: password, username; postgresql: database, password, username; remote-exec: password, username; snmp: communityName; snmpv3: authenticationType, password, privacyPassword, privacyType, username; ssh: password, permissionElevation, permissionElevationPassword, permissionElevationUsername, username; ssh-key: pemKey, permissionElevation, permissionElevationPassword, permissionElevationUsername, privateKeyPassword, username; sybase: database, domain, password, useWindowsAuthentication, username; telnet: password, username; kerberos: password, realm, username; hana: database, password, username; scan-assistant: password, pemCert, pemExpiration, pkcs12_data; vmware: password, username.",
         "properties": {
          "service": {
           "type": "string",
@@ -14563,8 +14979,136 @@
            "scan-assistant",
            "vmware"
           ]
+         },
+         "domain": {
+          "type": "string",
+          "description": "The address of the domain. (service: as400, cifs, cifshash, cvs, ms-sql, sybase)"
+         },
+         "password": {
+          "type": "string",
+          "description": "The password for the account that will be used for authenticating. Note: This property is not returned in responses for security. (service: as400, cifs, cvs, db2, ftp, http, ms-sql, mysql, oracle, oracle-service-name, pop, postgresql, remote-exec, snmpv3, ssh, sybase, telnet, kerberos, hana, scan-assistant, vmware)",
+          "writeOnly": true
+         },
+         "username": {
+          "type": "string",
+          "description": "The username for the account that will be used for authenticating. (service: as400, cifs, cifshash, cvs, db2, ftp, http, ms-sql, mysql, notes, oracle, oracle-service-name, pop, postgresql, remote-exec, snmpv3, ssh, ssh-key, sybase, telnet, kerberos, hana, vmware)"
+         },
+         "ntlmHash": {
+          "type": "string",
+          "description": "The NTLM password hash. Note: This property is not returned in responses for security. (service: cifshash)",
+          "writeOnly": true
+         },
+         "database": {
+          "type": "string",
+          "description": "The name of the database. (service: db2, ms-sql, mysql, postgresql, sybase, hana)"
+         },
+         "realm": {
+          "type": "string",
+          "description": "The realm. (service: http, kerberos)"
+         },
+         "useWindowsAuthentication": {
+          "type": "boolean",
+          "description": "Boolean flag signaling whether to connect to the database using Windows authentication. When set to `true`, Windows authentication is attempted; when set to `false`, SQL authentication is attempted. (service: ms-sql, sybase)"
+         },
+         "notesIDPassword": {
+          "type": "string",
+          "description": "The password for the account that will be used for authenticating. Note: This property is not returned in responses for security. (service: notes)",
+          "writeOnly": true
+         },
+         "enumerateSids": {
+          "type": "boolean",
+          "description": "Boolean flag instructing the scan engine to attempt to enumerate SIDs from your environment. If set to `true`, set the Oracle Net Listener password in property `oracleListenerPassword`. (service: oracle)"
+         },
+         "oracleListenerPassword": {
+          "type": "string",
+          "description": "The Oracle Net Listener password. Used to enumerate SIDs from your environment. (service: oracle)",
+          "writeOnly": true
+         },
+         "sid": {
+          "type": "string",
+          "description": "The name of the database. If not specified, a default database name will be used during authentication. (service: oracle)"
+         },
+         "serviceName": {
+          "type": "string",
+          "description": "The service name of the database. If not specified, a default database name will be used during authentication. (service: oracle-service-name)"
+         },
+         "communityName": {
+          "type": "string",
+          "description": "The community name that will be used for authenticating. Note: This property is not returned in responses for security. (service: snmp)",
+          "writeOnly": true
+         },
+         "authenticationType": {
+          "type": "string",
+          "description": "The authentication protocols available to use in SNMP v3. (service: snmpv3)",
+          "enum": [
+           "no-authentication",
+           "md5",
+           "sha"
+          ]
+         },
+         "privacyPassword": {
+          "type": "string",
+          "description": "The privacy password for the account that will be used for authenticating. Is required when the property `authenticationType` is set to valid value other than `\"no-authentication\"`. Note: This proper… (service: snmpv3)",
+          "writeOnly": true
+         },
+         "privacyType": {
+          "type": "string",
+          "description": "The privacy protocols available to use in SNMP v3. (service: snmpv3)",
+          "enum": [
+           "no-privacy",
+           "des",
+           "aes-128",
+           "aes-192",
+           "aes-192-with-3-des-key-extension",
+           "aes-256",
+           "aes-256-with-3-des-key-extension"
+          ]
+         },
+         "permissionElevation": {
+          "type": "string",
+          "description": "Elevate scan engine permissions to administrative or root access, which is necessary to obtain certain data during the scan. Defaults to `\"none\"` if not specified. (service: ssh, ssh-key)",
+          "enum": [
+           "none",
+           "sudo",
+           "sudosu",
+           "su",
+           "pbrun",
+           "privileged-exec"
+          ]
+         },
+         "permissionElevationPassword": {
+          "type": "string",
+          "description": "The password for the account with elevated permissions. This property must not be specified when the property `permissionElevation` is set to either `\"none\"` or `\"pbrun\"`; otherwise the property is r… (service: ssh, ssh-key)",
+          "writeOnly": true
+         },
+         "permissionElevationUsername": {
+          "type": "string",
+          "description": "The user name for the account with elevated permissions. This property must not be specified when the property `permissionElevation` is set to either `\"none\"` or `\"pbrun\"`; otherwise the property is… (service: ssh, ssh-key)"
+         },
+         "pemKey": {
+          "type": "string",
+          "description": "The PEM-format private key. Note: This property is not returned in responses for security. (service: ssh-key)",
+          "writeOnly": true
+         },
+         "privateKeyPassword": {
+          "type": "string",
+          "description": "The password for private key. Note: This property is not returned in responses for security. (service: ssh-key)",
+          "writeOnly": true
+         },
+         "pemCert": {
+          "type": "string",
+          "description": "The public key certificate in Privacy-Enhanced Mail (PEM) format, represented as a plaintext string. (service: scan-assistant)"
+         },
+         "pemExpiration": {
+          "type": "string",
+          "description": "The expiration date of the PEM-formatted public key certificate. (service: scan-assistant)"
+         },
+         "pkcs12_data": {
+          "type": "string",
+          "description": "The binary data of an optionally password-protected Public-Key Cryptography Standards (PKCS) #12 container file (with a .p12 or .pfx extension) for a private key and its associated public key certifi… (service: scan-assistant)"
          }
-        }
+        },
+        "type": "object"
        },
        "description": {
         "type": "string",
@@ -14598,7 +15142,8 @@
       "required": [
        "account",
        "name"
-      ]
+      ],
+      "type": "object"
      }
     }
    },
@@ -14731,7 +15276,7 @@
      "description": "The specification of a site credential.",
      "properties": {
       "account": {
-       "description": "Specify the type of service to authenticate as well as all of the information required by that service.",
+       "description": "Specify the type of service to authenticate as well as all of the information required by that service. Fields by service: as400: domain, password, username; cifs: domain, password, username; cifshash: domain, ntlmHash, username; cvs: domain, password, username; db2: database, password, username; ftp: password, username; http: password, realm, username; ms-sql: database, domain, password, useWindowsAuthentication, username; mysql: database, password, username; notes: notesIDPassword, username; oracle: enumerateSids, oracleListenerPassword, password, sid, username; oracle-service-name: password, serviceName, username; pop: password, username; postgresql: database, password, username; remote-exec: password, username; snmp: communityName; snmpv3: authenticationType, password, privacyPassword, privacyType, username; ssh: password, permissionElevation, permissionElevationPassword, permissionElevationUsername, username; ssh-key: pemKey, permissionElevation, permissionElevationPassword, permissionElevationUsername, privateKeyPassword, username; sybase: database, domain, password, useWindowsAuthentication, username; telnet: password, username; kerberos: password, realm, username; hana: database, password, username; scan-assistant: password, pemCert, pemExpiration, pkcs12_data; vmware: password, username.",
        "properties": {
         "service": {
          "type": "string",
@@ -14763,8 +15308,136 @@
           "scan-assistant",
           "vmware"
          ]
+        },
+        "domain": {
+         "type": "string",
+         "description": "The address of the domain. (service: as400, cifs, cifshash, cvs, ms-sql, sybase)"
+        },
+        "password": {
+         "type": "string",
+         "description": "The password for the account that will be used for authenticating. Note: This property is not returned in responses for security. (service: as400, cifs, cvs, db2, ftp, http, ms-sql, mysql, oracle, oracle-service-name, pop, postgresql, remote-exec, snmpv3, ssh, sybase, telnet, kerberos, hana, scan-assistant, vmware)",
+         "writeOnly": true
+        },
+        "username": {
+         "type": "string",
+         "description": "The username for the account that will be used for authenticating. (service: as400, cifs, cifshash, cvs, db2, ftp, http, ms-sql, mysql, notes, oracle, oracle-service-name, pop, postgresql, remote-exec, snmpv3, ssh, ssh-key, sybase, telnet, kerberos, hana, vmware)"
+        },
+        "ntlmHash": {
+         "type": "string",
+         "description": "The NTLM password hash. Note: This property is not returned in responses for security. (service: cifshash)",
+         "writeOnly": true
+        },
+        "database": {
+         "type": "string",
+         "description": "The name of the database. (service: db2, ms-sql, mysql, postgresql, sybase, hana)"
+        },
+        "realm": {
+         "type": "string",
+         "description": "The realm. (service: http, kerberos)"
+        },
+        "useWindowsAuthentication": {
+         "type": "boolean",
+         "description": "Boolean flag signaling whether to connect to the database using Windows authentication. When set to `true`, Windows authentication is attempted; when set to `false`, SQL authentication is attempted. (service: ms-sql, sybase)"
+        },
+        "notesIDPassword": {
+         "type": "string",
+         "description": "The password for the account that will be used for authenticating. Note: This property is not returned in responses for security. (service: notes)",
+         "writeOnly": true
+        },
+        "enumerateSids": {
+         "type": "boolean",
+         "description": "Boolean flag instructing the scan engine to attempt to enumerate SIDs from your environment. If set to `true`, set the Oracle Net Listener password in property `oracleListenerPassword`. (service: oracle)"
+        },
+        "oracleListenerPassword": {
+         "type": "string",
+         "description": "The Oracle Net Listener password. Used to enumerate SIDs from your environment. (service: oracle)",
+         "writeOnly": true
+        },
+        "sid": {
+         "type": "string",
+         "description": "The name of the database. If not specified, a default database name will be used during authentication. (service: oracle)"
+        },
+        "serviceName": {
+         "type": "string",
+         "description": "The service name of the database. If not specified, a default database name will be used during authentication. (service: oracle-service-name)"
+        },
+        "communityName": {
+         "type": "string",
+         "description": "The community name that will be used for authenticating. Note: This property is not returned in responses for security. (service: snmp)",
+         "writeOnly": true
+        },
+        "authenticationType": {
+         "type": "string",
+         "description": "The authentication protocols available to use in SNMP v3. (service: snmpv3)",
+         "enum": [
+          "no-authentication",
+          "md5",
+          "sha"
+         ]
+        },
+        "privacyPassword": {
+         "type": "string",
+         "description": "The privacy password for the account that will be used for authenticating. Is required when the property `authenticationType` is set to valid value other than `\"no-authentication\"`. Note: This proper… (service: snmpv3)",
+         "writeOnly": true
+        },
+        "privacyType": {
+         "type": "string",
+         "description": "The privacy protocols available to use in SNMP v3. (service: snmpv3)",
+         "enum": [
+          "no-privacy",
+          "des",
+          "aes-128",
+          "aes-192",
+          "aes-192-with-3-des-key-extension",
+          "aes-256",
+          "aes-256-with-3-des-key-extension"
+         ]
+        },
+        "permissionElevation": {
+         "type": "string",
+         "description": "Elevate scan engine permissions to administrative or root access, which is necessary to obtain certain data during the scan. Defaults to `\"none\"` if not specified. (service: ssh, ssh-key)",
+         "enum": [
+          "none",
+          "sudo",
+          "sudosu",
+          "su",
+          "pbrun",
+          "privileged-exec"
+         ]
+        },
+        "permissionElevationPassword": {
+         "type": "string",
+         "description": "The password for the account with elevated permissions. This property must not be specified when the property `permissionElevation` is set to either `\"none\"` or `\"pbrun\"`; otherwise the property is r… (service: ssh, ssh-key)",
+         "writeOnly": true
+        },
+        "permissionElevationUsername": {
+         "type": "string",
+         "description": "The user name for the account with elevated permissions. This property must not be specified when the property `permissionElevation` is set to either `\"none\"` or `\"pbrun\"`; otherwise the property is… (service: ssh, ssh-key)"
+        },
+        "pemKey": {
+         "type": "string",
+         "description": "The PEM-format private key. Note: This property is not returned in responses for security. (service: ssh-key)",
+         "writeOnly": true
+        },
+        "privateKeyPassword": {
+         "type": "string",
+         "description": "The password for private key. Note: This property is not returned in responses for security. (service: ssh-key)",
+         "writeOnly": true
+        },
+        "pemCert": {
+         "type": "string",
+         "description": "The public key certificate in Privacy-Enhanced Mail (PEM) format, represented as a plaintext string. (service: scan-assistant)"
+        },
+        "pemExpiration": {
+         "type": "string",
+         "description": "The expiration date of the PEM-formatted public key certificate. (service: scan-assistant)"
+        },
+        "pkcs12_data": {
+         "type": "string",
+         "description": "The binary data of an optionally password-protected Public-Key Cryptography Standards (PKCS) #12 container file (with a .p12 or .pfx extension) for a private key and its associated public key certifi… (service: scan-assistant)"
         }
-       }
+       },
+       "type": "object"
       },
       "description": {
        "type": "string",
@@ -15567,10 +16240,12 @@
             "type": "string",
             "description": "If the field is `ip-address-range`, the upper limit of the search."
            }
-          }
+          },
+          "type": "object"
          }
         }
-       }
+       },
+       "type": "object"
       },
       "name": {
        "type": "string",
@@ -15634,7 +16309,8 @@
           "type": "string",
           "description": "If the field is `ip-address-range`, the upper limit of the search."
          }
-        }
+        },
+        "type": "object"
        }
       }
      },
@@ -15770,10 +16446,12 @@
             "type": "string",
             "description": "If the field is `ip-address-range`, the upper limit of the search."
            }
-          }
+          },
+          "type": "object"
          }
         }
-       }
+       },
+       "type": "object"
       },
       "name": {
        "type": "string",
@@ -15947,7 +16625,6 @@
          "type": "array",
          "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
          "items": {
-          "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
           "properties": {
            "field": {
             "type": "string",
@@ -15973,11 +16650,11 @@
             "type": "array",
             "description": "An array of values to match using the operator.",
             "items": {
-             "type": "object",
-             "description": "An array of values to match using the operator."
+             "type": "object"
             }
            }
-          }
+          },
+          "type": "object"
          }
         },
         "match": {
@@ -15988,7 +16665,8 @@
           "all"
          ]
         }
-       }
+       },
+       "type": "object"
       },
       "type": {
        "type": "string",
@@ -16135,7 +16813,6 @@
          "type": "array",
          "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
          "items": {
-          "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
           "properties": {
            "field": {
             "type": "string",
@@ -16161,11 +16838,11 @@
             "type": "array",
             "description": "An array of values to match using the operator.",
             "items": {
-             "type": "object",
-             "description": "An array of values to match using the operator."
+             "type": "object"
             }
            }
-          }
+          },
+          "type": "object"
          }
         },
         "match": {
@@ -16176,7 +16853,8 @@
           "all"
          ]
         }
-       }
+       },
+       "type": "object"
       },
       "type": {
        "type": "string",
@@ -16592,7 +17270,6 @@
        "type": "array",
        "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
        "items": {
-        "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
         "properties": {
          "field": {
           "type": "string",
@@ -16618,11 +17295,11 @@
           "type": "array",
           "description": "An array of values to match using the operator.",
           "items": {
-           "type": "object",
-           "description": "An array of values to match using the operator."
+           "type": "object"
           }
          }
-        }
+        },
+        "type": "object"
        }
       },
       "match": {
@@ -16920,7 +17597,8 @@
             "id": {
              "type": "object"
             }
-           }
+           },
+           "type": "object"
           },
           "type": {
            "type": "string",
@@ -16930,7 +17608,8 @@
          },
          "required": [
           "type"
-         ]
+         ],
+         "type": "object"
         },
         "email": {
          "type": "string",
@@ -16951,7 +17630,8 @@
            "type": "string",
            "description": "The language to use to generate reports. The format is a IETF BCP 47 language tag."
           }
-         }
+         },
+         "type": "object"
         },
         "login": {
          "type": "string",
@@ -16995,7 +17675,8 @@
          },
          "required": [
           "id"
-         ]
+         ],
+         "type": "object"
         },
         "siteCount": {
          "type": "object",
@@ -17006,7 +17687,8 @@
         "login",
         "name",
         "role"
-       ]
+       ],
+       "type": "object"
       },
       "authentication": {
        "description": "The details of the authentication source used to authenticate the user.",
@@ -17017,7 +17699,8 @@
           "id": {
            "type": "object"
           }
-         }
+         },
+         "type": "object"
         },
         "type": {
          "type": "string",
@@ -17027,7 +17710,8 @@
        },
        "required": [
         "type"
-       ]
+       ],
+       "type": "object"
       },
       "email": {
        "type": "string",
@@ -17048,7 +17732,8 @@
          "type": "string",
          "description": "The language to use to generate reports. The format is a IETF BCP 47 language tag."
         }
-       }
+       },
+       "type": "object"
       },
       "login": {
        "type": "string",
@@ -17092,7 +17777,8 @@
        },
        "required": [
         "id"
-       ]
+       ],
+       "type": "object"
       },
       "siteCount": {
        "description": "The details of the user.",
@@ -17110,7 +17796,8 @@
             "id": {
              "type": "object"
             }
-           }
+           },
+           "type": "object"
           },
           "type": {
            "type": "string",
@@ -17120,7 +17807,8 @@
          },
          "required": [
           "type"
-         ]
+         ],
+         "type": "object"
         },
         "email": {
          "type": "string",
@@ -17141,7 +17829,8 @@
            "type": "string",
            "description": "The language to use to generate reports. The format is a IETF BCP 47 language tag."
           }
-         }
+         },
+         "type": "object"
         },
         "login": {
          "type": "string",
@@ -17185,7 +17874,8 @@
          },
          "required": [
           "id"
-         ]
+         ],
+         "type": "object"
         },
         "siteCount": {
          "type": "object",
@@ -17196,7 +17886,8 @@
         "login",
         "name",
         "role"
-       ]
+       ],
+       "type": "object"
       }
      },
      "required": [
@@ -17316,7 +18007,8 @@
           "id": {
            "type": "object"
           }
-         }
+         },
+         "type": "object"
         },
         "type": {
          "type": "string",
@@ -17326,7 +18018,8 @@
        },
        "required": [
         "type"
-       ]
+       ],
+       "type": "object"
       },
       "email": {
        "type": "string",
@@ -17347,7 +18040,8 @@
          "type": "string",
          "description": "The language to use to generate reports. The format is a IETF BCP 47 language tag."
         }
-       }
+       },
+       "type": "object"
       },
       "login": {
        "type": "string",
@@ -17391,7 +18085,8 @@
        },
        "required": [
         "id"
-       ]
+       ],
+       "type": "object"
       },
       "siteCount": {
        "type": "object",
@@ -18728,7 +19423,8 @@
       },
       "review": {
        "description": "Details regarding the review and/or approval of the exception.",
-       "properties": {}
+       "properties": {},
+       "type": "object"
       },
       "scope": {
        "description": "The scope of the vulnerability exception, indicating the results it applies to.",
@@ -18755,7 +19451,8 @@
          "type": "object",
          "description": "The identifier of the vulnerability."
         }
-       }
+       },
+       "type": "object"
       },
       "state": {
        "type": "string",
@@ -18772,7 +19469,8 @@
          "type": "string",
          "description": "The reason the vulnerability exception was submitted. One of: `\"False Positive\"`, `\"Compensating Control\"`, `\"Acceptable Use\"`, `\"Acceptable Risk\"`, `\"Other\"`"
         }
-       }
+       },
+       "type": "object"
       }
      },
      "type": "object"

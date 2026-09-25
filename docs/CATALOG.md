@@ -26,13 +26,21 @@ The generator serialises through the runtime's own `CatalogModel` data classes a
 | `readOnlyHint` | `GET` operations. |
 | `destructiveHint` | `DELETE`, or an `operationId` starting with `delete`, `remove` or `stop`. |
 | `admin` | `POST /api/3/administration/commands` (arbitrary console command execution). Registered only with `--allow-admin-commands`, and then still requires `confirm="EXECUTE"`. |
-| Parameters | Path and query only. The v4 `region` path parameter is dropped (it comes from `INSIGHTVM_REGION`). Array query parameters are sent `form`/`explode` style (`sort=a&sort=b`). |
-| Request bodies | `$ref`s are inlined (cycle-guarded, depth ≤ 8). `readOnly: true` properties are removed — they are server-assigned and never valid in a request. `example`, `xml`, `title`, `discriminator` are stripped. |
-| Descriptions | HTML stripped, entities decoded (unknown named entities fail the build), whitespace collapsed, control characters removed, `<`/`>` neutralised, capped at 600 characters. |
+| Parameters | Path and query only. The v4 `region` path parameter is dropped (it comes from `INSIGHTVM_REGION`). Array query parameters are sent `form`/`explode` style (`sort=a&sort=b`); `sort` is an array in both families, although v4 declares it a string, because its own description says it repeats. A parameter with a scalar type keeps no `properties` or `required`: v4 wraps several path ids in an object component (`ScanId`, `AssetKey`), but the value is one string. |
+| Request bodies | `$ref`s are inlined, cycle-guarded and at most 8 nested `$ref`s deep; plain JSON nesting is not limited. `readOnly: true` properties are removed — they are server-assigned and never valid in a request. `example`, `xml`, `title` are stripped. A `discriminator` beside `oneOf`/`anyOf` is stripped; one whose subtypes are named only in its `mapping` (`SharedCredentialAccount`) is flattened: the subtypes' properties are merged into the base (the base's own win, then the first definition), each merged field names the values it applies to, and the base description lists the fields for each value. Any other discriminator fails the build. A JSON body that declares a `format: binary` property fails the build; `activateLicense`'s, which its spec says must be sent as `multipart/form-data`, is dropped, leaving the `key` parameter. |
+| Schema types | Below the root of a parameter or body, a node with no `type` gets one when it plainly has one: `items` → array, `properties`/`additionalProperties` → object, a string `enum` → string, `int32`/`int64` → integer, `float`/`double` → number, other known formats → string. A `format` outside the OpenAPI/JSON Schema set is dropped (v4 `sort` declared `<property>[,ASC\|DESC]`). |
+| Descriptions | Only the layout tags the specifications use (`a b br code div em i li ol p pre span strong table tbody td th thead tr ul`) are stripped; entities decoded (unknown named entities fail the build); control characters removed; whitespace collapsed. Anything else that could open markup — a `<` before a letter, `/`, `!` or `?` — is neutralised to `‹…›`, so `<property>` survives as `‹property›`, while comparison operators such as `>=` stay as written. Text that is only unrendered `${…}` template keys is dropped, and so is an array item description that repeats the array's own. Capped at 600 characters (400 for parameters and properties, 200 for a field merged from a discriminator subtype). |
 | Responses | The first 2xx content type is recorded (`application/json`, `text/html`, `text/plain`, `application/zip`) so the runtime can choose the `Accept` header and the sanitiser. |
 
 ### Known quirks passed through from the specifications
 
 * A handful of schemas declare `id` as `{type: object, format: int32}`; the catalog keeps the spec's shape.
-* `UserEdit` references itself; the cycle is replaced with an opaque `object`.
+* `UserEdit` and v4's `ScanForm` reference themselves; each cycle is replaced with an opaque `object`.
 * `/api/3/administration/commands` and the scan-engine shared secret endpoints use `text/plain`.
+
+### Spec defects corrected by the generator
+
+* `RangeResource.from` and `RiskTrendResource.from` (report trends) are declared an object whose enum ends in the
+  literal `<date>`, which no value satisfies. They are overridden to a string: a duration (`P1Y`, `P6M`, `P3M`, `P1M`)
+  or an ISO-8601 date.
+* v4 descriptions that are only unrendered template keys (`${scanid.id.description}, …`) are dropped.

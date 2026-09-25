@@ -80,6 +80,10 @@ class CatalogTest {
         assertTrue(bad(op("b", params = listOf(CatalogParam("body", "query", schema = JsonObject(emptyMap()))))).contains("reserved"))
         assertTrue(bad(op("d", params = listOf(CatalogParam("q", "query", schema = JsonObject(emptyMap())), CatalogParam("q", "query", schema = JsonObject(emptyMap()))))).contains("duplicate parameter"))
         assertTrue(bad(op("s").copy(summary = "<b>x</b>")).contains("markup"))
+        assertTrue(bad(op("s").copy(description = "Run <script>alert(1)</script>")).contains("markup"))
+        for (opener in listOf("</b", "<!--", "<?x", "<Img")) assertTrue(bad(op("s").copy(description = "a $opener b")).contains("markup"), opener)
+        // Comparison operators are the v4 query language, not markup.
+        CatalogLoader.validate(catalog(ApiFamily.CONSOLE, op("ok").copy(summary = "a < b", description = "cvss_score >= 9 && risk > 0.0 || a <= b ‹property›")), ApiFamily.CONSOLE)
         assertTrue(bad(op("c").copy(body = CatalogBody("application/xml", true, JsonObject(emptyMap())))).contains("content type"))
         val count = assertFailsWith<IllegalStateException> { CatalogLoader.validate(Catalog(CatalogMeta("console", opCount = 3), listOf(op("a"))), ApiFamily.CONSOLE) }
         assertTrue(count.message!!.contains("opCount"))

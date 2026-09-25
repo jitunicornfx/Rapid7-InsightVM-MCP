@@ -9,6 +9,12 @@ object CatalogLoader {
     val TOOL_NAME_PATTERN = Regex("^[a-z0-9_]{1,64}$")
     private val PLACEHOLDER = Regex("\\{([^{}]+)}")
 
+    /**
+     * Where HTML could open markup: a `<` followed by a letter, `/`, `!` or `?`. A bare `<` or `>` is
+     * text, and the v4 query language needs it (`cvss_score >= 9`), so it is not refused.
+     */
+    private val MARKUP = Regex("<[A-Za-z/!?]")
+
     fun load(family: ApiFamily): Catalog {
         val stream = CatalogLoader::class.java.getResourceAsStream(family.resource)
             ?: throw IllegalStateException("Catalog resource ${family.resource} is missing from the classpath.")
@@ -58,7 +64,7 @@ object CatalogLoader {
                 check(names.add(p.name)) { "Catalog ${family.id}: '${op.name}' duplicate parameter '${p.name}'" }
             }
             for (text in listOf(op.summary, op.description)) {
-                check('<' !in text && '>' !in text) { "Catalog ${family.id}: '${op.name}' description contains markup" }
+                check(!MARKUP.containsMatchIn(text)) { "Catalog ${family.id}: '${op.name}' description contains markup" }
             }
             op.body?.let { body ->
                 check(body.contentType == "application/json" || body.contentType == "text/plain") {

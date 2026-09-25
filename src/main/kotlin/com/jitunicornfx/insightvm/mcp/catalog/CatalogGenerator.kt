@@ -20,20 +20,65 @@ import kotlin.system.exitProcess
  * specifications; output is deterministic so `--check` can detect drift.
  *
  * Run through Gradle: `./gradlew generateCatalog` (regenerate) / `./gradlew verifyCatalog` (drift
- * check, part of `check`). The rules below are documented in `tools/README.md`.
+ * check, part of `check`). The rules below are documented in `docs/CATALOG.md`.
  */
 object CatalogGenerator {
 
     const val GENERATOR_VERSION = "CatalogGenerator.kt@1"
     const val MAX_DESCRIPTION = 600
     const val MAX_PROPERTY_DESCRIPTION = 400
+
+    /** A field merged in from a discriminator subtype is one of many on the same object, so its text is kept shorter. */
+    const val MAX_MERGED_DESCRIPTION = 200
     const val MAX_SUMMARY = 120
+
+    /** Nested `$ref`s inlined along one path before the next is replaced with an opaque object. */
     const val MAX_DEPTH = 8
 
     private val HTTP_METHODS = listOf("get", "post", "put", "delete", "patch")
     private val DESTRUCTIVE_OPID = Regex("^(delete|remove|stop)", RegexOption.IGNORE_CASE)
     private val ADMIN_OPS = setOf("POST" to "/api/3/administration/commands")
     private val STRIP_KEYS = setOf("example", "examples", "xml", "title", "deprecated", "discriminator", "externalDocs")
+    private val COMPOSITIONS = setOf("allOf", "oneOf", "anyOf")
+    private val SCALAR_TYPES = setOf("string", "integer", "number", "boolean")
+
+    /**
+     * The `format` values OpenAPI and JSON Schema define that the specifications use. Anything else is
+     * prose in the wrong field: v4's `sort` declares `format: "<property>[,ASC|DESC]"`, which its
+     * description already says, and a client may read an unknown format as a constraint.
+     */
+    private val KNOWN_FORMATS = setOf("int32", "int64", "float", "double", "byte", "binary", "date", "date-time", "password", "uuid", "email", "uri")
+
+    /**
+     * Spec type defects, corrected on the component before anything is inlined: component, then
+     * property, then the schema it should have had. RangeResource.from and RiskTrendResource.from are
+     * declared an object whose enum ends in the literal "<date>", which no value can satisfy; the API
+     * takes a duration or a date, as a string.
+     */
+    private val PROPERTY_OVERRIDES: Map<String, Map<String, JsonObject>> = run {
+        val trendStart = JsonObject(
+            mapOf(
+                "type" to JsonPrimitive("string"),
+                "description" to JsonPrimitive("The start of the trend: a duration (P1Y, P6M, P3M or P1M) or an ISO-8601 date."),
+            ),
+        )
+        mapOf("RangeResource" to mapOf("from" to trendStart), "RiskTrendResource" to mapOf("from" to trendStart))
+    }
+
+    /**
+     * Query parameters the APIs accept repeated (`sort=a&sort=b`). v3 declares `sort` an array; v4
+     * declares it a string, although its own description says multiple sort criteria are given as
+     * multiple sort query parameters.
+     */
+    private val REPEATED_QUERY_PARAMS = setOf("sort")
+
+    /**
+     * Operations whose declared JSON body cannot work, so the tool offers none. activateLicense
+     * declares the license file as a JSON property of format binary, and the property's own text says
+     * it must be sent as multipart/form-data, which this server never sends. Its `key` query
+     * parameter still activates a license.
+     */
+    private val BODYLESS_OPS = setOf("POST" to "/api/3/administration/license")
 
     /** One spec → one catalog file. */
     data class Source(val family: ApiFamily, val specFile: String, val outputFile: String)
@@ -53,7 +98,23 @@ object CatalogGenerator {
 
     // ------------------------------------------------------------------ text helpers
 
-    private val TAG = Regex("<[^>]+>")
+    /**
+     * The HTML elements the specifications use for layout: tables, lists, emphasis, links, line
+     * breaks. Only these are stripped. Anything else in angle brackets is prose, such as the
+     * `<property>` in v4's sort format or `<host>:<port>`, and deleting it changes what the text says.
+     */
+    private val TAG = Regex("</?(a|b|br|code|div|em|i|li|ol|p|pre|span|strong|table|tbody|td|th|thead|tr|ul)\\b[^>]*>", RegexOption.IGNORE_CASE)
+
+    /**
+     * HTML opens markup only at a `<` followed by a letter, `/`, `!` or `?`. Such a token, closed or
+     * not, is neutralised with `‹›`. Every other `<` and `>` is left alone: the v4 query language is
+     * written with them (`cvss_score >= 9`), and `›=` is not an operator.
+     */
+    private val TAG_LIKE = Regex("<([A-Za-z/!?][^<>]*)>")
+    private val MARKUP_OPENER = Regex("<(?=[A-Za-z/!?])")
+
+    /** v4 text that is only unrendered template keys, such as `${scanid.id.description}, ${scan.id.id.description}`. */
+    private val UNRENDERED = Regex("\\\$\\{[^}]+}(, \\\$\\{[^}]+})*")
     private val WS = Regex("\\s+")
     private val CONTROL = Regex("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]")
     private val ENTITY = Regex("&(#x[0-9a-fA-F]{1,6}|#[0-9]{1,7}|[a-zA-Z][a-zA-Z0-9]{0,31});")
@@ -77,17 +138,27 @@ object CatalogGenerator {
         }
     }
 
-    /** Strip HTML, decode entities, collapse whitespace, drop control chars, neutralise `<>`, cap length. */
+    /**
+     * Strip layout HTML, decode entities, drop control chars, collapse whitespace, neutralise anything
+     * that could open markup, cap length. Text that is only unrendered template keys is no text.
+     * Tags are stripped before entities are decoded, so an encoded `&lt;script&gt;` is neutralised,
+     * never stripped or passed through.
+     */
     internal fun cleanText(text: String?, limit: Int = MAX_DESCRIPTION): String {
         if (text.isNullOrEmpty()) return ""
         var s = TAG.replace(text, " ")
         s = unescapeEntities(s)
         s = CONTROL.replace(s, "")
         s = WS.replace(s, " ").trim()
-        s = s.replace("<", "‹").replace(">", "›")
-        if (s.length > limit) s = s.substring(0, limit - 1).trimEnd() + "…"
-        return s
+        if (UNRENDERED.matches(s)) return ""
+        s = TAG_LIKE.replace(s) { "‹${it.groupValues[1]}›" }
+        s = MARKUP_OPENER.replace(s, "‹")
+        return cap(s, limit)
     }
+
+    /** [text] cut to [limit] characters, the cut marked with an ellipsis. */
+    private fun cap(text: String, limit: Int): String =
+        if (text.length > limit) text.substring(0, limit - 1).trimEnd() + "…" else text
 
     private val CAMEL_1 = Regex("(.)([A-Z][a-z]+)")
     private val CAMEL_2 = Regex("([a-z0-9])([A-Z])")
@@ -104,7 +175,7 @@ object CatalogGenerator {
     // ------------------------------------------------------------------ schema inlining
 
     private class Inliner(components: JsonObject?) {
-        private val schemas: JsonObject = components?.get("schemas")?.jsonObject ?: JsonObject(emptyMap())
+        private val schemas: JsonObject = withOverrides(components?.get("schemas")?.jsonObject ?: JsonObject(emptyMap()))
 
         private fun resolve(ref: String): Pair<String, JsonObject> {
             val prefix = "#/components/schemas/"
@@ -114,11 +185,22 @@ object CatalogGenerator {
             return name to target
         }
 
-        fun inline(schema: JsonElement?, depth: Int = 0, stack: List<String> = emptyList()): JsonElement? {
+        /**
+         * Inline [schema]: resolve `$ref`s, drop documentation-only and server-assigned keys, clean the
+         * text. [stack] is the chain of components being inlined; it stops cycles, and bounds depth by
+         * `$ref`s rather than JSON nesting, so a short chain whose leaf sits deep inside arrays of
+         * objects (create_asset's WebPage) is still inlined.
+         *
+         * [nested] is false only for the root a caller passes in. The caller types that itself, because
+         * the right type depends on the use: an object-shaped path parameter is still one string on the
+         * wire. Every node below the root gets a missing type inferred, so a client that checks
+         * arguments against the schema sees an array as an array.
+         */
+        fun inline(schema: JsonElement?, stack: List<String> = emptyList(), nested: Boolean = false): JsonElement? {
             if (schema !is JsonObject) return schema
             schema["\$ref"]?.let { refElement ->
                 val (name, target) = resolve(refElement.jsonPrimitive.content)
-                if (name in stack || depth > MAX_DEPTH) {
+                if (name in stack || stack.size >= MAX_DEPTH) {
                     return JsonObject(
                         mapOf(
                             "type" to JsonPrimitive("object"),
@@ -126,9 +208,9 @@ object CatalogGenerator {
                         ),
                     )
                 }
-                val merged = inline(target, depth + 1, stack + name)
-                val extra = schema["description"]
-                return if (merged is JsonObject && extra != null) JsonObject(merged + ("description" to extra)) else merged
+                val merged = inline(target, stack + name, nested)
+                val extra = cleanText((schema["description"] as? JsonPrimitive)?.contentOrNull, MAX_PROPERTY_DESCRIPTION)
+                return if (merged is JsonObject && extra.isNotEmpty()) JsonObject(merged + ("description" to JsonPrimitive(extra))) else merged
             }
 
             val out = LinkedHashMap<String, JsonElement>()
@@ -139,26 +221,108 @@ object CatalogGenerator {
                         val props = LinkedHashMap<String, JsonElement>()
                         for ((pname, pschema) in value) {
                             if (pschema is JsonObject && pschema["readOnly"]?.jsonPrimitive?.booleanOrNull == true) continue
-                            props[pname] = inline(pschema, depth + 1, stack) ?: pschema
+                            props[pname] = inline(pschema, stack, nested = true) ?: pschema
                         }
                         out["properties"] = JsonObject(props)
                     }
-                    key == "items" -> out["items"] = inline(value, depth + 1, stack) ?: value
-                    key == "additionalProperties" -> out["additionalProperties"] = if (value is JsonObject) inline(value, depth + 1, stack) ?: value else value
-                    (key == "allOf" || key == "oneOf" || key == "anyOf") && value is JsonArray ->
-                        out[key] = JsonArray(value.map { inline(it, depth + 1, stack) ?: it })
-                    key == "description" -> out["description"] = JsonPrimitive(cleanText(value.jsonPrimitive.contentOrNull, MAX_PROPERTY_DESCRIPTION))
+                    key == "items" -> out["items"] = inline(value, stack, nested = true) ?: value
+                    key == "additionalProperties" -> out["additionalProperties"] = if (value is JsonObject) inline(value, stack, nested = true) ?: value else value
+                    key in COMPOSITIONS && value is JsonArray -> out[key] = JsonArray(value.map { inline(it, stack, nested = true) ?: it })
+                    key == "description" -> cleanText(value.jsonPrimitive.contentOrNull, MAX_PROPERTY_DESCRIPTION).takeIf { it.isNotEmpty() }?.let { out["description"] = JsonPrimitive(it) }
+                    key == "format" -> if ((value as? JsonPrimitive)?.contentOrNull in KNOWN_FORMATS) out["format"] = value
                     key == "readOnly" -> Unit
                     else -> out[key] = value
                 }
             }
+            mappedDiscriminator(schema)?.let { (property, mapping) -> mergeSubtypes(out, property, mapping, stack) }
             val required = out["required"]
             if (out["properties"] is JsonObject && required is JsonArray) {
                 val props = out["properties"]!!.jsonObject
                 val kept = required.filter { it.jsonPrimitive.content in props }
                 if (kept.isEmpty()) out.remove("required") else out["required"] = JsonArray(kept)
             }
+            // An array whose items repeat its own description pays for the same text twice in every tools/list.
+            val items = out["items"] as? JsonObject
+            if (items != null && "description" in items && items["description"] == out["description"]) out["items"] = JsonObject(items - "description")
+            if (nested && "type" !in out && COMPOSITIONS.none { it in out }) inferType(out)?.let { out["type"] = JsonPrimitive(it) }
             return JsonObject(out)
+        }
+
+        /**
+         * The discriminator property and mapping to flatten, or null when there is no discriminator or
+         * a oneOf/anyOf already lists the subtypes. One this generator cannot flatten fails generation
+         * rather than silently hiding its subtypes' fields.
+         */
+        private fun mappedDiscriminator(schema: JsonObject): Pair<String, JsonObject>? {
+            val discriminator = schema["discriminator"] as? JsonObject ?: return null
+            if ("oneOf" in schema || "anyOf" in schema) return null
+            val property = (discriminator["propertyName"] as? JsonPrimitive)?.contentOrNull
+            val mapping = discriminator["mapping"] as? JsonObject
+            if (property == null || mapping.isNullOrEmpty()) {
+                throw CatalogGenerationException("discriminator without both a propertyName and a mapping is not supported")
+            }
+            return property to mapping
+        }
+
+        /**
+         * A discriminator whose subtypes are named only in its `mapping` hides every subtype field once
+         * the discriminator is stripped. SharedCredentialAccount declares only `service`, so the model
+         * could never learn `username`, `pemKey` or `permissionElevation`, and could not build a
+         * working SSH or SNMP credential. The union of the subtypes' properties is merged into the base
+         * instead: the base's own properties win, otherwise the first definition does. Each merged field
+         * names the values it belongs to and keeps shorter text, and the base description gains the
+         * field list for each value. Subtype `required` lists are not merged, since each binds only its
+         * own value. A subtype that is itself discriminated fails generation.
+         */
+        private fun mergeSubtypes(out: MutableMap<String, JsonElement>, property: String, mapping: JsonObject, stack: List<String>) {
+            val base = (out["properties"] as? JsonObject).orEmpty()
+            val merged = LinkedHashMap<String, JsonObject>()
+            val valuesOf = HashMap<String, MutableList<String>>()
+            val fieldsByValue = mutableListOf<String>()
+            for ((value, ref) in mapping) {
+                val (name, target) = resolve(ref.jsonPrimitive.content)
+                if ("discriminator" in target) throw CatalogGenerationException("nested discriminator in $name is not supported")
+                val subtype = inline(target, stack + name, nested = true) as JsonObject
+                val fields = (subtype["properties"] as? JsonObject).orEmpty().filterKeys { it !in base }
+                fieldsByValue += "$value: " + fields.keys.filter { it != property }.joinToString(", ").ifEmpty { "none" }
+                for ((field, fieldSchema) in fields) {
+                    merged.putIfAbsent(field, fieldSchema.jsonObject)
+                    valuesOf.getOrPut(field) { mutableListOf() } += value
+                }
+            }
+            val props = LinkedHashMap(base)
+            for ((field, fieldSchema) in merged) {
+                val own = (fieldSchema["description"] as? JsonPrimitive)?.contentOrNull?.let { cap(it, MAX_MERGED_DESCRIPTION) + " " }.orEmpty()
+                val text = "$own($property: ${valuesOf.getValue(field).joinToString(", ")})"
+                props[field] = JsonObject(fieldSchema + ("description" to JsonPrimitive(text)))
+            }
+            out["properties"] = JsonObject(props)
+            val lead = (out["description"] as? JsonPrimitive)?.contentOrNull?.let { "$it " }.orEmpty()
+            out["description"] = JsonPrimitive("${lead}Fields by $property: ${fieldsByValue.joinToString("; ")}.")
+        }
+    }
+
+    /** [schemas] with [PROPERTY_OVERRIDES] applied to the components they name. */
+    private fun withOverrides(schemas: JsonObject): JsonObject = JsonObject(
+        schemas.mapValues { (name, schema) ->
+            val fixes = PROPERTY_OVERRIDES[name]
+            val props = (schema as? JsonObject)?.get("properties") as? JsonObject
+            if (fixes == null || props == null) schema else JsonObject(schema.jsonObject + ("properties" to JsonObject(props.mapValues { (p, s) -> fixes[p] ?: s })))
+        },
+    )
+
+    /** The type a nested schema node plainly has but does not declare, or null when nothing says. */
+    private fun inferType(schema: Map<String, JsonElement>): String? {
+        val format = (schema["format"] as? JsonPrimitive)?.contentOrNull
+        val options = schema["enum"] as? JsonArray
+        return when {
+            "items" in schema -> "array"
+            "properties" in schema || "additionalProperties" in schema -> "object"
+            options != null -> if (options.all { it is JsonPrimitive && it.isString }) "string" else null
+            format == "int32" || format == "int64" -> "integer"
+            format == "float" || format == "double" -> "number"
+            format in KNOWN_FORMATS -> "string"
+            else -> null
         }
     }
 
@@ -191,7 +355,20 @@ object CatalogGenerator {
             if ("type" !in items) items["type"] = JsonPrimitive("string")
             schema["items"] = JsonObject(items)
         }
+        // v4 wraps several path identifiers in a component (ScanId, AssetKey) and v3 some role and
+        // source ids (RoleNaturalID); the value is still one string, so their object shape is noise.
+        if ((schema["type"] as? JsonPrimitive)?.contentOrNull in SCALAR_TYPES) {
+            schema.remove("properties")
+            schema.remove("required")
+        }
         return JsonObject(schema) to isArray
+    }
+
+    /** [raw] as an array of itself, unless it already is one. */
+    private fun repeated(raw: JsonElement?): JsonElement {
+        val schema = raw as? JsonObject ?: JsonObject(emptyMap())
+        if ((schema["type"] as? JsonPrimitive)?.contentOrNull == "array") return schema
+        return JsonObject(mapOf("type" to JsonPrimitive("array"), "items" to schema))
     }
 
     private fun buildParams(op: JsonObject, inliner: Inliner, family: ApiFamily): List<CatalogParam> {
@@ -207,7 +384,8 @@ object CatalogGenerator {
             if (family == ApiFamily.CLOUD && where == "path" && name == "region") continue
             if (name == CatalogLoader.BODY_PROPERTY) throw CatalogGenerationException("parameter named 'body' collides with the request body property ($opId)")
             if (!seen.add(name)) throw CatalogGenerationException("duplicate parameter $name in $opId")
-            val (schemaBase, isArray) = normalizeParamSchema(param["schema"], inliner)
+            val raw = if (where == "query" && name in REPEATED_QUERY_PARAMS) repeated(param["schema"]) else param["schema"]
+            val (schemaBase, isArray) = normalizeParamSchema(raw, inliner)
             val desc = cleanText(param["description"]?.jsonPrimitive?.contentOrNull, MAX_PROPERTY_DESCRIPTION)
             val schema = if (desc.isNotEmpty()) JsonObject(schemaBase + ("description" to JsonPrimitive(desc))) else schemaBase
             params += CatalogParam(
@@ -221,7 +399,8 @@ object CatalogGenerator {
         return params
     }
 
-    private fun buildBody(op: JsonObject, inliner: Inliner): CatalogBody? {
+    private fun buildBody(op: JsonObject, method: String, path: String, inliner: Inliner): CatalogBody? {
+        if ((method to path) in BODYLESS_OPS) return null
         val rb = op["requestBody"] as? JsonObject ?: return null
         val content = rb["content"] as? JsonObject ?: JsonObject(emptyMap())
         val required = rb["required"]?.jsonPrimitive?.booleanOrNull == true
@@ -229,6 +408,11 @@ object CatalogGenerator {
             val inlined = inliner.inline(json.jsonObject["schema"] ?: JsonObject(emptyMap())) as? JsonObject
             val schema = LinkedHashMap(inlined?.takeIf { it.isNotEmpty() } ?: JsonObject(mapOf("type" to JsonPrimitive("object"))))
             if ("type" !in schema) schema["type"] = JsonPrimitive("object")
+            // A file declared as a JSON property can never be sent as JSON. A new one must be looked at
+            // and added to BODYLESS_OPS, not published as a tool that cannot work.
+            if (declaresBinary(JsonObject(schema))) {
+                throw CatalogGenerationException("JSON request body declares a format: binary property in ${op["operationId"]}; a file cannot be sent as JSON")
+            }
             return CatalogBody("application/json", required, JsonObject(schema))
         }
         if ("text/plain" in content) {
@@ -238,6 +422,13 @@ object CatalogGenerator {
             return CatalogBody("text/plain", required, JsonObject(schema))
         }
         throw CatalogGenerationException("unsupported request body content types ${content.keys} in ${op["operationId"]}")
+    }
+
+    /** Whether any schema node under [element] declares `format: binary`. */
+    private fun declaresBinary(element: JsonElement): Boolean = when (element) {
+        is JsonObject -> (element["format"] as? JsonPrimitive)?.contentOrNull == "binary" || element.values.any { declaresBinary(it) }
+        is JsonArray -> element.any { declaresBinary(it) }
+        else -> false
     }
 
     private fun successContentType(op: JsonObject): CatalogResponses {
@@ -282,7 +473,7 @@ object CatalogGenerator {
                     destructive = upper == "DELETE" || DESTRUCTIVE_OPID.containsMatchIn(opId),
                     admin = (upper to path) in ADMIN_OPS,
                     params = buildParams(op, inliner, family),
-                    body = buildBody(op, inliner),
+                    body = buildBody(op, upper, path, inliner),
                     responses = successContentType(op),
                 )
             }
