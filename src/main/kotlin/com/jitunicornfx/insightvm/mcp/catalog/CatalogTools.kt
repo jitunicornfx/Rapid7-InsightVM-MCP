@@ -16,6 +16,8 @@ import com.jitunicornfx.insightvm.mcp.textResult
 import io.ktor.http.ContentType
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
@@ -109,7 +111,13 @@ object CatalogTools {
                 accept = acceptFor(op),
                 expectBinary = op.responses.binary,
             )
-            ResponseSanitizer.toToolResult(response, op, family, opBudget, keepLinks, spool)
+            // A binary body is hashed and may be spilled to a file of up to the response cap: blocking
+            // work kept off Dispatchers.Default, where the SDK runs every session's handlers.
+            if (response.bytes != null) {
+                withContext(Dispatchers.IO) { ResponseSanitizer.toToolResult(response, op, family, opBudget, keepLinks, spool) }
+            } else {
+                ResponseSanitizer.toToolResult(response, op, family, opBudget, keepLinks, spool)
+            }
         }
     }
 

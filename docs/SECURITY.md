@@ -171,12 +171,24 @@ The directory is created lazily and carries a `README.txt` warning — the only 
 later without having seen the tool's summary. Files are swept after `INSIGHTVM_SPOOL_RETENTION_HOURS`, and only files
 carrying this server's own prefix and suffixes are ever swept.
 
-**Permissions are POSIX-only.** On POSIX filesystems the directory is hardened to `rwx------` (files `rw-------`)
-*before* the first file is written. On Windows — a primary target for this server — `PosixFileAttributeView` is
-unsupported, so the hardening step is deliberately a no-op and the spool inherits the ACL of its parent. Under the
-default location (`%USERPROFILE%\.rapid7-insightvm-mcp\spool`) that is normally the running account alone, but it is
-inherited rather than enforced: an operator who relocates the spool with `INSIGHTVM_SPOOL_DIR` owns that ACL. Treat the
-spool as sensitive storage on Windows and place it accordingly.
+**Permissions.** A spool directory the server creates is *born* private, so there is no moment at which it, or a file
+in it, is open to another account:
+
+* On POSIX it is created with `rwx------` as a create-time attribute (then set exactly, since a umask only removes
+  bits), and every file in it is `rw-------`.
+* On Windows it is created with an access list of one inheritable entry for the account that created it, which
+  replaces the ACL it would have inherited; every file created inside inherits only that entry. The account is read
+  from a probe file's owner rather than looked up by name, so it is the Administrators group when the server runs
+  elevated. This is best-effort: if the access list cannot be applied, the directory is created with its parent's
+  ACL, as before, and a warning goes to stderr. Java cannot mark the ACL protected, so a later change to the parent
+  directory's inheritable permissions, which Windows propagates to its children, can add inherited entries back.
+
+A directory that already existed is the operator's and is never changed. On POSIX it is used only when it is owned by
+the account running the server and neither group nor others can write to it; otherwise the export is refused, before
+any API call, with a message naming `INSIGHTVM_SPOOL_DIR`, and a binary spill reports `pathError` instead of a path.
+On Windows an existing directory keeps its own ACL: an operator who points `INSIGHTVM_SPOOL_DIR` at one owns that ACL.
+The `README.txt` and each manifest are created with `CREATE_NEW` and `NOFOLLOW_LINKS`, so neither is written through
+a planted symlink or over an existing file, and both are `rw-------` on POSIX.
 
 An export cannot be used to reach a tool the operator hid: the target is resolved against the **registered
 selection**, not the raw catalog, so `--tags`, `--tools`, `--api` and `--read-only` all still apply. Only operations
@@ -186,8 +198,12 @@ unconditionally, so a secret that `--allow-secret-tools` lets into the conversat
 spool file. Every page goes through the normal
 `ArgumentBinder`, so unknown-parameter rejection, type coercion, string bounds and path-segment encoding apply
 unchanged. Paging uses a page index or the API's own opaque cursor token — never a URL taken from a response body,
-so no request target is ever attacker-controlled. Runs are bounded by pages, records, bytes and wall-clock, and the
-volume must have 256 MiB free before the first API call is spent. The API text the summary quotes (the sample
+so no request target is ever attacker-controlled. Runs are bounded by pages, records, bytes and wall-clock. After the
+first page, a page starts only if the slowest page so far fits in the time left, and is abandoned when the budget runs
+out, so a run ends before a client's tool timeout with its summary and an exact resume point. The volume must have
+256 MiB free before the first API call is spent; the byte cap is lowered to what lies above that reserve, and free
+space is read again every 10 pages. Blocking file writes run on the I/O dispatcher, not on the threads the SDK shares
+between sessions. The API text the summary quotes (the sample
 records, and at most the first 500 characters of an API error body) sits inside the untrusted-data fence, neutralised
 like any tool result; the error body never goes into the status line or the manifest. The resume hint echoes the
 continuation cursor only as an allow-listed token.
@@ -245,8 +261,9 @@ Known, accepted:
 * Raising `INSIGHTVM_MAX_RESPONSE_BYTES` raises worst-case heap (roughly three times the cap while a body is decoded).
   The 12M-character parse ceiling is the real guard; do not raise the wire cap without lowering it. Run with at least
   `-Xmx512m`.
-* Spooled files hold tenant vulnerability data in cleartext on the server's disk. They are user-only and swept, but
-  anyone with that account can read them. Set `INSIGHTVM_DISABLE_EXPORT=1` where that is unacceptable.
+* Spooled files hold tenant vulnerability data in cleartext on the server's disk. They are private to the running
+  account (in a directory the server created; see *Permissions* above) and swept, but anyone with that account can
+  read them. Set `INSIGHTVM_DISABLE_EXPORT=1` where that is unacceptable.
 
 ## Reporting
 

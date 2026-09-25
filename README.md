@@ -41,7 +41,7 @@ Everything is configured through environment variables. Configure one or both AP
 | `INSIGHTVM_MAX_RESPONSE_BYTES` | | `16777216` | Memory guard on the wire, not a context budget — use the setting above for that |
 | `INSIGHTVM_KEEP_RECORD_LINKS` | | `0` | `1` keeps the per-record HATEOAS `links` that are stripped by default |
 | `INSIGHTVM_DEFAULT_PAGE_SIZE` | | `100` | `size` injected when a paged tool is called without one (clamped to 500) |
-| `INSIGHTVM_SPOOL_DIR` | | `~/.rapid7-insightvm-mcp/spool` | Where `insightvm_export_to_file` writes |
+| `INSIGHTVM_SPOOL_DIR` | | `~/.rapid7-insightvm-mcp/spool` | Where `insightvm_export_to_file` writes. On POSIX an existing directory must be owned by the server's account and not group- or world-writable |
 | `INSIGHTVM_SPOOL_RETENTION_HOURS` | | `24` | Exported files older than this are swept at startup; `0` never sweeps |
 | `INSIGHTVM_DISABLE_EXPORT` | | `0` | `1` removes `insightvm_export_to_file`, the only tool that writes to disk |
 | `INSIGHTVM_DISABLE_UPDATE_CHECK` / `INSIGHTVM_DISABLE_AUTO_UPDATE` | | `0` | Update behaviour (see below) |
@@ -187,8 +187,11 @@ insightvm_export_to_file({
 ```
 
 It never takes a path: files are named by the server inside `INSIGHTVM_SPOOL_DIR`, created user-readable only, and
-swept after `INSIGHTVM_SPOOL_RETENTION_HOURS`. Each run is bounded by pages, records, bytes and wall-clock, and a
-run stopped by a cap returns a resume token plus the partial file. Pages are written whole (so `max_records` stops at
+swept after `INSIGHTVM_SPOOL_RETENTION_HOURS`. A spool directory the server creates is private to its account (on
+Windows, an access list naming only that account); one that already existed is never changed. Each run is bounded by
+pages, records, bytes and wall-clock: a page that would overrun the time budget is abandoned rather than waited for,
+and the byte cap is lowered so a run stops at the 256 MiB the volume keeps free. A run stopped by a cap returns a
+resume token plus the partial file. Pages are written whole (so `max_records` stops at
 the first page boundary at or after it), and the token names the first page not yet written, with the `page_size`
 to resume at. Pages default to 500 records, the API's maximum. A page over `INSIGHTVM_MAX_RESPONSE_BYTES` is retried
 at a smaller size by page-numbered tools; a cursor run stops and says which cap it hit. A `.manifest.json` sidecar

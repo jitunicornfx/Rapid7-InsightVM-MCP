@@ -20,9 +20,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import org.junit.jupiter.api.condition.EnabledOnOs
+import org.junit.jupiter.api.condition.OS
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.io.path.createTempDirectory
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -274,6 +277,78 @@ class ExportToolsTest {
         val h = harness { Canned(body = v3Page(0, 1, totalPages = 1)) }
         export(h, mapOf("tool" to "get_assets", "page_size" to 999_999))
         assertEquals(listOf("500"), h.lastRequest.url.parameters.getAll("size"), "an absurd page_size is clamped, not forwarded")
+    }
+
+    /**
+     * Regression: the time budget was weighed only between pages, and each page ran under the 60 s
+     * request timeout, so one slow page overran a budget sized to end before the client's own tool
+     * timeout, and the summary and its resume token were lost with the call.
+     */
+    @Test
+    fun `a slow page after the first is cut off at the time budget and resumes where it stopped`() = runBlocking {
+        val h = harness { req ->
+            val page = req.url.parameters["page"]!!.toInt()
+            Canned(body = v3Page(page, 10, totalPages = 5), delayMillis = if (page == 1) 10_000 else 0)
+        }
+        val started = System.nanoTime()
+        val summary = export(h, mapOf("tool" to "get_assets", "page_size" to 10, "max_duration_ms" to 2_000))
+        val tookMs = (System.nanoTime() - started) / 1_000_000
+        assertTrue(tookMs < 6_000, "the call must end near its 2,000 ms budget, not wait for the slow page; took ${tookMs}ms")
+        assertContains(summary, "2000ms time budget while waiting for page 2")
+        assertContains(summary, "resume_from_page = 1")
+        assertContains(summary, "raise the cap that stopped it")
+        assertEquals((0..9).toList(), ids(), "only the page that arrived is written")
+    }
+
+    /**
+     * A page is not started when the slowest page so far would not fit in what is left of the budget,
+     * and the first page always runs under the request timeout alone, so a slow endpoint still makes
+     * progress.
+     */
+    @Test
+    fun `a page that cannot fit in the time left is not started, but the first page always is`() = runBlocking {
+        val slow = harness { req -> Canned(body = v3Page(req.url.parameters["page"]!!.toInt(), 10, totalPages = 5), delayMillis = 600) }
+        val summary = export(slow, mapOf("tool" to "get_assets", "page_size" to 10, "max_duration_ms" to 1_000))
+        assertContains(summary, "1000ms time budget")
+        assertEquals(1, slow.requests.size, "a second 600 ms page cannot fit in the 400 ms left")
+        assertContains(summary, "resume_from_page = 1")
+
+        clearSpool()
+        val slower = harness { req -> Canned(body = v3Page(req.url.parameters["page"]!!.toInt(), 10, totalPages = 5), delayMillis = 1_500) }
+        val first = export(slower, mapOf("tool" to "get_assets", "page_size" to 10, "max_duration_ms" to 1_000))
+        assertEquals((0..9).toList(), ids(), "the first page is written although it took longer than the whole budget")
+        assertContains(first, "resume_from_page = 1")
+    }
+
+    /**
+     * Regression: the 256 MiB reserve was checked once, before the run, so a default 512 MiB export
+     * with 300 MiB free could fill the volume.
+     */
+    @Test
+    fun `the size cap is lowered so an export cannot write into the disk reserve`() = runBlocking {
+        val tight = object : SpoolStore(dir) {
+            override fun usableSpace(): Long = 300L * 1024 * 1024
+        }
+        val h = mcpHarness(testConfig(), spool = tight) { req -> Canned(body = v3Page(req.url.parameters["page"]!!.toInt(), 10, totalPages = 2)) }
+        val summary = export(h, mapOf("tool" to "get_assets", "page_size" to 10))
+        assertContains(summary, "max_bytes was lowered from 512.0 MiB to 44.0 MiB")
+        assertContains(summary, "status:    COMPLETE")
+        assertContains(manifest().readText(), "44.0 MiB", message = "the manifest's notes record it too")
+    }
+
+    @Test
+    fun `an export stops at the disk reserve when the volume fills during the run`() = runBlocking {
+        var checks = 0
+        val filling = object : SpoolStore(dir) {
+            override fun usableSpace(): Long = if (++checks == 1) 1024L * 1024 * 1024 else 100L * 1024 * 1024
+        }
+        val h = mcpHarness(testConfig(), spool = filling) { req -> Canned(body = v3Page(req.url.parameters["page"]!!.toInt(), 10, totalPages = 50)) }
+        val summary = export(h, mapOf("tool" to "get_assets", "page_size" to 10))
+        assertContains(summary, "INCOMPLETE — stopped to keep the 256.0 MiB disk reserve")
+        assertEquals(10, h.requests.size, "free space is read again every 10 pages")
+        assertEquals((0 until 100).toList(), ids())
+        assertContains(summary, "resume_from_page = 10")
+        assertFalse(summary.contains("raise the cap"), "a larger cap cannot help")
     }
 
     @Test
@@ -645,6 +720,48 @@ class ExportToolsTest {
         assertContains(summary, Config.ENV_SPOOL_DIR)
         assertTrue(h.requests.isEmpty(), "the disk is checked before a single API call is spent")
         assertTrue(files().isEmpty())
+    }
+
+    /**
+     * Regression: a spool the store could not prepare was only discovered when the first record was
+     * written, after an API call, and reported as a bare filesystem exception.
+     */
+    @Test
+    fun `an export refuses a spool directory it cannot prepare`() = runBlocking {
+        val notADirectory = dir.resolve("occupied").also { Files.writeString(it, "a file, not a directory") }
+        val h = mcpHarness(testConfig(), spool = SpoolStore(notADirectory)) { Canned(body = v3Page(0, 1, totalPages = 1)) }
+        val result = h.call(ExportTools.EXPORT_TOOL, mapOf("tool" to "get_assets"))
+        val text = h.text(result)
+        assertEquals(true, result.isError)
+        assertContains(text, "Refusing to export: the spool directory")
+        assertContains(text, Config.ENV_SPOOL_DIR)
+        assertTrue(h.requests.isEmpty(), "the spool is checked before a single API call is spent")
+    }
+
+    @Test
+    @EnabledOnOs(OS.LINUX, OS.MAC)
+    fun `an export refuses a spool directory other accounts can write to`() = runBlocking {
+        val shared = Files.createDirectory(dir.resolve("shared"))
+        val open = PosixFilePermissions.fromString("rwxrwxrwx")
+        Files.setPosixFilePermissions(shared, open)
+        val h = mcpHarness(testConfig(), spool = SpoolStore(shared)) { Canned(body = v3Page(0, 1, totalPages = 1)) }
+        val result = h.call(ExportTools.EXPORT_TOOL, mapOf("tool" to "get_assets"))
+        val text = h.text(result)
+        assertEquals(true, result.isError)
+        assertContains(text, "can be written by accounts other than its owner")
+        assertContains(text, Config.ENV_SPOOL_DIR)
+        assertTrue(h.requests.isEmpty())
+        assertEquals(open, Files.getPosixFilePermissions(shared), "the operator's directory is never chmodded")
+        assertFalse(Files.exists(shared.resolve(SpoolStore.README_NAME)), "nothing is written into it")
+    }
+
+    /** Regression: the manifest was created with the process umask (usually rw-r--r--) and never hardened. */
+    @Test
+    @EnabledOnOs(OS.LINUX, OS.MAC)
+    fun `the manifest is created rw-------`() = runBlocking {
+        val h = harness { Canned(body = v3Page(0, 2, totalPages = 1)) }
+        export(h, mapOf("tool" to "get_assets"))
+        assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(manifest().toPath()))
     }
 
     @Test

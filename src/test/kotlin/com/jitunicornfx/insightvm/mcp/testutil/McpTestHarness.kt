@@ -30,6 +30,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.PaginatedRequestParams
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent as McpText
 import io.modelcontextprotocol.kotlin.sdk.types.Tool
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -54,13 +55,18 @@ fun testConfig(
     autoUpdateDisabled = true,
 )
 
-/** Canned response description for the mock engines. [headers] are sent alongside `Content-Type`. */
+/**
+ * Canned response description for the mock engines. [headers] are sent alongside `Content-Type`.
+ * [delayMillis] holds the response back with a suspending delay, which a timeout can cancel as it
+ * would a slow socket read.
+ */
 data class Canned(
     val status: HttpStatusCode = HttpStatusCode.OK,
     val body: String = "{}",
     val contentType: String = "application/json",
     val bytes: ByteArray? = null,
     val headers: Map<String, String> = emptyMap(),
+    val delayMillis: Long = 0,
 )
 
 /**
@@ -115,9 +121,10 @@ suspend fun mcpHarness(
     respond: (HttpRequestData) -> Canned = { Canned() },
 ): McpTestHarness {
     val bodies = mutableListOf<String?>()
-    fun MockRequestHandleScope.answer(request: HttpRequestData): HttpResponseData {
+    suspend fun MockRequestHandleScope.answer(request: HttpRequestData): HttpResponseData {
         bodies += (request.body as? TextContent)?.text
         val canned = respond(request)
+        if (canned.delayMillis > 0) delay(canned.delayMillis)
         val headers = headersOf(
             *(mapOf(HttpHeaders.ContentType to canned.contentType) + canned.headers)
                 .map { (name, value) -> name to listOf(value) }

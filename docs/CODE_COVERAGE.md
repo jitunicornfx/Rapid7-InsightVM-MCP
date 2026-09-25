@@ -55,7 +55,12 @@ Coverage is measured with JaCoCo and **enforced**: `./gradlew check` fails below
 * **`SpoolStoreTest`, `ExportToolsTest`** — label sanitisation and containment against hostile labels, the retention
   sweep, all three paging modes (v4 `metadata` included), every cap and a resume token that never repeats a written
   page, the retry at a smaller page size when a page exceeds the response cap, API error bodies kept inside the
-  untrusted fence, a record too deep to encode, and refusal of unknown, filtered-out and state-changing tools.
+  untrusted fence, a record too deep to encode, and refusal of unknown, filtered-out and state-changing tools. A
+  suspending `Canned.delayMillis` drives the time budget (a slow page is abandoned, a page that cannot fit is not
+  started); a `usableSpace()` override drives the disk reserve. Directory safety is OS-specific: the Windows tests
+  check that a created directory carries only its owner's inheritable entry and that an existing one keeps its ACL;
+  the POSIX tests (skipped on Windows) check the modes, that an existing directory is never chmodded, and that one
+  others can write to is refused. The symlink test runs only where the account may create symbolic links.
 
 `src/test/resources/tls/test-ca.pem` is a throw-away self-signed certificate generated for the TLS tests; it has no
 private key in the repository and trusts nothing real.
