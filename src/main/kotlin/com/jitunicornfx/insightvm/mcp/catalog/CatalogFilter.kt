@@ -48,7 +48,29 @@ object CatalogFilter {
             if (flags.isEmpty()) "" else " [${flags.joinToString(", ")}]"
     }
 
-    /** Convert a shell-style glob (`*`, `?`) into an anchored regex; all other characters are literal. */
+    /** Every tag in [catalogs], once each (compared case-insensitively, as [select] does) and sorted. */
+    fun tags(catalogs: Map<ApiFamily, Catalog>): List<String> =
+        catalogs.values.flatMap { catalog -> catalog.ops.map { it.tag } }
+            .distinctBy { it.lowercase() }
+            .sortedBy { it.lowercase() }
+
+    /** The entries of [values] that name no tag in [catalogs], so a tag filter on them matches nothing. */
+    fun unknownTags(catalogs: Map<ApiFamily, Catalog>, values: Collection<String>): List<String> {
+        val known = tags(catalogs).map { it.lowercase() }.toSet()
+        return values.filter { it.lowercase() !in known }
+    }
+
+    /** The entries of [globs] that match no operation name in [catalogs]. */
+    fun unmatchedGlobs(catalogs: Map<ApiFamily, Catalog>, globs: Collection<String>): List<String> {
+        val names = catalogs.values.flatMap { catalog -> catalog.ops.map { it.name } }
+        return globs.filter { glob -> globToRegex(glob).let { regex -> names.none { regex.matches(it) } } }
+    }
+
+    /**
+     * Convert a shell-style glob (`*`, `?`) into an anchored regex; all other characters are literal.
+     * Case-insensitive, like the tag filters: tool names are lowercase by catalog invariant, so a
+     * case-sensitive `Get_Site*` could only ever match nothing.
+     */
     internal fun globToRegex(glob: String): Regex {
         val sb = StringBuilder("^")
         for (ch in glob) {
@@ -58,6 +80,6 @@ object CatalogFilter {
                 else -> sb.append(Regex.escape(ch.toString()))
             }
         }
-        return Regex(sb.append('$').toString())
+        return Regex(sb.append('$').toString(), RegexOption.IGNORE_CASE)
     }
 }

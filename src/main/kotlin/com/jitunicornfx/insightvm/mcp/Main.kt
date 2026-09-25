@@ -13,6 +13,7 @@ import com.github.ajalt.clikt.parameters.options.switch
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.int
 import com.jitunicornfx.insightvm.mcp.catalog.ApiFamily
+import com.jitunicornfx.insightvm.mcp.catalog.CatalogFilter
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogLoader
 import com.jitunicornfx.insightvm.mcp.catalog.PagingDefaults
 import io.ktor.server.cio.CIO
@@ -79,7 +80,7 @@ class Rapid7InsightVmCommand internal constructor(
         |
         |${Config.ENV_CONSOLE_URL}, ${Config.ENV_CONSOLE_USERNAME}, ${Config.ENV_CONSOLE_PASSWORD}: Security Console API v3 (https://host:3780).
         |
-        |${Config.ENV_CONSOLE_2FA_TOKEN} (optional): two-factor token sent in the Token header.
+        |${Config.ENV_CONSOLE_2FA_TOKEN} (optional): the two-factor code sent in the Token header. It is time-based and stops working within about a minute; prefer an account without two-factor authentication.
         |
         |${Config.ENV_CONSOLE_CA_CERT} (optional): PEM file with the console's CA/self-signed certificate.
         |
@@ -89,7 +90,7 @@ class Rapid7InsightVmCommand internal constructor(
         |
         |${Config.ENV_API_KEY}, ${Config.ENV_REGION}: Insight Platform Cloud Integrations API v4 (regions: ${Region.entries.joinToString(", ") { it.code }}).
         |
-        |${Config.ENV_MCP_AUTH_TOKEN}: bearer token required by --http (mandatory when --host is not loopback).
+        |${Config.ENV_MCP_AUTH_TOKEN}: bearer token required by --http (mandatory, and at least ${HttpSecurity.MIN_TOKEN_LENGTH} characters, when --host is not loopback).
         |
         |${Config.ENV_HTTP_ALLOWED_ORIGINS} (optional): comma-separated browser origins allowed in --http mode.
         |
@@ -193,7 +194,82 @@ class Rapid7InsightVmCommand internal constructor(
             echo("Configuration error: --api ${api ?: "both"} selected but that API family is not configured.", err = true)
             throw ProgramResult(1)
         }
-        if (transport == Transport.HTTP && config.httpAuthToken == null && !isLoopback(host)) {
+        // The merged filter holds only the tags common to both lists, so check the values as given.
+        checkToolSelection(config, requestedTags = fromEnv.filter.tags + cliFilter.tags)
+        if (transport == Transport.HTTP) checkBearerToken(config.httpAuthToken)
+        // Said once at startup as well as in every console 401 hint: the failure only shows up a minute
+        // later, far from the configuration that caused it.
+        if (config.console?.twoFactorToken != null) {
+            echo("[insightvm-mcp] WARNING: ${Config.TWO_FACTOR_TOKEN_NOTE}", err = true)
+        }
+        serve(transport, host, port, config)
+    }
+
+    /**
+     * Refuse filters that leave no API tool at all, and warn about each filter value that matches
+     * nothing. A tag typo (`Sites` for `Site`), env and command-line tag lists with nothing in common,
+     * or a mistyped glob used to start a server that offered only the meta tools, and the single
+     * "registered 0/343" line on stderr was easy to miss: desktop clients rarely surface stderr.
+     *
+     * Values are checked against the catalogs of the active families on their own, not after the
+     * other filters, so a warning always means "this value is wrong", never "this combination is".
+     */
+    private fun checkToolSelection(config: Config, requestedTags: Set<String>) {
+        val catalogs = CatalogLoader.loadAll(config.activeFamilies)
+        val filter = config.filter
+        val unknownTags = CatalogFilter.unknownTags(catalogs, requestedTags)
+        val unknownExcluded = CatalogFilter.unknownTags(catalogs, filter.excludeTags)
+        unknownTags.forEach {
+            echo("[insightvm-mcp] WARNING: --tags / ${Config.ENV_TAGS} value '$it' matches no tag of the selected APIs.", err = true)
+        }
+        unknownExcluded.forEach {
+            echo(
+                "[insightvm-mcp] WARNING: --exclude-tags / ${Config.ENV_EXCLUDE_TAGS} value '$it' matches no tag of the " +
+                    "selected APIs, so it hides nothing.",
+                err = true,
+            )
+        }
+        CatalogFilter.unmatchedGlobs(catalogs, filter.nameGlobs).forEach {
+            echo("[insightvm-mcp] WARNING: --tools glob '$it' matches no tool name.", err = true)
+        }
+
+        val validTags = "Valid tags: ${CatalogFilter.tags(catalogs).joinToString(", ")}."
+        if (CatalogFilter.select(catalogs, filter.copy(families = config.activeFamilies)).isEmpty()) {
+            val total = catalogs.values.sumOf { it.ops.size }
+            val disjoint = if (ToolFilter.NO_TAGS_SENTINEL in filter.tags) {
+                " ${Config.ENV_TAGS} and --tags have no tag in common, and the command line can only narrow the environment."
+            } else {
+                ""
+            }
+            echo(
+                "Configuration error: the tool filters (read-only, tags, excluded tags, API family, tool globs) " +
+                    "select none of the $total API tools.$disjoint $validTags",
+                err = true,
+            )
+            throw ProgramResult(1)
+        }
+        if (unknownTags.isNotEmpty() || unknownExcluded.isNotEmpty()) echo("[insightvm-mcp] $validTags", err = true)
+    }
+
+    /**
+     * On a non-loopback `--http` bind the bearer token is the only control between the network and the
+     * InsightVM credentials, and the failure throttle is per client address, so guesses spread across
+     * addresses are bounded only by the token's entropy. Refuse a missing or short one there; on
+     * loopback, where only local processes can connect, a short one earns a warning.
+     */
+    private fun checkBearerToken(token: String?) {
+        val short = token != null && token.length < HttpSecurity.MIN_TOKEN_LENGTH
+        if (isLoopback(host)) {
+            if (short) {
+                echo(
+                    "[insightvm-mcp] WARNING: ${Config.ENV_MCP_AUTH_TOKEN} is shorter than ${HttpSecurity.MIN_TOKEN_LENGTH} " +
+                        "characters; generate one with `openssl rand -hex 32`.",
+                    err = true,
+                )
+            }
+            return
+        }
+        if (token == null) {
             echo(
                 "Refusing to listen on $host without authentication: set ${Config.ENV_MCP_AUTH_TOKEN} " +
                     "to a strong shared secret, or bind to a loopback address.",
@@ -201,7 +277,14 @@ class Rapid7InsightVmCommand internal constructor(
             )
             throw ProgramResult(2)
         }
-        serve(transport, host, port, config)
+        if (short) {
+            echo(
+                "Refusing to listen on $host with a weak ${Config.ENV_MCP_AUTH_TOKEN}: off loopback it must be at least " +
+                    "${HttpSecurity.MIN_TOKEN_LENGTH} characters. Generate one with `openssl rand -hex 32`.",
+                err = true,
+            )
+            throw ProgramResult(2)
+        }
     }
 }
 

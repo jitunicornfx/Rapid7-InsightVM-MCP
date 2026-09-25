@@ -60,6 +60,8 @@ Out of scope: a compromised operator machine, a malicious bundled specification,
 * Every `DELETE`, and every operation whose id starts with `delete`, `remove` or `stop`, is annotated
   `destructiveHint=true`; all non-`GET` operations are `readOnlyHint=false`. Clients that honour annotations can prompt.
 * `--read-only` registers only `GET` operations. Command-line flags can only tighten the environment's filters.
+* On/off variables accept only `1`/`true`/`yes`/`on` or `0`/`false`/`no`/`off`. Any other value stops the server,
+  so a typo such as `INSIGHTVM_READ_ONLY=y` cannot leave a safety flag off while every mutating tool is registered.
 
 ### Credential egress
 
@@ -68,6 +70,11 @@ Out of scope: a compromised operator machine, a malicious bundled specification,
 * The console URL must be a bare origin (no path, query, fragment or embedded credentials).
 * Secrets are redacted from every `toString()`; startup logs print hosts and regions only. stdout is reserved for the
   JSON-RPC stream and `System.out` is redirected to stderr in stdio mode.
+* `INSIGHTVM_API_KEY`, `INSIGHTVM_CONSOLE_2FA_TOKEN` and `INSIGHTVM_MCP_AUTH_TOKEN` are trimmed and must then be
+  visible ASCII, or startup fails naming the variable and a position, never the value. Ktor and OkHttp reject a bad
+  header value at request time with an exception that quotes it, so these values are checked before they can become
+  headers. As a second line, a tool error never repeats the text of such an exception, or of one that quotes a
+  response's malformed `Content-Type`; it says what failed in fixed words.
 
 ### TLS to the Security Console
 
@@ -80,7 +87,7 @@ Out of scope: a compromised operator machine, a malicious bundled specification,
 
 | Control | Detail |
 |---|---|
-| Bearer token | `INSIGHTVM_MCP_AUTH_TOKEN`; compared with `MessageDigest.isEqual`. **Mandatory** when `--host` is not loopback — the server refuses to start otherwise. On loopback it is optional but a warning is logged. |
+| Bearer token | `INSIGHTVM_MCP_AUTH_TOKEN`; compared with `MessageDigest.isEqual`. **Mandatory, and at least 32 characters,** when `--host` is not loopback — the server refuses to start otherwise, because the throttle below is per address and does not stop guesses spread across addresses. On loopback it is optional, but a missing or shorter token is warned about. |
 | Brute-force throttle | 20 failed attempts per client address per minute → `429` with `Retry-After`, checked before the token compare. Bounded memory (10 000 clients, oldest evicted). |
 | DNS rebinding | On loopback binds the `Host` header must name the server (bind address, `localhost`, loopback literals, or an allow-listed origin's host) → else `421`. |
 | Browser origins | Any request carrying `Origin` must match `INSIGHTVM_HTTP_ALLOWED_ORIGINS` exactly (scheme+host+port, default ports normalised) → else `403`. `*` is ignored. |

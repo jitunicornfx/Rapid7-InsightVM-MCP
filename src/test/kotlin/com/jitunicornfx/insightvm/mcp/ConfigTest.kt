@@ -2,6 +2,7 @@ package com.jitunicornfx.insightvm.mcp
 
 import com.jitunicornfx.insightvm.mcp.catalog.ApiFamily
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -190,11 +191,69 @@ class ConfigTest {
     }
 
     @Test
-    fun `truthy parsing`() {
-        listOf("1", "true", "YES", " on ").forEach { assertTrue(Config.isTruthy(it), it) }
-        listOf("0", "false", "", null, "maybe").forEach { assertFalse(Config.isTruthy(it), it ?: "null") }
+    fun `flag parsing`() {
+        listOf("1", "true", "YES", " on ").forEach { assertTrue(Config.parseFlag("F", it), it) }
+        listOf("0", "false", "No", " OFF ", "", "  ", null).forEach { assertFalse(Config.parseFlag("F", it), it ?: "null") }
+        listOf("maybe", "y", "2", "enabled", "read-only").forEach { value ->
+            val e = assertFailsWith<IllegalArgumentException>(value) { Config.parseFlag("SOME_FLAG", value) }
+            assertEquals("SOME_FLAG must be one of 1/true/yes/on or 0/false/no/off.", e.message)
+        }
         assertEquals(emptyList(), Config.csv(null))
         assertEquals(listOf("a", "b"), Config.csv(" a ,, b "))
+    }
+
+    @Test
+    fun `an unrecognised flag value fails startup instead of leaving a safety flag off`() {
+        // Every boolean variable, so none can quietly fall back to "off" on a typo.
+        val flags = listOf(
+            Config.ENV_READ_ONLY, Config.ENV_DISABLE_EXPORT, Config.ENV_DISABLE_UPDATE_CHECK, Config.ENV_DISABLE_AUTO_UPDATE,
+            Config.ENV_ALLOW_ADMIN_COMMANDS, Config.ENV_ALLOW_HTTP, Config.ENV_CONSOLE_INSECURE_TLS, Config.ENV_KEEP_RECORD_LINKS,
+        )
+        for (flag in flags) {
+            val e = assertFailsWith<IllegalArgumentException>(flag) { Config.fromEnv(consoleEnv + cloudEnv + (flag to "y")) }
+            assertContains(e.message!!, flag)
+            assertContains(e.message!!, "1/true/yes/on or 0/false/no/off")
+        }
+        // A console flag is checked even when the console is not configured: a typo is a typo.
+        assertFailsWith<IllegalArgumentException> { Config.fromEnv(cloudEnv + (Config.ENV_CONSOLE_INSECURE_TLS to "enabled")) }
+
+        assertFalse(Config.fromEnv(cloudEnv + (Config.ENV_READ_ONLY to "off")).filter.readOnly)
+        assertTrue(Config.fromEnv(cloudEnv + (Config.ENV_READ_ONLY to "ON")).filter.readOnly)
+        assertFalse(Config.fromEnv(cloudEnv + (Config.ENV_READ_ONLY to " ")).filter.readOnly, "blank is unset")
+    }
+
+    @Test
+    fun `secret values are trimmed, and one that cannot be a header value fails startup without being echoed`() {
+        // A secret with a character no HTTP header may carry: named by variable and position, never shown.
+        val badKey = assertFailsWith<IllegalArgumentException> { Config.fromEnv(mapOf(Config.ENV_API_KEY to "s3cr\u0007etKEY")) }
+        assertContains(badKey.message!!, Config.ENV_API_KEY)
+        assertContains(badKey.message!!, "position 5")
+        assertFalse(badKey.message!!.contains("s3cr"), badKey.message)
+        assertFalse(badKey.message!!.contains("etKEY"), badKey.message)
+
+        // A non-breaking space inside the value (a paste from a web page); positions count from the raw value.
+        val nbsp = assertFailsWith<IllegalArgumentException> { Config.fromEnv(mapOf(Config.ENV_API_KEY to "  key part")) }
+        assertContains(nbsp.message!!, "position 6")
+        assertFalse(nbsp.message!!.contains("part"), nbsp.message)
+
+        val bad2fa = assertFailsWith<IllegalArgumentException> {
+            Config.fromEnv(consoleEnv + (Config.ENV_CONSOLE_2FA_TOKEN to "123\r456"))
+        }
+        assertContains(bad2fa.message!!, Config.ENV_CONSOLE_2FA_TOKEN)
+        assertFalse(bad2fa.message!!.contains("123"), bad2fa.message)
+
+        val badBearer = assertFailsWith<IllegalArgumentException> {
+            Config.fromEnv(cloudEnv + (Config.ENV_MCP_AUTH_TOKEN to "two words"))
+        }
+        assertContains(badBearer.message!!, Config.ENV_MCP_AUTH_TOKEN)
+        assertFalse(badBearer.message!!.contains("words"), badBearer.message)
+
+        // Surrounding whitespace is trimmed: pasted padding, and the CR a CRLF env file leaves behind.
+        assertEquals("key", Config.fromEnv(mapOf(Config.ENV_API_KEY to "  key  ")).cloud!!.apiKey)
+        assertEquals("abc", Config.fromEnv(mapOf(Config.ENV_API_KEY to "abc\r")).cloud!!.apiKey)
+        assertEquals("123456", Config.fromEnv(consoleEnv + (Config.ENV_CONSOLE_2FA_TOKEN to " 123456\n")).console!!.twoFactorToken)
+        // Presented tokens are trimmed by the Authorization parser, so a padded stored one could never match.
+        assertEquals("s3cret", Config.fromEnv(cloudEnv + (Config.ENV_MCP_AUTH_TOKEN to "s3cret ")).httpAuthToken)
     }
 
     @Test

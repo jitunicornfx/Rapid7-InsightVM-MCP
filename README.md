@@ -23,13 +23,13 @@ Everything is configured through environment variables. Configure one or both AP
 | `INSIGHTVM_CONSOLE_URL` | console | — | Console origin, e.g. `https://console.corp.example:3780` (no path; port defaults to 3780) |
 | `INSIGHTVM_CONSOLE_USERNAME` | console | — | Console account (HTTP Basic) |
 | `INSIGHTVM_CONSOLE_PASSWORD` | console | — | Console password |
-| `INSIGHTVM_CONSOLE_2FA_TOKEN` | | — | Two-factor token sent in the `Token` header |
+| `INSIGHTVM_CONSOLE_2FA_TOKEN` | | — | The account's two-factor code, sent in the `Token` header. It is time-based: a fixed value stops working within about a minute, so prefer a service account without 2FA (startup prints a warning) |
 | `INSIGHTVM_CONSOLE_CA_CERT` | | — | PEM file with the console's CA or self-signed certificate |
 | `INSIGHTVM_CONSOLE_INSECURE_TLS` | | `0` | `1` disables TLS verification for the console (lab use only; logged loudly) |
 | `INSIGHTVM_API_KEY` | cloud | — | Insight Platform API key |
 | `INSIGHTVM_REGION` | | `us` | `us`, `us2`, `us3`, `eu`, `ca`, `au`, `ap`, `aps2`, `me1` |
 | `INSIGHTVM_CLOUD_BASE_URL` | | regional | Override the cloud base URL (must be `https`) |
-| `INSIGHTVM_MCP_AUTH_TOKEN` | http | — | Bearer token for `--http`; **mandatory when binding a non-loopback address** |
+| `INSIGHTVM_MCP_AUTH_TOKEN` | http | — | Bearer token for `--http`; **mandatory, and at least 32 characters, when binding a non-loopback address** (e.g. `openssl rand -hex 32`). A shorter one on loopback is warned about |
 | `INSIGHTVM_HTTP_ALLOWED_ORIGINS` | | none | Comma-separated browser origins allowed in `--http` mode (`*` is ignored) |
 | `INSIGHTVM_READ_ONLY` | | `0` | Register only `GET` tools |
 | `INSIGHTVM_TAGS` / `INSIGHTVM_EXCLUDE_TAGS` | | all | Comma-separated API tags to include / hide |
@@ -44,6 +44,12 @@ Everything is configured through environment variables. Configure one or both AP
 | `INSIGHTVM_SPOOL_RETENTION_HOURS` | | `24` | Exported files older than this are swept at startup; `0` never sweeps |
 | `INSIGHTVM_DISABLE_EXPORT` | | `0` | `1` removes `insightvm_export_to_file`, the only tool that writes to disk |
 | `INSIGHTVM_DISABLE_UPDATE_CHECK` / `INSIGHTVM_DISABLE_AUTO_UPDATE` | | `0` | Update behaviour (see below) |
+
+On/off variables accept `1`/`true`/`yes`/`on` or `0`/`false`/`no`/`off`, in any case. Any other value stops the
+server at startup, so a typo such as `INSIGHTVM_READ_ONLY=y` cannot leave a safety flag off. `INSIGHTVM_API_KEY`,
+`INSIGHTVM_CONSOLE_2FA_TOKEN` and `INSIGHTVM_MCP_AUTH_TOKEN` are trimmed of surrounding whitespace. If what remains
+contains a space or any character outside printable ASCII, the server does not start; the error names the variable
+but never shows the value.
 
 See [`.env.example`](.env.example) for a template.
 
@@ -78,11 +84,13 @@ java -jar build/libs/rapid7-insightvm-mcp-0.2.1-all.jar --http --host 127.0.0.1 
 | `--read-only` | Only `GET` tools |
 | `--tags Site,Asset` / `--exclude-tags User` | Filter by API tag (repeatable) |
 | `--api console\|cloud\|both` | Which configured family to expose |
-| `--tools 'get_site*'` | Glob on tool names (repeatable) |
+| `--tools 'get_site*'` | Glob on tool names (repeatable, case-insensitive) |
 | `--allow-admin-commands` | Enable `execute_command` (off by default) |
 | `--no-update-check`, `--no-auto-update` | Update behaviour |
 
 Command-line flags can only tighten what the environment allows; `--allow-admin-commands` is the single explicit exception.
+If the filters leave no API tool at all, the server stops at startup and lists the valid tags. A tag, excluded tag
+or glob that matches nothing is reported on stderr as a warning.
 
 ### Use with Claude Desktop
 
@@ -254,8 +262,9 @@ log, so that is the first place to look:
 | Symptom in the client log | Cause |
 |---|---|
 | `no main manifest attribute, in …jar` | The `-thin.jar` was deployed; use the `-all.jar` |
-| `Configuration error: …` | Missing/invalid `INSIGHTVM_*` variable — the message names it |
-| `Refusing to listen on …` | `--http` on a non-loopback address without `INSIGHTVM_MCP_AUTH_TOKEN` |
+| `Configuration error: …` | Missing/invalid `INSIGHTVM_*` variable, or filters that select no tool — the message names it |
+| `Refusing to listen on …` | `--http` on a non-loopback address without `INSIGHTVM_MCP_AUTH_TOKEN`, or with one shorter than 32 characters |
+| console tools return HTTP 401 a minute or so after start | `INSIGHTVM_CONSOLE_2FA_TOKEN` is a time-based code; use an account without 2FA |
 | banner printed, then nothing | Normal for stdio: the server is waiting for the client's `initialize` |
 
 ## Updates

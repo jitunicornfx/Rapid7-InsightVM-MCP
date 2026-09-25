@@ -128,6 +128,26 @@ class CatalogTest {
         assertTrue(CatalogFilter.globToRegex("a?c").matches("abc"))
     }
 
+    @Test
+    fun `name globs ignore case, as tags already do`() {
+        val selected = CatalogFilter.select(TEST_CATALOGS, ToolFilter(nameGlobs = listOf("Get_Site")))
+        assertEquals(listOf("get_site"), selected.map { it.op.name })
+        assertTrue(CatalogFilter.select(TEST_CATALOGS, ToolFilter(nameGlobs = listOf("CLOUD_*"))).isNotEmpty())
+    }
+
+    @Test
+    fun `filter values that match nothing are found for the startup warnings`() {
+        val cats = mapOf(
+            ApiFamily.CONSOLE to catalog(ApiFamily.CONSOLE, op("get_site", tag = "Site"), op("get_user", tag = "User")),
+            ApiFamily.CLOUD to catalog(ApiFamily.CLOUD, op("cloud_get_sites", tag = "site"), op("cloud_health", tag = "Health")),
+        )
+        // Once each, case-insensitively, in a stable order.
+        assertEquals(listOf("Health", "Site", "User"), CatalogFilter.tags(cats))
+        assertEquals(listOf("Sites", "Userz"), CatalogFilter.unknownTags(cats, listOf("SITE", "Sites", "user", "Userz")))
+        assertEquals(listOf("list_*", "x?"), CatalogFilter.unmatchedGlobs(cats, listOf("GET_*", "list_*", "*health", "x?")))
+        assertEquals(emptyList(), CatalogFilter.unknownTags(cats, emptyList()))
+    }
+
     // ---------------------------------------------------------------- schema builder
 
     @Test

@@ -37,7 +37,10 @@ data class ConsoleConfig(
     val baseUrl: String,
     val username: String,
     val password: String,
-    /** Two-factor authentication token sent in the `Token` header, when the account requires it. */
+    /**
+     * The account's two-factor code, sent in the `Token` header when the account requires it. It is
+     * time-based, so a value fixed at startup soon stops working; see [Config.TWO_FACTOR_TOKEN_NOTE].
+     */
     val twoFactorToken: String? = null,
     /** Path to a PEM file holding the CA (or self-signed leaf) certificate(s) to trust for the console. */
     val caCertPath: String? = null,
@@ -71,7 +74,7 @@ data class ToolFilter(
     val allowAdminCommands: Boolean = false,
     /** API families to expose; intersected with what is configured. */
     val families: Set<ApiFamily> = ApiFamily.entries.toSet(),
-    /** Glob patterns (`*`, `?`) on tool names; empty = all. */
+    /** Glob patterns (`*`, `?`) on tool names, case-insensitive like [tags]; empty = all. */
     val nameGlobs: List<String> = emptyList(),
 ) {
     companion object {
@@ -200,26 +203,92 @@ data class Config(
 
         const val DEFAULT_CONSOLE_PORT = 3780
 
-        private val TRUTHY = setOf("1", "true", "yes", "on")
+        /**
+         * What the console's `Token` header actually is, for the startup warning and the 401 hint. The
+         * console checks the header on every request and this client keeps no session, so a code that
+         * was valid at startup is refused within about a minute; re-checking the variable cannot help.
+         */
+        const val TWO_FACTOR_TOKEN_NOTE =
+            "$ENV_CONSOLE_2FA_TOKEN is a time-based one-time code: a fixed value stops working within about a " +
+                "minute, so use a service account without two-factor authentication or restart the server with a fresh code."
+
+        private val FLAG_TRUE = setOf("1", "true", "yes", "on")
+        private val FLAG_FALSE = setOf("0", "false", "no", "off")
         private val HOST_PRESENT = Regex("^[A-Za-z][A-Za-z0-9+.-]*://[^/:?#@\\s]+")
 
-        internal fun isTruthy(value: String?): Boolean = value?.trim()?.lowercase() in TRUTHY
+        /**
+         * The boolean environment variable [name], whose raw value is [value]. Unset or blank is false.
+         * Every on/off variable goes through here (in [fromEnv], via its local `flag`).
+         *
+         * Anything outside those two lists fails startup rather than reading as false: most of these
+         * flags tighten ([ENV_READ_ONLY], [ENV_DISABLE_EXPORT], the update switches), so a lenient parse
+         * turned `INSIGHTVM_READ_ONLY=y` into every mutating tool registered, silently. A malformed URL
+         * or region already stops the server; a malformed safety flag now does too. The message names
+         * the variable only, like every other configuration error.
+         */
+        internal fun parseFlag(name: String, value: String?): Boolean {
+            val normalized = value?.trim()?.lowercase()
+            return when {
+                normalized.isNullOrEmpty() -> false
+                normalized in FLAG_TRUE -> true
+                normalized in FLAG_FALSE -> false
+                else -> throw IllegalArgumentException("$name must be one of 1/true/yes/on or 0/false/no/off.")
+            }
+        }
+
+        /**
+         * [raw] with surrounding whitespace trimmed, refused unless every remaining character is visible
+         * ASCII (0x21..0x7E). For secrets that become an HTTP header value (`X-Api-Key`, `Token`) or are
+         * compared with one (the `--http` bearer token).
+         *
+         * Trimming covers pasted padding and the CR that a CRLF env file leaves on each value; a stored
+         * bearer token padded that way could never match, because the `Authorization` parser trims what
+         * a client presents. What trimming cannot fix must fail here, at startup, where only the operator
+         * sees it: Ktor and OkHttp refuse an illegal header character at request time with an exception
+         * that quotes the whole value, and that message used to reach the model as a tool error. The
+         * error names the variable and a 1-based position in the value as set, never the value itself.
+         */
+        internal fun headerSafeSecret(name: String, raw: String): String {
+            val leading = raw.indexOfFirst { !it.isWhitespace() }.coerceAtLeast(0)
+            val value = raw.trim()
+            val bad = value.indexOfFirst { it !in '!'..'~' }
+            require(bad < 0) {
+                "$name contains a character that cannot be sent in an HTTP header (position ${leading + bad + 1})."
+            }
+            return value
+        }
 
         internal fun csv(value: String?): List<String> =
             value?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
 
         fun fromEnv(env: Map<String, String> = System.getenv()): Config {
             fun get(name: String): String? = env[name]?.takeIf { it.isNotBlank() }
+            fun flag(name: String): Boolean = parseFlag(name, env[name])
 
-            val console = consoleFromEnv(env)
+            // Every flag is read up front, so a malformed one fails startup whether or not the setting
+            // it belongs to is in use.
+            val allowHttp = flag(ENV_ALLOW_HTTP)
+            val insecureTls = flag(ENV_CONSOLE_INSECURE_TLS)
+            val filter = ToolFilter(
+                readOnly = flag(ENV_READ_ONLY),
+                tags = csv(env[ENV_TAGS]).toSet(),
+                excludeTags = csv(env[ENV_EXCLUDE_TAGS]).toSet(),
+                allowAdminCommands = flag(ENV_ALLOW_ADMIN_COMMANDS),
+            )
+            val keepRecordLinks = flag(ENV_KEEP_RECORD_LINKS)
+            val exportDisabled = flag(ENV_DISABLE_EXPORT)
+            val updateCheckDisabled = flag(ENV_DISABLE_UPDATE_CHECK)
+            val autoUpdateDisabled = flag(ENV_DISABLE_AUTO_UPDATE)
+
+            val console = consoleFromEnv(env, allowHttp = allowHttp, insecureTls = insecureTls)
             val cloud = get(ENV_API_KEY)?.let { key ->
                 val region = Region.fromCode(get(ENV_REGION) ?: DEFAULT_REGION)
                 val base = get(ENV_CLOUD_BASE_URL)?.trimEnd('/') ?: "https://${region.code}.api.insight.rapid7.com/vm"
                 // The API key travels on every request; never let an override downgrade it to cleartext by accident.
-                require(base.startsWith("https://") || (isTruthy(env[ENV_ALLOW_HTTP]) && base.startsWith("http://"))) {
+                require(base.startsWith("https://") || (allowHttp && base.startsWith("http://"))) {
                     "$ENV_CLOUD_BASE_URL must use https (set $ENV_ALLOW_HTTP=1 to permit cleartext http)."
                 }
-                CloudConfig(apiKey = key, region = region, baseUrl = base)
+                CloudConfig(apiKey = headerSafeSecret(ENV_API_KEY, key), region = region, baseUrl = base)
             }
             if (cloud == null && get(ENV_REGION) != null && console == null) {
                 throw IllegalStateException("$ENV_REGION is set but $ENV_API_KEY is missing.")
@@ -232,34 +301,27 @@ data class Config(
                 .coerceIn(MIN_MAX_RESULT_CHARS, MAX_MAX_RESULT_CHARS)
             val origins = csv(env[ENV_HTTP_ALLOWED_ORIGINS]).filter { it != "*" }
 
-            val filter = ToolFilter(
-                readOnly = isTruthy(env[ENV_READ_ONLY]),
-                tags = csv(env[ENV_TAGS]).toSet(),
-                excludeTags = csv(env[ENV_EXCLUDE_TAGS]).toSet(),
-                allowAdminCommands = isTruthy(env[ENV_ALLOW_ADMIN_COMMANDS]),
-            )
-
             return Config(
                 console = console,
                 cloud = cloud,
                 requestTimeoutMillis = timeout,
                 maxResponseBytes = maxBytes,
                 maxResultChars = maxResultChars,
-                keepRecordLinks = isTruthy(env[ENV_KEEP_RECORD_LINKS]),
+                keepRecordLinks = keepRecordLinks,
                 defaultPageSize = (get(ENV_DEFAULT_PAGE_SIZE)?.toIntOrNull()?.takeIf { it > 0 } ?: PagingDefaults.DEFAULT_PAGE_SIZE)
                     .coerceIn(1, PagingDefaults.MAX_PAGE_SIZE),
                 spoolDirectory = get(ENV_SPOOL_DIR),
                 spoolRetentionHours = (get(ENV_SPOOL_RETENTION_HOURS)?.toIntOrNull()?.takeIf { it >= 0 } ?: DEFAULT_SPOOL_RETENTION_HOURS),
-                exportDisabled = isTruthy(env[ENV_DISABLE_EXPORT]),
-                httpAuthToken = get(ENV_MCP_AUTH_TOKEN),
+                exportDisabled = exportDisabled,
+                httpAuthToken = get(ENV_MCP_AUTH_TOKEN)?.let { headerSafeSecret(ENV_MCP_AUTH_TOKEN, it) },
                 httpAllowedOrigins = origins,
                 filter = filter,
-                updateCheckDisabled = isTruthy(env[ENV_DISABLE_UPDATE_CHECK]),
-                autoUpdateDisabled = isTruthy(env[ENV_DISABLE_AUTO_UPDATE]),
+                updateCheckDisabled = updateCheckDisabled,
+                autoUpdateDisabled = autoUpdateDisabled,
             )
         }
 
-        private fun consoleFromEnv(env: Map<String, String>): ConsoleConfig? {
+        private fun consoleFromEnv(env: Map<String, String>, allowHttp: Boolean, insecureTls: Boolean): ConsoleConfig? {
             fun get(name: String): String? = env[name]?.takeIf { it.isNotBlank() }
             val url = get(ENV_CONSOLE_URL)
             val user = get(ENV_CONSOLE_USERNAME)
@@ -272,12 +334,12 @@ data class Config(
                 )
             }
             return ConsoleConfig(
-                baseUrl = normalizeConsoleUrl(url, allowHttp = isTruthy(env[ENV_ALLOW_HTTP])),
+                baseUrl = normalizeConsoleUrl(url, allowHttp = allowHttp),
                 username = user,
                 password = password,
-                twoFactorToken = get(ENV_CONSOLE_2FA_TOKEN),
+                twoFactorToken = get(ENV_CONSOLE_2FA_TOKEN)?.let { headerSafeSecret(ENV_CONSOLE_2FA_TOKEN, it) },
                 caCertPath = get(ENV_CONSOLE_CA_CERT),
-                insecureTls = isTruthy(env[ENV_CONSOLE_INSECURE_TLS]),
+                insecureTls = insecureTls,
             )
         }
 

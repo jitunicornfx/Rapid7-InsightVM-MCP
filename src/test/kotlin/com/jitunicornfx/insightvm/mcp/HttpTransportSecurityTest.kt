@@ -196,6 +196,16 @@ class HttpTransportSecurityTest {
     }
 
     @Test
+    fun `the settings never print the bearer token`() {
+        // A data class's generated toString would include it, and settings objects end up in logs.
+        val printed = loopbackToken.toString()
+        assertFalse(printed.contains("s3cret-token"), printed)
+        assertTrue(printed.contains("token=***"), printed)
+        assertTrue(printed.contains("bindHost=127.0.0.1"), printed)
+        assertTrue(loopbackNoToken.toString().contains("token=unset"))
+    }
+
+    @Test
     fun `helpers`() {
         assertEquals("localhost", hostPart("localhost:3072"))
         assertEquals("[::1]", hostPart("[::1]:3072"))

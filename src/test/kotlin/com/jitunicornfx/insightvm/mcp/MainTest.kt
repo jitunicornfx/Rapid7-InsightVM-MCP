@@ -39,6 +39,11 @@ import kotlin.test.assertTrue
 
 class MainTest {
 
+    private companion object {
+        /** Long enough for a non-loopback bind. */
+        const val STRONG_TOKEN = "0123456789abcdef0123456789abcdef"
+    }
+
     private data class Served(val transport: Transport, val host: String, val port: Int, val config: Config)
 
     private fun command(config: () -> Config = { testConfig() }): Pair<Rapid7InsightVmCommand, MutableList<Served>> {
@@ -128,13 +133,98 @@ class MainTest {
         assertContains(result.stderr, Config.ENV_MCP_AUTH_TOKEN)
         assertTrue(served.isEmpty())
 
-        val (withToken, servedTok) = command { testConfig().copy(httpAuthToken = "t") }
+        val (withToken, servedTok) = command { testConfig().copy(httpAuthToken = STRONG_TOKEN) }
         assertEquals(0, withToken.test("--http --host 0.0.0.0").statusCode)
         assertEquals("0.0.0.0", servedTok.single().host)
 
         val (stdioAnyHost, servedStdio) = command()
         assertEquals(0, stdioAnyHost.test("--stdio --host 0.0.0.0").statusCode)
         assertEquals(1, servedStdio.size)
+    }
+
+    @Test
+    fun `a short bearer token is refused off loopback and warned about on it`() {
+        // Off loopback the throttle is per address, so a distributed guess is bounded only by the
+        // token's own entropy.
+        val (weak, servedWeak) = command { testConfig().copy(httpAuthToken = "changeme") }
+        val refused = weak.test("--http --host 0.0.0.0")
+        assertEquals(2, refused.statusCode)
+        assertContains(refused.stderr, Config.ENV_MCP_AUTH_TOKEN)
+        assertContains(refused.stderr, "at least 32 characters")
+        assertContains(refused.stderr, "openssl rand -hex 32")
+        assertFalse(refused.stderr.contains("changeme"), "the token itself is never printed")
+        assertTrue(servedWeak.isEmpty())
+
+        val (exact, servedExact) = command { testConfig().copy(httpAuthToken = "a".repeat(32)) }
+        assertEquals(0, exact.test("--http --host 0.0.0.0").statusCode)
+        assertEquals(1, servedExact.size)
+
+        val (loopback, servedLoopback) = command { testConfig().copy(httpAuthToken = "changeme") }
+        val warned = loopback.test("--http --host 127.0.0.1")
+        assertEquals(0, warned.statusCode)
+        assertContains(warned.stderr, "WARNING")
+        assertContains(warned.stderr, "shorter than 32 characters")
+        assertFalse(warned.stderr.contains("changeme"))
+        assertEquals(1, servedLoopback.size)
+
+        // stdio never listens, so the token is irrelevant there.
+        val (stdio, _) = command { testConfig().copy(httpAuthToken = "changeme") }
+        assertFalse(stdio.test("--stdio").stderr.contains("32 characters"))
+    }
+
+    @Test
+    fun `a two-factor token prints a startup warning that it is a time-based code`() {
+        val (with2fa, served) = command { testConfig(console = TEST_CONSOLE.copy(twoFactorToken = "123456")) }
+        val result = with2fa.test("")
+        assertEquals(0, result.statusCode, result.output)
+        assertContains(result.stderr, Config.ENV_CONSOLE_2FA_TOKEN)
+        assertContains(result.stderr, "time-based")
+        assertFalse(result.stderr.contains("123456"))
+        assertEquals(1, served.size)
+
+        val (without, _) = command()
+        assertFalse(without.test("").stderr.contains("time-based"))
+    }
+
+    @Test
+    fun `filters that select no API tool exit 1 and name the valid tags`() {
+        // "Sites" for the "Site" tag used to start a server with nothing but the meta tools.
+        val env = mapOf(Config.ENV_API_KEY to "k", Config.ENV_TAGS to "Sites")
+        val (typo, served) = command { Config.fromEnv(env).copy(updateCheckDisabled = true) }
+        val result = typo.test("")
+        assertEquals(1, result.statusCode, result.output)
+        assertContains(result.stderr, "select none of the")
+        assertContains(result.stderr, "'Sites'")
+        assertTrue(Regex("Valid tags: .*\\bSite\\b").containsMatchIn(result.stderr), result.stderr)
+        assertTrue(served.isEmpty())
+
+        // Environment and command-line tag lists with nothing in common.
+        val (disjoint, servedDisjoint) = command { testConfig(filter = ToolFilter(tags = setOf("Site"))) }
+        val none = disjoint.test("--tags User")
+        assertEquals(1, none.statusCode)
+        assertContains(none.stderr, "no tag in common")
+        assertTrue(servedDisjoint.isEmpty())
+
+        // A glob that matches nothing is equally fatal when it is the only one.
+        val (glob, _) = command()
+        assertEquals(1, glob.test("--tools 'nothing_*'").statusCode)
+    }
+
+    @Test
+    fun `filter values that match nothing are warned about even when other tools remain`() {
+        val (cmd, served) = command()
+        val result = cmd.test("--tags Site,Sitez --exclude-tags Users --tools 'get_*' --tools 'list_*'")
+        assertEquals(0, result.statusCode, result.output)
+        assertContains(result.stderr, "'Sitez'")
+        assertContains(result.stderr, "'Users'")
+        assertContains(result.stderr, "'list_*'")
+        assertFalse(result.stderr.contains("'Site'"), result.stderr)
+        assertFalse(result.stderr.contains("'get_*'"), result.stderr)
+        assertContains(result.stderr, "Valid tags:")
+        assertEquals(1, served.size)
+
+        val (clean, _) = command()
+        assertFalse(clean.test("--tags Site --tools 'Get_Site*'").stderr.contains("WARNING"))
     }
 
     @Test

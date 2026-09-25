@@ -1,6 +1,8 @@
 package com.jitunicornfx.insightvm.mcp
 
 import com.jitunicornfx.insightvm.mcp.catalog.ApiFamily
+import io.ktor.http.BadContentTypeFormatException
+import io.ktor.http.IllegalHeaderValueException
 import io.ktor.http.encodeURLPathPart
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
@@ -91,8 +93,8 @@ internal fun wrapUntrusted(body: String): String {
 internal fun statusHint(status: Int, family: ApiFamily): String? = when (status) {
     400 -> "The API rejected the request as malformed — re-check the parameter values against this tool's input schema."
     401 -> when (family) {
-        ApiFamily.CONSOLE -> "Authentication failed — verify ${Config.ENV_CONSOLE_USERNAME}/${Config.ENV_CONSOLE_PASSWORD} " +
-            "(and ${Config.ENV_CONSOLE_2FA_TOKEN} if the account uses two-factor authentication)."
+        ApiFamily.CONSOLE -> "Authentication failed — verify ${Config.ENV_CONSOLE_USERNAME}/${Config.ENV_CONSOLE_PASSWORD}. " +
+            "If the account uses two-factor authentication, ${Config.TWO_FACTOR_TOKEN_NOTE}"
         ApiFamily.CLOUD -> "Authentication failed — verify ${Config.ENV_API_KEY} holds a valid Insight Platform API key for ${Config.ENV_REGION}."
     }
     403 -> "The account lacks the privileges for this operation — additional roles or an Organization-level key may be required."
@@ -101,6 +103,24 @@ internal fun statusHint(status: Int, family: ApiFamily): String? = when (status)
     415 -> "Unsupported media type — the request body content type was not accepted."
     429 -> "Rate limited — wait briefly before retrying."
     in 500..599 -> "Server-side error — retrying may succeed; if it persists check the console/platform status."
+    else -> null
+}
+
+/**
+ * A fixed, server-authored description of [e] when its own message must never be shown, or null when
+ * the message is safe to pass on.
+ *
+ * Some library exceptions quote the value they rejected. Ktor's [IllegalHeaderValueException] carries
+ * the whole header value, which for `X-Api-Key` or `Token` is the credential itself (Config.fromEnv
+ * refuses such values at startup; this covers a Config built any other way). And
+ * [BadContentTypeFormatException] carries the response's `Content-Type`, remote text that a tool error
+ * would otherwise hand the model in the server's own voice, outside the untrusted-data fence.
+ */
+internal fun withheldFailureMessage(e: Throwable): String? = when (e) {
+    is IllegalHeaderValueException ->
+        "the configured credentials could not be encoded as an HTTP header; check the server environment"
+    is BadContentTypeFormatException ->
+        "the API response carried a malformed Content-Type header, so its body could not be read"
     else -> null
 }
 
@@ -136,15 +156,20 @@ fun Server.apiTool(
             handler(request.arguments ?: JsonObject(emptyMap()))
         } catch (e: CancellationException) {
             throw e
-        } catch (e: IllegalArgumentException) {
-            errorResult(
-                "Invalid arguments for '$name': ${e.message ?: e::class.simpleName} " +
-                    "— fix the parameter values to match the tool's input schema, then retry.",
-            )
         } catch (e: Exception) {
+            val withheld = withheldFailureMessage(e)
             errorResult(
-                "Tool '$name' failed: ${e.message ?: e::class.simpleName}. " +
-                    "If this looks transient (timeout, connection reset), retrying may succeed.",
+                when {
+                    // First: IllegalHeaderValueException is an IllegalArgumentException, and would be
+                    // blamed on the caller's arguments with the credential quoted in full.
+                    withheld != null -> "Tool '$name' failed: $withheld."
+                    e is IllegalArgumentException ->
+                        "Invalid arguments for '$name': ${e.message ?: e::class.simpleName} " +
+                            "— fix the parameter values to match the tool's input schema, then retry."
+                    else ->
+                        "Tool '$name' failed: ${e.message ?: e::class.simpleName}. " +
+                            "If this looks transient (timeout, connection reset), retrying may succeed."
+                },
             )
         }
     }

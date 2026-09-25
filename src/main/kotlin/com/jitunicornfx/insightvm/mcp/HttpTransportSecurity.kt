@@ -31,10 +31,24 @@ data class HttpSecurity(
     val maxAuthFailures: Int = DEFAULT_MAX_AUTH_FAILURES,
     val authFailureWindowMillis: Long = DEFAULT_AUTH_FAILURE_WINDOW_MILLIS,
 ) {
+    /** Written out by hand: the generated one would print [token], and settings objects end up in logs. */
+    override fun toString(): String =
+        "HttpSecurity(bindHost=$bindHost, bindPort=$bindPort, token=${if (token == null) "unset" else "***"}, " +
+            "allowedOrigins=$allowedOrigins, maxBodyBytes=$maxBodyBytes, maxAuthFailures=$maxAuthFailures, " +
+            "authFailureWindowMillis=$authFailureWindowMillis)"
+
     companion object {
         const val DEFAULT_MAX_BODY_BYTES = 4L * 1024 * 1024
         const val DEFAULT_MAX_AUTH_FAILURES = 20
         const val DEFAULT_AUTH_FAILURE_WINDOW_MILLIS = 60_000L
+
+        /**
+         * Shortest bearer token accepted on a non-loopback bind (and warned about on loopback). The
+         * failure throttle is per client address, so an attacker spreading guesses across addresses is
+         * held back only by the token's own entropy; 32 characters is 128 bits as hex, and
+         * `openssl rand -hex 32` produces twice that.
+         */
+        const val MIN_TOKEN_LENGTH = 32
     }
 }
 
@@ -96,7 +110,8 @@ internal class AuthFailureLimiter(
  *  2. **Origin check** — browsers always send `Origin` on cross-origin requests; unless the origin is
  *     allow-listed the request is refused with 403. Non-browser MCP clients send no `Origin`.
  *  3. **Bearer token** — when configured, every request must carry the exact token; comparison is
- *     constant-time. Startup refuses to bind a non-loopback interface without a token.
+ *     constant-time. Startup refuses to bind a non-loopback interface without a token of at least
+ *     [HttpSecurity.MIN_TOKEN_LENGTH] characters.
  *  4. **Body size cap** — declared `Content-Length` above the limit is refused with 413.
  *  5. **Brute-force throttle** — after [HttpSecurity.maxAuthFailures] bad tokens from one client
  *     address within the window, further attempts get 429 until the window passes.

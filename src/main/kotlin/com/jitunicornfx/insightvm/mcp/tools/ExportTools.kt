@@ -15,6 +15,7 @@ import com.jitunicornfx.insightvm.mcp.longOrNull
 import com.jitunicornfx.insightvm.mcp.pruneRecordLinks
 import com.jitunicornfx.insightvm.mcp.stringOrNull
 import com.jitunicornfx.insightvm.mcp.textResult
+import com.jitunicornfx.insightvm.mcp.withheldFailureMessage
 import com.jitunicornfx.insightvm.mcp.wrapUntrusted
 import com.jitunicornfx.insightvm.mcp.catalog.ApiFamily
 import com.jitunicornfx.insightvm.mcp.catalog.ArgumentBinder
@@ -302,8 +303,10 @@ object ExportTools {
             }
         } catch (e: Exception) {
             // Keep the partial file and explain, rather than letting apiTool turn this into a bare
-            // error that loses everything already written.
-            status = "INCOMPLETE — ${e::class.simpleName}: ${e.message?.take(200) ?: "failed"}"
+            // error that loses everything already written. The status reaches the model and the
+            // manifest, so a message that quotes a credential or remote text is replaced.
+            status = "INCOMPLETE — " +
+                (withheldFailureMessage(e) ?: "${e::class.simpleName}: ${e.message?.take(200) ?: "failed"}")
             complete = false
         } finally {
             runCatching { writer?.flush() }
