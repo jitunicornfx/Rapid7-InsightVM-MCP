@@ -53,8 +53,9 @@ Coverage is measured with JaCoCo and **enforced**: `./gradlew check` fails below
   stack.
 * **`PagingDefaultsTest`** — injection, clamping, and that a non-numeric size is left for the binder to reject.
 * **`SpoolStoreTest`, `ExportToolsTest`** — label sanitisation and containment against hostile labels, the retention
-  sweep, all three paging modes, every cap and its resume token, and refusal of unknown, filtered-out and
-  state-changing tools.
+  sweep, all three paging modes (v4 `metadata` included), every cap and a resume token that never repeats a written
+  page, the retry at a smaller page size when a page exceeds the response cap, API error bodies kept inside the
+  untrusted fence, a record too deep to encode, and refusal of unknown, filtered-out and state-changing tools.
 
 `src/test/resources/tls/test-ca.pem` is a throw-away self-signed certificate generated for the TLS tests; it has no
 private key in the repository and trusts nothing real.

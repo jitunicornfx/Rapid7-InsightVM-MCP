@@ -45,13 +45,29 @@ fun JsonObject.booleanOrNull(key: String): Boolean? =
         }
     }
 
-/** Accepts a real number or the string form a lenient client may send. */
-fun JsonObject.intOrNull(key: String): Int? =
-    (this[key] as? JsonPrimitive)?.contentOrNull?.trim()?.toIntOrNull()
+/**
+ * A whole number as every integer argument is read: integer text, or a whole-valued finite double
+ * (`12.0`, `1e3`), saturated into `Long`. Null for anything else, including `12.5`, `NaN` and
+ * `Infinity`.
+ *
+ * The one parser for integers a client sends: the binder, the page-size clamp and the export's own
+ * arguments all use it. The binder accepted a whole-valued double while the export went through
+ * `toIntOrNull`, so `resume_from_page=12.0` read as absent there and silently restarted at page 0.
+ */
+internal fun parseWholeNumber(raw: String): Long? {
+    val text = raw.trim()
+    return text.toLongOrNull()
+        // Double.toLong saturates, so an out-of-range value stays an over-large one rather than wrapping.
+        ?: text.toDoubleOrNull()?.takeIf { it == Math.floor(it) && !it.isInfinite() }?.toLong()
+}
 
-/** Accepts a real number or the string form a lenient client may send. */
+/** A whole number, as [parseWholeNumber] reads it, from a real number or its string form. */
 fun JsonObject.longOrNull(key: String): Long? =
-    (this[key] as? JsonPrimitive)?.contentOrNull?.trim()?.toLongOrNull()
+    (this[key] as? JsonPrimitive)?.contentOrNull?.let(::parseWholeNumber)
+
+/** [longOrNull], saturated into `Int`: an out-of-range value is still an over-large one. */
+fun JsonObject.intOrNull(key: String): Int? =
+    longOrNull(key)?.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong())?.toInt()
 
 /**
  * URL-encode a value for safe inclusion as a single path segment.

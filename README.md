@@ -188,10 +188,13 @@ insightvm_export_to_file({
 
 It never takes a path: files are named by the server inside `INSIGHTVM_SPOOL_DIR`, created user-readable only, and
 swept after `INSIGHTVM_SPOOL_RETENTION_HOURS`. Each run is bounded by pages, records, bytes and wall-clock, and a
-run stopped by a cap returns a resume token plus the partial file. A `.manifest.json` sidecar records the query and
-the outcome. Binary payloads (`get_logs`, `download_report`) spill to the same directory instead of being inlined as
-base64. Set `INSIGHTVM_DISABLE_EXPORT=1` for a deployment that must never write to disk; `--read-only` also removes
-the tool. When it is absent, no tool description or truncation notice recommends it.
+run stopped by a cap returns a resume token plus the partial file. Pages are written whole (so `max_records` stops at
+the first page boundary at or after it), and the token names the first page not yet written, with the `page_size`
+to resume at. Pages default to 500 records, the API's maximum. A page over `INSIGHTVM_MAX_RESPONSE_BYTES` is retried
+at a smaller size by page-numbered tools; a cursor run stops and says which cap it hit. A `.manifest.json` sidecar
+records the query and the outcome. Binary payloads (`get_logs`, `download_report`) spill to the same directory
+instead of being inlined as base64. Set `INSIGHTVM_DISABLE_EXPORT=1` for a deployment that must never write to disk;
+`--read-only` also removes the tool. When it is absent, no tool description or truncation notice recommends it.
 
 ### Working with a large tool set
 

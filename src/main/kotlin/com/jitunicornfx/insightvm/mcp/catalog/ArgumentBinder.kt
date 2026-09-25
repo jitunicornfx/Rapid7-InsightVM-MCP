@@ -1,6 +1,7 @@
 package com.jitunicornfx.insightvm.mcp.catalog
 
 import com.jitunicornfx.insightvm.mcp.JsonCodec
+import com.jitunicornfx.insightvm.mcp.parseWholeNumber
 import com.jitunicornfx.insightvm.mcp.seg
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
@@ -114,13 +115,8 @@ object ArgumentBinder {
             ?: throw IllegalArgumentException("Parameter '$name' must be a scalar value.")
         val type = (schema["type"] as? JsonPrimitive)?.contentOrNull ?: "string"
         val text = when (type) {
-            "integer" -> {
-                val content = primitive.content.trim()
-                val n = content.toLongOrNull()
-                    ?: content.toDoubleOrNull()?.takeIf { it == Math.floor(it) && !it.isInfinite() }?.toLong()
-                    ?: throw IllegalArgumentException("Parameter '$name' must be an integer (got '${primitive.content.take(40)}').")
-                n.toString()
-            }
+            "integer" -> parseWholeNumber(primitive.content)?.toString()
+                ?: throw IllegalArgumentException("Parameter '$name' must be an integer (got '${primitive.content.take(40)}').")
             "number" -> {
                 primitive.content.trim().toDoubleOrNull()?.toString()
                     ?: throw IllegalArgumentException("Parameter '$name' must be a number.")

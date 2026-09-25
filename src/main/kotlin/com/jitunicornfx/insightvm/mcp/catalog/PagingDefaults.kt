@@ -1,5 +1,6 @@
 package com.jitunicornfx.insightvm.mcp.catalog
 
+import com.jitunicornfx.insightvm.mcp.parseWholeNumber
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -86,7 +87,8 @@ object PagingDefaults {
     }
 
     /**
-     * Parse exactly the integer forms [ArgumentBinder.coerceScalar] accepts, saturated into `Int`.
+     * Parse exactly the integer forms [ArgumentBinder.coerceScalar] accepts, saturated into `Int`:
+     * both go through [parseWholeNumber], so they cannot drift apart.
      *
      * The clamp has to understand every form the binder will forward, or it is not a clamp. The
      * binder takes a `Long` and a whole-valued `Double` as well as a plain `Int`, so a check built
@@ -95,12 +97,7 @@ object PagingDefaults {
      * genuinely non-numeric input returns null now, which still leaves the binder to raise its own
      * actionable error rather than this file inventing one.
      */
-    private fun asIntegerOrNull(raw: String): Int? {
-        val text = raw.trim()
-        val n = text.toLongOrNull()
-            ?: text.toDoubleOrNull()?.takeIf { it == Math.floor(it) && !it.isInfinite() }?.toLong()
-            ?: return null
+    private fun asIntegerOrNull(raw: String): Int? =
         // Saturate rather than wrap: an out-of-Int-range request is still an over-large request.
-        return n.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt()
-    }
+        parseWholeNumber(raw)?.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong())?.toInt()
 }

@@ -187,7 +187,10 @@ spool file. Every page goes through the normal
 `ArgumentBinder`, so unknown-parameter rejection, type coercion, string bounds and path-segment encoding apply
 unchanged. Paging uses a page index or the API's own opaque cursor token — never a URL taken from a response body,
 so no request target is ever attacker-controlled. Runs are bounded by pages, records, bytes and wall-clock, and the
-volume must have 256 MiB free before the first API call is spent.
+volume must have 256 MiB free before the first API call is spent. The API text the summary quotes (the sample
+records, and at most the first 500 characters of an API error body) sits inside the untrusted-data fence, neutralised
+like any tool result; the error body never goes into the status line or the manifest. The resume hint echoes the
+continuation cursor only as an allow-listed token.
 
 ### Self-update
 
