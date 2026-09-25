@@ -8,24 +8,24 @@ Coverage is measured with JaCoCo and **enforced**: `./gradlew check` fails below
 ./gradlew jacocoTestCoverageVerification   # the gate on its own
 ```
 
-## Baseline at v0.2.1
+## Baseline at v0.3.0
 
 | Counter | Coverage |
 |---|---|
-| Line | 93.3 % |
-| Method | 92.1 % |
-| Branch | 81.7 % |
+| Line | 94.9 % |
+| Method | 95.7 % |
+| Branch | 84.4 % |
 
 | File | Line | Notes |
 |---|---|---|
-| `catalog/*` (loader, filter, schema builder, binder, tools) | 98–100 % | |
-| `Rapid7Client.kt`, `ResponseSanitizer.kt`, `HttpTransportSecurity.kt` | 100 % | |
-| `Config.kt`, `TlsSupport.kt` | 97–99 % | |
-| `UpdateChecker.kt` / `UpdateInstaller.kt` | 98 % / 89 % | ported suites |
-| `ResultBudget.kt` / `RecordLinks.kt` / `catalog/PagingDefaults.kt` | 96–100 % | the result-size machinery |
-| `SpoolStore.kt` / `tools/ExportTools.kt` | 90–93 % | filesystem and paging-loop failure branches |
-| `McpServerFactory.kt` | 86 % | notification delivery failure paths |
-| `Main.kt` | 73 % | the update-install branches need a real GitHub release; both transports *are* exercised end-to-end |
+| `catalog/*` (generator, loader, model, filter, schema builder, binder, tools, paging, search criteria) | 94–100 % | |
+| `Rapid7Client.kt`, `ResponseSanitizer.kt`, `HttpTransportSecurity.kt`, `ServerGovernor.kt`, `TlsSupport.kt` | 99–100 % | |
+| `Config.kt`, `McpServerFactory.kt`, `UpdateStatus.kt`, `LegacySseTransport.kt` | 97–100 % | |
+| `UpdateChecker.kt` / `UpdateInstaller.kt` | 98 % / 92 % | the installer's POSIX permission branch cannot run on Windows |
+| `ResultBudget.kt` / `RecordLinks.kt` | 99 % / 83 % | the result-size machinery |
+| `tools/ExportTools.kt` / `SpoolStore.kt` | 99 % / 81 % | the spool's POSIX ownership and mode checks cannot run on Windows |
+| `ToolSupport.kt` | 91 % | |
+| `Main.kt` | 79 % | the update-install branches need a real GitHub release; both transports *are* exercised end-to-end |
 
 ## How the suite is built
 

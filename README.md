@@ -65,7 +65,7 @@ See [`.env.example`](.env.example) for a template.
 ./gradlew clean check shadowJar
 ```
 
-The runnable JAR is **`build/libs/rapid7-insightvm-mcp-0.2.1-all.jar`** (≈20 MB, all dependencies bundled). The
+The runnable JAR is **`build/libs/rapid7-insightvm-mcp-0.3.0-all.jar`** (≈20 MB, all dependencies bundled). The
 `-thin.jar` next to it contains only this project's classes and cannot be run (`no main manifest attribute`).
 `check` runs the tests, enforces 90 % line coverage and verifies the catalog matches `specs/`.
 
@@ -73,10 +73,10 @@ The runnable JAR is **`build/libs/rapid7-insightvm-mcp-0.2.1-all.jar`** (≈20 M
 
 ```bash
 # stdio (default) — for desktop clients
-java -jar build/libs/rapid7-insightvm-mcp-0.2.1-all.jar --stdio
+java -jar build/libs/rapid7-insightvm-mcp-0.3.0-all.jar --stdio
 
 # Streamable HTTP (/mcp) + legacy SSE (/sse), default 127.0.0.1:3072
-java -jar build/libs/rapid7-insightvm-mcp-0.2.1-all.jar --http --host 127.0.0.1 --port 3072
+java -jar build/libs/rapid7-insightvm-mcp-0.3.0-all.jar --http --host 127.0.0.1 --port 3072
 ```
 
 | Switch | Purpose |
@@ -103,7 +103,7 @@ that names only secret tools while they are gated.
   "mcpServers": {
     "insightvm": {
       "command": "java",
-      "args": ["-jar", "C:\\tools\\rapid7-insightvm-mcp-0.2.1-all.jar", "--stdio"],
+      "args": ["-jar", "C:\\tools\\rapid7-insightvm-mcp-0.3.0-all.jar", "--stdio"],
       "env": {
         "INSIGHTVM_CONSOLE_URL": "https://console.corp.example:3780",
         "INSIGHTVM_CONSOLE_USERNAME": "mcp-readonly",

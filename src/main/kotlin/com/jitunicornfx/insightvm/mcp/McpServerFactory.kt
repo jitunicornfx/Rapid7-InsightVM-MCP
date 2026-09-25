@@ -19,7 +19,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
 const val SERVER_NAME = "rapid7-insightvm-mcp"
-const val SERVER_VERSION = "0.2.1"
+const val SERVER_VERSION = "0.3.0"
 
 /** Clients tend to struggle above this many tools; the startup log suggests filters when exceeded. */
 const val LARGE_TOOL_SET_THRESHOLD = 128
