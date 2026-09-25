@@ -112,7 +112,12 @@ Out of scope: a compromised operator machine, a malicious bundled specification,
 
 * Default: the JVM trust store with hostname verification.
 * `INSIGHTVM_CONSOLE_CA_CERT`: trust exactly the certificates in the PEM file (private CA or the console's self-signed
-  leaf); hostname verification stays on. The OkHttp client is built eagerly so a bad PEM fails at startup.
+  leaf); hostname verification stays on, with one exception. When the file holds a single self-signed certificate, a
+  server whose leaf is exactly that certificate is accepted under any host name, so a console reached by IP address,
+  or by a name its certificate does not list, can be pinned rather than reached with `INSECURE_TLS`, which trusts any
+  certificate. This is at least as strong as the host name check: that certificate is the only trust anchor, and the
+  handshake proves the server holds its key. A bundle, a single certificate some CA issued, and any leaf a pinned CA
+  issued still have to name the host. The OkHttp client is built eagerly so a bad PEM fails at startup.
 * `INSIGHTVM_CONSOLE_INSECURE_TLS=1`: disables verification, prints a warning banner. Lab use only.
 
 ### `--http` transport

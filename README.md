@@ -24,7 +24,7 @@ Everything is configured through environment variables. Configure one or both AP
 | `INSIGHTVM_CONSOLE_USERNAME` | console | — | Console account (HTTP Basic) |
 | `INSIGHTVM_CONSOLE_PASSWORD` | console | — | Console password |
 | `INSIGHTVM_CONSOLE_2FA_TOKEN` | | — | The account's two-factor code, sent in the `Token` header. It is time-based: a fixed value stops working within about a minute, so prefer a service account without 2FA (startup prints a warning) |
-| `INSIGHTVM_CONSOLE_CA_CERT` | | — | PEM file with the console's CA or self-signed certificate |
+| `INSIGHTVM_CONSOLE_CA_CERT` | | — | PEM file with the console's CA or self-signed certificate. A file holding one self-signed certificate pins it: a console presenting exactly that certificate is accepted at any host name or IP address, even one the certificate does not list. A CA or a bundle still requires the host to match |
 | `INSIGHTVM_CONSOLE_INSECURE_TLS` | | `0` | `1` disables TLS verification for the console (lab use only; logged loudly) |
 | `INSIGHTVM_API_KEY` | cloud | — | Insight Platform API key |
 | `INSIGHTVM_REGION` | | `us` | `us`, `us2`, `us3`, `eu`, `ca`, `au`, `ap`, `aps2`, `me1` |
@@ -268,7 +268,9 @@ Summarised here; details and residual risks in [docs/SECURITY.md](docs/SECURITY.
 * **Secrets** — the six tools that return or set an authentication secret (`get_two_factor_authentication_key` returns
   any user's TOTP seed, `get_current_shared_secret` the engine pairing secret) are unregistered unless
   `--allow-secret-tools`, even under `--read-only`, and the export tool refuses them even then.
-* **TLS** — strict by default; trust a private CA with `INSIGHTVM_CONSOLE_CA_CERT`; `INSECURE_TLS` is explicit and loud.
+* **TLS** — strict by default; trust a private CA, or pin the console's own self-signed certificate, with
+  `INSIGHTVM_CONSOLE_CA_CERT`. A pinned certificate is accepted whatever host name or IP address the URL uses, so a
+  console reached by IP does not need `INSECURE_TLS`, which is explicit and loud.
 * **Result size** — two tiers: a wire-byte memory guard and a character budget for what reaches the model, with a
   degradation ladder that keeps trimmed JSON valid and always says what it dropped, outside the fence.
 * **Spooled files** — `insightvm_export_to_file` is the only tool that writes to disk. It takes no path, names files

@@ -71,7 +71,10 @@ Coverage is measured with JaCoCo and **enforced**: `./gradlew check` fails below
   others can write to is refused. The symlink test runs only where the account may create symbolic links.
 
 `src/test/resources/tls/test-ca.pem` is a throw-away self-signed certificate generated for the TLS tests; it has no
-private key in the repository and trusts nothing real.
+private key in the repository and trusts nothing real. The two handshake tests in `TlsSupportTest` make their own
+throw-away EC keys with the JDK's `keytool` at run time (a self-signed console, and a CA with a leaf it issued) and
+serve them from a loopback `SSLServerSocket` through the real OkHttp client, so no private key is committed either;
+they are skipped on a Java runtime without `keytool`.
 
 ## Gotchas
 
