@@ -40,7 +40,11 @@ class Rapid7Client(
     private val warn: (String) -> Unit = { System.err.println(it) },
 ) : AutoCloseable {
 
-    /** Raw HTTP result. Exactly one of [text] / [bytes] is set for non-empty bodies. */
+    /**
+     * Raw HTTP result. Exactly one of [text] / [bytes] is set for non-empty bodies: [bytes] holds a
+     * body that must not be read as text (a non-textual content type, or a success body the catalog
+     * marks binary), exactly as received.
+     */
     data class ApiResponse(
         val status: Int,
         val ok: Boolean,
@@ -102,6 +106,8 @@ class Rapid7Client(
      * @param jsonBody optional JSON body (takes precedence over [rawBody]).
      * @param rawBody optional raw string body sent with [rawContentType].
      * @param accept value of the `Accept` header; defaults to JSON.
+     * @param expectBinary the catalog marks the success body a file (`CatalogResponses.binary`): a 2xx
+     *   body is kept as bytes whatever its content type says. An error body is still text.
      */
     suspend fun request(
         family: ApiFamily,
@@ -112,6 +118,7 @@ class Rapid7Client(
         rawBody: String? = null,
         rawContentType: ContentType = ContentType.Text.Plain,
         accept: ContentType = ContentType.Application.Json,
+        expectBinary: Boolean = false,
     ): ApiResponse {
         require(path.startsWith("/")) { "path must start with '/'" }
         return httpFor(family).prepareRequest(baseUrlFor(family) + path) {
@@ -131,7 +138,7 @@ class Rapid7Client(
                     setBody(rawBody)
                 }
             }
-        }.execute { it.toApiResponse() }
+        }.execute { it.toApiResponse(expectBinary) }
     }
 
     private fun io.ktor.client.request.HttpRequestBuilder.applyAuth(family: ApiFamily) {
@@ -151,21 +158,30 @@ class Rapid7Client(
      * socket stream, so [readCapped] stops the transfer at the cap and its `cancel` aborts the rest.
      * `request()` instead has Ktor save the ENTIRE body to memory before returning, which leaves the
      * cap trimming bytes the heap has already paid for — twice over, once buffered and once copied.
+     *
+     * The body becomes text when its content type is textual (or absent), and bytes otherwise. A
+     * success body of an [expectBinary] operation is bytes whatever its label: download_report serves
+     * a report, usually GZip, under the `application/json;charset=UTF-8` its spec declares.
      */
-    private suspend fun HttpResponse.toApiResponse(): ApiResponse {
+    private suspend fun HttpResponse.toApiResponse(expectBinary: Boolean): ApiResponse {
         val limit = config.maxResponseBytes
         val (read, truncated) = readCapped(bodyAsChannel(), limit)
         val ct = contentType()
-        // Only a capped body can end mid-character; an untruncated one is well-formed by construction.
-        val bytes = if (truncated && charsetOf(ct) == Charsets.UTF_8) trimIncompleteUtf8(read) else read
-        val ctString = ct?.toString()
-        val textual = ct == null || isTextual(ct)
+        val ok = status.value in 200..299
+        val textual = !(expectBinary && ok) && (ct == null || isTextual(ct))
+        // Only text is decoded, so only text can end mid-character, and only when the cap split it.
+        // Bytes are returned exactly as received, so a descriptor's size and SHA-256 describe what
+        // the console sent.
+        val text = if (!textual) null else {
+            val charset = charsetOf(ct)
+            (if (truncated && charset == Charsets.UTF_8) trimIncompleteUtf8(read) else read).toString(charset)
+        }
         return ApiResponse(
             status = status.value,
-            ok = status.value in 200..299,
-            contentType = ctString,
-            text = if (textual) bytes.toString(charsetOf(ct)) else null,
-            bytes = if (textual) null else bytes,
+            ok = ok,
+            contentType = ct?.toString(),
+            text = text,
+            bytes = if (textual) null else read,
             truncated = truncated,
             limitBytes = limit,
         )
@@ -180,6 +196,10 @@ class Rapid7Client(
     }
 
     companion object {
+        /**
+         * Whether a body labelled [ct] is read as text. The one classifier: the catalog generator marks
+         * an operation binary by it, so the catalog and the client cannot disagree about a label.
+         */
         internal fun isTextual(ct: ContentType): Boolean {
             val type = ct.contentType.lowercase()
             val sub = ct.contentSubtype.lowercase()

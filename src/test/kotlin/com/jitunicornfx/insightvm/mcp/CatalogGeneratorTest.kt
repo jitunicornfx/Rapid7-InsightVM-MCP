@@ -5,6 +5,7 @@ import com.jitunicornfx.insightvm.mcp.catalog.Catalog
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogGenerator
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogLoader
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogOp
+import com.jitunicornfx.insightvm.mcp.catalog.CatalogResponses
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -211,6 +212,63 @@ class CatalogGeneratorTest {
         assertEquals("text/plain", admin.responses.success)
         val logs = cat.ops.single { it.name == "get_logs" }
         assertTrue(logs.responses.binary); assertEquals("application/zip", logs.responses.success); assertTrue(logs.readOnly)
+    }
+
+    /**
+     * Regression: downloadReport declares its report, usually GZip, as `application/json;charset=UTF-8`
+     * with `{type: string, format: byte}`. Only the label was read, so it was catalogued as JSON text.
+     */
+    @Test
+    fun `build rules - a file-shaped success body is binary whatever its label`() {
+        fun response(ct: String, schema: JsonObject?) = buildJsonObject {
+            putJsonObject("200") { putJsonObject("content") { putJsonObject(ct) { schema?.let { put("schema", it) } } } }
+        }
+        fun string(format: String) = buildJsonObject { put("type", "string"); put("format", format) }
+        val routes = mapOf(
+            "downloadReport" to response("application/json;charset=UTF-8", string("byte")),
+            "getBundle" to response("application/octet-stream", string("binary")),
+            "getRefFile" to response("application/json", buildJsonObject { put("\$ref", "#/components/schemas/File") }),
+            "getExpiry" to response("application/json;charset=UTF-8", string("date-time")),
+            "getText" to response("text/plain", string("binary")),
+            "getThing" to response("application/json", buildJsonObject { put("\$ref", "#/components/schemas/Thing") }),
+            "getXml" to response("application/xml", buildJsonObject { put("\$ref", "#/components/schemas/Thing") }),
+            "getZip" to response("application/zip", null),
+            "getLoop" to response("application/json", buildJsonObject { put("\$ref", "#/components/schemas/LoopA") }),
+        )
+        val paths = buildJsonObject {
+            for ((opId, responses) in routes) {
+                putJsonObject("/api/3/$opId") { putJsonObject("get") { put("operationId", opId); put("responses", responses) } }
+            }
+        }
+        val schemas = buildJsonObject {
+            putJsonObject("File") { put("\$ref", "#/components/schemas/Bytes") }
+            put("Bytes", string("binary"))
+            putJsonObject("Thing") { put("type", "object") }
+            putJsonObject("LoopA") { put("\$ref", "#/components/schemas/LoopB") }
+            putJsonObject("LoopB") { put("\$ref", "#/components/schemas/LoopA") }
+        }
+        val responses = CatalogGenerator.buildCatalog(ApiFamily.CONSOLE, spec(paths, schemas), "s", "f").ops.associate { it.opId to it.responses }
+
+        // A file keeps its declared label verbatim; the runtime accepts anything for it.
+        assertEquals(CatalogResponses("application/json;charset=UTF-8", binary = true), responses["downloadReport"])
+        assertEquals(CatalogResponses("application/octet-stream", binary = true), responses["getBundle"])
+        assertEquals(CatalogResponses("application/json", binary = true), responses["getRefFile"], "a \$ref chain is followed")
+        assertEquals(CatalogResponses("text/plain", binary = true), responses["getText"])
+        // A formatted string that is not a file is still JSON text.
+        assertEquals(CatalogResponses("application/json", binary = false), responses["getExpiry"])
+        assertEquals(CatalogResponses("application/json", binary = false), responses["getThing"])
+        // Without a file schema the label decides, by the same test the runtime client applies.
+        assertEquals(CatalogResponses("application/xml", binary = false), responses["getXml"])
+        assertEquals(CatalogResponses("application/zip", binary = true), responses["getZip"])
+        // A cycle of bare $refs describes no schema, so it cannot make a body a file.
+        assertEquals(CatalogResponses("application/json", binary = false), responses["getLoop"])
+
+        // A label nothing can parse fails generation rather than guessing text or file.
+        val malformed = buildJsonObject {
+            putJsonObject("/api/3/x") { putJsonObject("get") { put("operationId", "getX"); put("responses", response("zip", null)) } }
+        }
+        val e = assertFailsWith<CatalogGenerator.CatalogGenerationException> { CatalogGenerator.buildCatalog(ApiFamily.CONSOLE, spec(malformed), "s", "f") }
+        assertContains(e.message!!, "malformed response content type in \"getX\"")
     }
 
     @Test

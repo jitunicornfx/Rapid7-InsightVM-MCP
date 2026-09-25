@@ -98,17 +98,27 @@ object CatalogTools {
                 rawBody = bound.rawBody,
                 rawContentType = bound.rawContentType ?: ContentType.Text.Plain,
                 accept = acceptFor(op),
+                expectBinary = op.responses.binary,
             )
             ResponseSanitizer.toToolResult(response, op, family, budget, keepLinks, spool)
         }
     }
 
-    /** `Accept` header matching the operation's documented success content type. */
-    internal fun acceptFor(op: CatalogOp): ContentType = when (op.responses.success) {
-        "text/html" -> ContentType.Text.Html
-        "text/plain" -> ContentType.Text.Plain
-        "application/json", "none" -> ContentType.Application.Json
-        else -> ContentType.parse(op.responses.success)
+    /**
+     * `Accept` header matching the operation's documented success content type.
+     *
+     * A binary operation accepts any type ([ContentType.Any]). Its declared label is a poor guide to
+     * what the console serves (download_report declares JSON for a report that is usually GZip), and
+     * a controller that produces one type answers 406 to an `Accept` naming another.
+     */
+    internal fun acceptFor(op: CatalogOp): ContentType = when {
+        op.responses.binary -> ContentType.Any
+        else -> when (op.responses.success) {
+            "text/html" -> ContentType.Text.Html
+            "text/plain" -> ContentType.Text.Plain
+            "application/json", "none" -> ContentType.Application.Json
+            else -> ContentType.parse(op.responses.success)
+        }
     }
 
     private fun Server.registerMetaTools(

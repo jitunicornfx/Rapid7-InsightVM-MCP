@@ -55,6 +55,13 @@ class CatalogTest {
         assertEquals("text/plain", execute.body!!.contentType)
         assertEquals("application/zip", v3.ops.single { it.name == "get_logs" }.responses.success)
         assertTrue(v3.ops.single { it.name == "get_logs" }.responses.binary)
+        // The report file is declared as a JSON-labelled `{type: string, format: byte}`: the schema,
+        // not the label, makes it binary, and the declared label is kept as written.
+        val report = v3.ops.single { it.name == "download_report" }.responses
+        assertTrue(report.binary)
+        assertEquals("application/json;charset=UTF-8", report.success)
+        assertEquals(setOf("get_logs", "download_report"), v3.ops.filter { it.responses.binary }.map { it.name }.toSet())
+        assertTrue(v4.ops.none { it.responses.binary })
     }
 
     @Test

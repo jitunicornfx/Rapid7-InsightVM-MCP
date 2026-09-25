@@ -218,6 +218,9 @@ object ExportTools {
                     rawBody = bound.rawBody,
                     rawContentType = bound.rawContentType ?: ContentType.Text.Plain,
                     accept = CatalogTools.acceptFor(op),
+                    // A file is never read as text, here as in its own tool, so it cannot be parsed
+                    // into "records" by accident of its label.
+                    expectBinary = op.responses.binary,
                 )
                 pagesFetched++
 

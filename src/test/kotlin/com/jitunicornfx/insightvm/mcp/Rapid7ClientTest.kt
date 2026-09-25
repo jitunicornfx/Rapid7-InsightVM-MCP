@@ -119,6 +119,48 @@ class Rapid7ClientTest {
         client.close()
     }
 
+    /**
+     * Regression: the catalog's binary flag had no reader, so the client chose text or bytes from the
+     * label alone and download_report's gzip, labelled `application/json;charset=UTF-8`, was decoded
+     * as UTF-8. A success body of a binary operation is now kept as received; an error body is the
+     * console's JSON message and is still text.
+     */
+    @Test
+    fun `a binary operation's success body is kept as bytes whatever its label`() = runBlocking {
+        val gzip = byteArrayOf(0x1F, 0x8B.toByte(), 8, 0, 0xE2.toByte(), 0x82.toByte())
+        val ok = Rapid7Client(testConfig(), consoleEngine = engine(bytes = gzip, contentType = "application/json;charset=UTF-8"), cloudEngine = engine())
+        val bin = ok.request(ApiFamily.CONSOLE, HttpMethod.Get, "/api/3/reports/1/history/latest/output", expectBinary = true)
+        assertContentEquals(gzip, bin.bytes)
+        assertNull(bin.text)
+        val asText = ok.request(ApiFamily.CONSOLE, HttpMethod.Get, "/api/3/reports/1/history/latest/output")
+        assertNull(asText.bytes, "without the flag the label decides, as before")
+        ok.close()
+
+        val missing = Rapid7Client(testConfig(), consoleEngine = engine(HttpStatusCode.NotFound, """{"message":"gone"}""", "application/json;charset=UTF-8"), cloudEngine = engine())
+        val error = missing.request(ApiFamily.CONSOLE, HttpMethod.Get, "/api/3/reports/1/history/9/output", expectBinary = true)
+        assertEquals("""{"message":"gone"}""", error.text)
+        assertNull(error.bytes)
+        missing.close()
+    }
+
+    /**
+     * A capped binary body is returned exactly as received. Only text is decoded, so only text has a
+     * split trailing character to drop; trimming bytes would make the descriptor's size and SHA-256
+     * describe something the console never sent.
+     */
+    @Test
+    fun `a truncated binary body is not trimmed as if it were UTF-8`() = runBlocking {
+        // 0xE2 0x82 is the start of a three-byte sequence, which a UTF-8 trim would drop.
+        val body = byteArrayOf(0x1F, 0x8B.toByte(), 8, 0xE2.toByte(), 0x82.toByte(), 0xAC.toByte(), 1, 2)
+        val labelled = Rapid7Client(testConfig(maxResponseBytes = 5), consoleEngine = engine(bytes = body, contentType = "application/json;charset=UTF-8"), cloudEngine = engine(bytes = body, contentType = "application/zip"))
+        val report = labelled.request(ApiFamily.CONSOLE, HttpMethod.Get, "/x", expectBinary = true)
+        assertTrue(report.truncated)
+        assertContentEquals(body.copyOf(5), report.bytes)
+        val zip = labelled.request(ApiFamily.CLOUD, HttpMethod.Get, "/x")
+        assertContentEquals(body.copyOf(5), zip.bytes)
+        labelled.close()
+    }
+
     @Test
     fun `response bodies are capped`() = runBlocking {
         val big = "y".repeat(5000)

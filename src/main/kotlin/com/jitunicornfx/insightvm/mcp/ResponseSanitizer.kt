@@ -17,8 +17,8 @@ import java.util.Base64
  *    `<style>` blocks are removed with their content, tags are stripped, entities are decoded, and
  *    the result is re-escaped so no markup can reach a client that renders tool output.
  *  - Plain text has control characters scrubbed.
- *  - Binary payloads (zip log bundles) are never dumped into the conversation: a small JSON
- *    descriptor (size, sha256, content type) plus a capped base64 prefix is returned instead.
+ *  - Binary payloads (zip log bundles, report files) are never dumped into the conversation: a small
+ *    JSON descriptor (size, sha256, content type) plus a capped base64 prefix is returned instead.
  *
  * Everything that originated from the API is then wrapped in the untrusted-data fence.
  */
@@ -155,17 +155,15 @@ object ResponseSanitizer {
         // The response's own content type wins; the catalog's documented type is only a fallback
         // for responses that omit it.
         val effectiveType = ct.ifEmpty { op.responses.success }
-        val binary = response.bytes != null && !looksTextual(ct)
+        // Rapid7Client already chose text or bytes, from the label and the catalog's binary flag, with
+        // the one classifier. Bytes are never decoded here: download_report's gzip is labelled JSON.
+        val bytes = response.bytes
         val sanitized: String
         val isJson: Boolean
         when {
-            binary -> {
-                sanitized = describeBinary(response.bytes!!, response.contentType, response.truncated, spool, op.name)
+            bytes != null -> {
+                sanitized = describeBinary(bytes, response.contentType, response.truncated, spool, op.name)
                 isJson = true
-            }
-            response.bytes != null -> {
-                sanitized = neutralizeMarkup(scrubControlCharacters(response.bytes.toString(Charsets.UTF_8)))
-                isJson = false
             }
             // htmlToText already scrubs and escapes; a second pass would double-escape.
             effectiveType.startsWith("text/html") -> {
@@ -198,8 +196,4 @@ object ResponseSanitizer {
         }
         return CallToolResult(content = listOf(TextContent(text)), isError = !response.ok)
     }
-
-    private fun looksTextual(contentType: String): Boolean =
-        contentType.startsWith("text/") || contentType.contains("json") || contentType.contains("xml") ||
-            contentType.contains("javascript") || contentType.contains("x-www-form-urlencoded")
 }

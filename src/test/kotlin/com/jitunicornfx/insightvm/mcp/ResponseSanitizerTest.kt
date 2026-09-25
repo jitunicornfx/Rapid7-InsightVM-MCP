@@ -76,9 +76,12 @@ class ResponseSanitizerTest {
         val untypedPlain = ResponseSanitizer.toToolResult(ApiResponse(200, true, null, text = "raw"), op.copy(responses = CatalogResponses("text/plain")), ApiFamily.CLOUD)
         assertContains(text(untypedPlain), "\nraw\n")
 
-        // Bytes with a textual content type are decoded rather than base64'd.
-        val textBytes = ResponseSanitizer.toToolResult(ApiResponse(200, true, "text/csv", bytes = "a,b".toByteArray()), op, ApiFamily.CONSOLE)
-        assertContains(text(textBytes), "\na,b\n")
+        // Bytes are never decoded here, whatever the label says: the client keeps a body as bytes only
+        // when it must not be read as text, as download_report's gzip labelled JSON must not.
+        val labelledJson = ResponseSanitizer.toToolResult(ApiResponse(200, true, "application/json;charset=UTF-8", bytes = byteArrayOf(0x1F, 0x8B.toByte(), 8)), op, ApiFamily.CONSOLE)
+        assertContains(text(labelledJson), "\"sha256\": \"")
+        assertContains(text(labelledJson), "\"base64\": \"H4sI\"")
+        assertFalse(text(labelledJson).contains('�'))
 
         val binary = ResponseSanitizer.toToolResult(ApiResponse(200, true, "application/zip", bytes = byteArrayOf(9), truncated = true, limitBytes = 1), op, ApiFamily.CONSOLE)
         assertContains(text(binary), "\"responseTruncated\": true")

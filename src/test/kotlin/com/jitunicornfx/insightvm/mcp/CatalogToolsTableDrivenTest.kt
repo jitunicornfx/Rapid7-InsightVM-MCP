@@ -141,10 +141,11 @@ class CatalogToolsTableDrivenTest {
             }
         }
         val accept = request.headers[HttpHeaders.Accept]!!
-        when (op.responses.success) {
-            "text/html" -> assertEquals("text/html", accept)
-            "text/plain" -> assertEquals("text/plain", accept)
-            "application/json", "none" -> assertEquals("application/json", accept)
+        when {
+            op.responses.binary -> assertEquals("*/*", accept, "${op.name} is binary")
+            op.responses.success == "text/html" -> assertEquals("text/html", accept)
+            op.responses.success == "text/plain" -> assertEquals("text/plain", accept)
+            else -> assertEquals("application/json", accept, "${op.name} (${op.responses.success})")
         }
     }
 

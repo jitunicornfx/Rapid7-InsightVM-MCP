@@ -10,6 +10,7 @@ import com.jitunicornfx.insightvm.mcp.testutil.testConfig
 import com.jitunicornfx.insightvm.mcp.tools.ExportMode
 import com.jitunicornfx.insightvm.mcp.tools.ExportTools
 import io.ktor.client.request.HttpRequestData
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.jsonObject
@@ -260,6 +261,20 @@ class ExportToolsTest {
     fun `a non-json page stops the run cleanly`() = runBlocking {
         val h = harness { Canned(body = "not json at all") }
         assertContains(export(h, mapOf("tool" to "get_assets")), "not JSON")
+    }
+
+    /**
+     * The export reads a binary operation's body the way its tool does: as a file, never as text.
+     * Before, a report body that happened to parse as JSON under its JSON label (a base64 string)
+     * was written out as an NDJSON "record" and reported COMPLETE.
+     */
+    @Test
+    fun `a binary operation's body is never parsed as records`() = runBlocking {
+        val h = harness { Canned(body = "\"H4sIAAAAAAAA\"", contentType = "application/json;charset=UTF-8") }
+        val summary = export(h, mapOf("tool" to "download_report", "arguments" to mapOf("id" to 1, "instance" to "latest")))
+        assertContains(summary, "INCOMPLETE — page 1 was not JSON this tool can page over")
+        assertTrue(files().isEmpty(), "no record file is written")
+        assertEquals("*/*", h.lastRequest.headers[HttpHeaders.Accept])
     }
 
     // ------------------------------------------------------------------ output shape

@@ -2,6 +2,7 @@ package com.jitunicornfx.insightvm.mcp
 
 import com.jitunicornfx.insightvm.mcp.catalog.ApiFamily
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogLoader
+import com.jitunicornfx.insightvm.mcp.catalog.CatalogResponses
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogTools
 import com.jitunicornfx.insightvm.mcp.testutil.Canned
 import com.jitunicornfx.insightvm.mcp.testutil.TEST_CLOUD
@@ -80,9 +81,54 @@ class CatalogToolsBehaviourTest {
                 .digest(java.nio.file.Files.readAllBytes(spilled)).joinToString("") { "%02x".format(it) }
             assertEquals(json["sha256"]!!.jsonPrimitive.content, onDisk, "the descriptor describes the file")
             assertEquals(listOf("nsc.log", "audit.log"), h.lastRequest.url.parameters.getAll("name"))
+            assertEquals("*/*", h.lastRequest.headers[HttpHeaders.Accept], "a binary operation accepts whatever the console serves")
         } finally {
             dir.toFile().deleteRecursively()
         }
+    }
+
+    /**
+     * Regression: download_report's spec declares its 200 as `application/json;charset=UTF-8` with
+     * `{type: string, format: byte}`, and says the report is usually GZip. The catalog recorded it
+     * as JSON text and nothing at runtime read the catalog's binary flag, so a gzip labelled JSON was
+     * decoded as UTF-8 into the conversation instead of being described and saved to a file.
+     */
+    @Test
+    fun `download_report's gzip body is described and saved even when labelled JSON`() = runBlocking {
+        val report = java.io.ByteArrayOutputStream().also { out ->
+            java.util.zip.GZIPOutputStream(out).use { it.write(kotlin.random.Random(21).nextBytes(20_000)) }
+        }.toByteArray()
+        val dir = kotlin.io.path.createTempDirectory("report-spill")
+        try {
+            val h = mcpHarness(spool = SpoolStore(dir)) { Canned(bytes = report, contentType = "application/json;charset=UTF-8") }
+            val result = h.call("download_report", mapOf("id" to 7, "instance" to "latest"))
+            val text = h.text(result)
+            assertFalse(result.isError == true, text.take(500))
+            val json = JsonCodec.compact.parseToJsonElement(text.substringAfter(UNTRUSTED_BEGIN).substringBefore(UNTRUSTED_END).trim()).jsonObject
+            assertEquals("application/json; charset=UTF-8", json["contentType"]!!.jsonPrimitive.content, "the label is reported as served")
+            assertEquals(report.size, json["bytes"]!!.jsonPrimitive.content.toInt())
+            val sha256 = java.security.MessageDigest.getInstance("SHA-256").digest(report).joinToString("") { "%02x".format(it) }
+            assertEquals(sha256, json["sha256"]!!.jsonPrimitive.content)
+            assertContentEquals(report, java.nio.file.Files.readAllBytes(java.nio.file.Path.of(json["path"]!!.jsonPrimitive.content)))
+            assertFalse(text.contains('�'), "no byte of the report was decoded as text")
+            assertEquals("*/*", h.lastRequest.headers[HttpHeaders.Accept])
+            assertEquals("/api/3/reports/7/history/latest/output", h.lastRequest.url.encodedPath)
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `a download_report error is still rendered as text`() = runBlocking {
+        val h = mcpHarness {
+            Canned(status = HttpStatusCode.NotFound, body = """{"status":404,"message":"Report instance not found"}""", contentType = "application/json;charset=UTF-8")
+        }
+        val result = h.call("download_report", mapOf("id" to 7, "instance" to "3"))
+        val text = h.text(result)
+        assertTrue(result.isError == true)
+        assertContains(text, "returned HTTP 404.")
+        assertContains(text, "\"message\": \"Report instance not found\"")
+        assertFalse(text.contains("sha256"), "an error body is the console's message, not a file")
     }
 
     @Test
@@ -476,5 +522,10 @@ class CatalogToolsBehaviourTest {
         val op = com.jitunicornfx.insightvm.mcp.testutil.TEST_CATALOGS.getValue(ApiFamily.CONSOLE).ops.first()
         assertEquals("application/json", CatalogTools.acceptFor(op.copy(responses = op.responses.copy(success = "none"))).toString())
         assertEquals("application/zip", CatalogTools.acceptFor(op.copy(responses = op.responses.copy(success = "application/zip"))).toString())
+        // A binary operation's declared type is no guide to what the console serves (download_report
+        // declares JSON for a gzip), and naming one invites a 406 from a controller producing another.
+        for (declared in listOf("application/zip", "application/json;charset=UTF-8")) {
+            assertEquals("*/*", CatalogTools.acceptFor(op.copy(responses = CatalogResponses(declared, binary = true))).toString(), declared)
+        }
     }
 }

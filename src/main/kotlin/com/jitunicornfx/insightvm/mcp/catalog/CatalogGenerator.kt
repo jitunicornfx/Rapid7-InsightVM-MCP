@@ -1,5 +1,8 @@
 package com.jitunicornfx.insightvm.mcp.catalog
 
+import com.jitunicornfx.insightvm.mcp.Rapid7Client
+import io.ktor.http.BadContentTypeFormatException
+import io.ktor.http.ContentType
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -58,6 +61,9 @@ object CatalogGenerator {
      * description already says, and a client may read an unknown format as a constraint.
      */
     private val KNOWN_FORMATS = setOf("int32", "int64", "float", "double", "byte", "binary", "date", "date-time", "password", "uuid", "email", "uri")
+
+    /** The string formats that carry a file rather than text: raw octets, and base64-encoded octets. */
+    private val FILE_FORMATS = setOf("binary", "byte")
 
     /**
      * Spec type defects, corrected on the component before anything is inlined: component, then
@@ -193,6 +199,21 @@ object CatalogGenerator {
             val name = ref.removePrefix(prefix)
             val target = schemas[name] as? JsonObject ?: throw CatalogGenerationException("unknown schema: $name")
             return name to target
+        }
+
+        /**
+         * [schema] with its chain of `$ref`s followed to the component it names; nothing below that is
+         * inlined. Null for a cycle of bare `$ref`s, which describes no schema at all.
+         */
+        fun deref(schema: JsonElement?): JsonObject? {
+            var node = schema as? JsonObject ?: return null
+            val seen = HashSet<String>()
+            while (true) {
+                val ref = (node["\$ref"] as? JsonPrimitive)?.contentOrNull ?: return node
+                val (name, target) = resolve(ref)
+                if (!seen.add(name)) return null
+                node = target
+            }
         }
 
         /**
@@ -441,22 +462,47 @@ object CatalogGenerator {
         else -> false
     }
 
-    private fun successContentType(op: JsonObject): CatalogResponses {
+    /**
+     * The first 2xx response: its content type, and whether its body is a file rather than text.
+     *
+     * A body is a file when its schema is a string of a [FILE_FORMATS] format, whatever label it is
+     * declared under, and otherwise when the label is not one the runtime client reads as text
+     * ([Rapid7Client.isTextual], so the two cannot disagree). downloadReport declares its report,
+     * which its own description says is usually GZip, as `application/json;charset=UTF-8` with
+     * `{type: string, format: byte}`. Catalogued by the label alone, the gzip was decoded as UTF-8
+     * into the conversation. A file keeps its declared label verbatim: the runtime accepts any type
+     * for it and keeps its success body as bytes, so the label only records what the spec said.
+     */
+    private fun successContentType(op: JsonObject, inliner: Inliner): CatalogResponses {
         val responses = op["responses"] as? JsonObject ?: return CatalogResponses("none", false)
         for (code in responses.keys.sorted()) {
             if (!code.startsWith("2")) continue
             val content = responses[code]?.jsonObject?.get("content") as? JsonObject
             if (content.isNullOrEmpty()) return CatalogResponses("none", false)
             val ct = content.keys.first()
+            val schema = inliner.deref((content[ct] as? JsonObject)?.get("schema"))
+            if (isFileSchema(schema) || !isTextualLabel(ct, op)) return CatalogResponses(ct, true)
             return when {
                 "json" in ct -> CatalogResponses("application/json", false)
                 ct.startsWith("text/html") -> CatalogResponses("text/html", false)
                 ct.startsWith("text/plain") -> CatalogResponses("text/plain", false)
-                else -> CatalogResponses(ct, true)
+                else -> CatalogResponses(ct, false)
             }
         }
         return CatalogResponses("none", false)
     }
+
+    /** Whether [schema] is a file: a string of raw (`binary`) or base64-encoded (`byte`) octets. */
+    private fun isFileSchema(schema: JsonObject?): Boolean =
+        schema != null && (schema["type"] as? JsonPrimitive)?.contentOrNull == "string" &&
+            (schema["format"] as? JsonPrimitive)?.contentOrNull in FILE_FORMATS
+
+    private fun isTextualLabel(ct: String, op: JsonObject): Boolean =
+        try {
+            Rapid7Client.isTextual(ContentType.parse(ct))
+        } catch (e: BadContentTypeFormatException) {
+            throw CatalogGenerationException("malformed response content type in ${op["operationId"]}: ${e.message}")
+        }
 
     // ------------------------------------------------------------------ catalog
 
@@ -487,7 +533,7 @@ object CatalogGenerator {
                     admin = admin,
                     params = buildParams(op, inliner, family),
                     body = buildBody(op, upper, path, inliner),
-                    responses = successContentType(op),
+                    responses = successContentType(op, inliner),
                 )
             }
         }

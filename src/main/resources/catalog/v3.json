@@ -6719,8 +6719,8 @@
    ],
    "body": null,
    "responses": {
-    "success": "application/json",
-    "binary": false
+    "success": "application/json;charset=UTF-8",
+    "binary": true
    }
   },
   {

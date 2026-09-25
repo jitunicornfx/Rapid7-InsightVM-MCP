@@ -42,8 +42,10 @@ Out of scope: a compromised operator machine, a malicious bundled specification,
   alone so already-escaped data is not double-escaped; the transformation is reversible for the model.
 * Control characters (except tab and newline) are scrubbed from all text, so terminal escape sequences in banners cannot
   reach a console client.
-* Binary responses (`application/zip` log bundles) are never inlined: a JSON descriptor with size, SHA-256 and a capped
-  base64 prefix is returned instead.
+* Binary responses (`get_logs`' zip bundles, `download_report`'s report files) are never inlined: a JSON descriptor
+  with size, SHA-256 and a capped base64 prefix is returned instead. A body with a non-text label is binary, and so
+  is the success body of an operation the catalog marks binary, whatever its label: `download_report`'s spec labels
+  a report that is usually GZip as JSON. Bytes are never decoded as text.
 
 ### Request integrity (model → API)
 
