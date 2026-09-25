@@ -822,7 +822,7 @@ class UpdateInstallerTest {
     /**
      * Regression: createTempFile makes the stage rw------- on POSIX, and the atomic move carried that
      * mode onto the installed JAR, so every other account using a shared install got "Unable to
-     * access jarfile". POSIX only; the Windows development box cannot run it, CI on Linux does.
+     * access jarfile". POSIX only, so it is skipped on Windows; run the suite on Linux or macOS to exercise it.
      */
     @Test
     @EnabledOnOs(OS.LINUX, OS.MAC)
