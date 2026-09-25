@@ -34,6 +34,8 @@ object CatalogTools {
     const val SERVER_INFO_TOOL = "insightvm_server_info"
     const val TOOL_GROUPS_TOOL = "insightvm_list_tool_groups"
 
+    private val IDEMPOTENT_METHODS = setOf("PUT", "DELETE")
+
     /** Register the selected operations on [server]; returns the number of API tools registered. */
     fun register(
         server: Server,
@@ -50,7 +52,7 @@ object CatalogTools {
         val binarySpool = spool.takeUnless { config.exportDisabled }
         selected.forEach { (family, op) -> server.registerOperation(client, family, op, config, budget, binarySpool) }
         // The export tool writes to the local filesystem, so it is gated twice: an operator can turn
-        // it off outright, and --read-only removes it because that flag promises GET tools only.
+        // it off outright, and --read-only removes it because that flag promises no tool changes anything.
         val exportEnabled = !config.filter.readOnly && !config.exportDisabled
         server.registerMetaTools(config, catalogs, selected, if (exportEnabled) 3 else 2)
         if (exportEnabled) {
@@ -73,6 +75,9 @@ object CatalogTools {
             inputSchema = InputSchemaBuilder.build(op),
             readOnly = op.readOnly,
             destructive = op.destructive,
+            // By HTTP semantics a repeated PUT or DELETE leaves the state the first one did; a
+            // repeated POST may create a second record or start a second scan.
+            idempotent = op.method in IDEMPOTENT_METHODS,
         ) { args ->
             if (op.admin) {
                 require(args.stringOrNull(CatalogLoader.CONFIRM_PROPERTY) == InputSchemaBuilder.CONFIRM_VALUE) {

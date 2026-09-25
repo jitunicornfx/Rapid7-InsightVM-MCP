@@ -43,8 +43,10 @@ class CatalogTest {
         assertEquals(13, v4.ops.size)
         assertEquals("console", v3.meta.family)
         assertEquals(64, v3.meta.specSha256.length)
-        assertEquals(180, v3.ops.count { it.readOnly })
-        assertEquals(57, v3.ops.count { it.destructive })
+        assertEquals(182, v3.ops.count { it.readOnly })
+        assertEquals(111, v3.ops.count { it.destructive })
+        assertEquals(9, v4.ops.count { it.readOnly })
+        assertEquals(3, v4.ops.count { it.destructive })
         assertEquals(1, v3.ops.count { it.admin })
         assertTrue(v4.ops.all { it.name.startsWith("cloud_") })
         assertTrue(v4.ops.none { op -> op.params.any { it.name == "region" } })
@@ -74,6 +76,13 @@ class CatalogTest {
         assertTrue(bad(op("m", method = "HEAD")).contains("unsupported method"))
         assertTrue(bad(op("p", path = "x")).contains("start with"))
         assertTrue(bad(op("r").copy(readOnly = false)).contains("readOnly"))
+        // Only the listed POST searches may be reads, and they must be: a hand-edited catalog cannot
+        // slip a write past --read-only, nor drop a search from it.
+        assertTrue(bad(op("create_site", method = "POST", path = "/api/3/sites").copy(readOnly = true)).contains("readOnly"))
+        assertTrue(bad(op("find_assets", method = "POST", path = "/api/3/assets/search")).contains("readOnly"))
+        assertTrue(bad(op("put_search", method = "PUT", path = "/api/3/assets/search").copy(readOnly = true)).contains("readOnly"))
+        CatalogLoader.validate(catalog(ApiFamily.CONSOLE, op("find_assets", method = "POST", path = "/api/3/assets/search").copy(readOnly = true)), ApiFamily.CONSOLE)
+        CatalogLoader.validate(catalog(ApiFamily.CLOUD, op("cloud_get_sites", method = "POST", path = "/v4/integration/sites").copy(readOnly = true)), ApiFamily.CLOUD)
         assertTrue(bad(op("t", path = "/a/{id}")).contains("placeholders"))
         assertTrue(bad(op("t", params = listOf(CatalogParam("id", "path", schema = JsonObject(emptyMap()))))).contains("placeholders"))
         assertTrue(bad(op("h", params = listOf(CatalogParam("x", "header", schema = JsonObject(emptyMap()))))).contains("location"))
@@ -121,6 +130,20 @@ class CatalogTest {
         val loud = CatalogFilter.summarize(emptyList(), cats, ToolFilter(allowAdminCommands = true, excludeTags = setOf("User"), nameGlobs = listOf("x*")))
         assertTrue(loud.contains("ADMIN COMMANDS ENABLED") && loud.contains("exclude-tags=User") && loud.contains("tools=x*"), loud)
         assertFalse(CatalogFilter.summarize(emptyList(), cats, ToolFilter()).contains("["))
+    }
+
+    @Test
+    fun `read-only keeps the query-only POST searches`() {
+        val searches = listOf("find_assets", "sonar_query_search", "cloud_get_sites", "cloud_search_integration_assets", "cloud_search_integration_vulnerabilities")
+        val readOnly = CatalogFilter.select(TEST_CATALOGS, ToolFilter(readOnly = true))
+        val names = readOnly.map { it.op.name }.toSet()
+        for (name in searches) assertTrue(name in names, name)
+        assertEquals(182 + 9, readOnly.size)
+        assertTrue(readOnly.all { it.op.readOnly && !it.op.destructive && !it.op.admin })
+        // Without the searches, read-only cloud mode could not list a single site, asset or vulnerability.
+        val cloud = CatalogFilter.select(TEST_CATALOGS, ToolFilter(readOnly = true, families = setOf(ApiFamily.CLOUD)))
+        assertEquals(9, cloud.size)
+        assertTrue(cloud.map { it.op.name }.containsAll(searches.filter { it.startsWith("cloud_") }))
     }
 
     @Test

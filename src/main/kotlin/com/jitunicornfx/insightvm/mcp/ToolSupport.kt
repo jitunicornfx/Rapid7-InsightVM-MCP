@@ -157,6 +157,9 @@ fun textResult(message: String): CallToolResult =
 /**
  * Register a tool with centralized error handling. Thrown exceptions are converted into error
  * results so a single failing call never tears down the session.
+ *
+ * MCP gives [destructive] and [idempotent] meaning only on a tool that is not read-only, so a
+ * read-only tool carries neither hint rather than a value a client might misread.
  */
 fun Server.apiTool(
     name: String,
@@ -164,6 +167,7 @@ fun Server.apiTool(
     inputSchema: ToolSchema = emptySchema(),
     readOnly: Boolean = false,
     destructive: Boolean = false,
+    idempotent: Boolean = false,
     handler: suspend (args: JsonObject) -> CallToolResult,
 ) {
     addTool(
@@ -173,6 +177,7 @@ fun Server.apiTool(
         toolAnnotations = ToolAnnotations(
             readOnlyHint = readOnly,
             destructiveHint = if (readOnly) null else destructive,
+            idempotentHint = if (readOnly) null else idempotent,
             openWorldHint = true,
         ),
     ) { request ->

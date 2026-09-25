@@ -87,25 +87,18 @@ object ExportTools {
     /** Upper bound on the API-supplied cursor echoed back in a resume hint. */
     internal const val EXPORT_CURSOR_ECHO_CHARS = 512
 
-    /**
-     * The non-GET operations an export may drive. InsightVM's bulk search endpoints are all POST
-     * with a filter body, so a blanket "GET only" rule would block exactly the five endpoints worth
-     * exporting. The list is hard-coded and never derived from a model argument; `admin` and
-     * `destructive` operations are refused unconditionally regardless of what is listed here.
-     */
-    internal val EXPORTABLE_NON_GET = setOf(
-        "find_assets",
-        "sonar_query_search",
-        "cloud_get_sites",
-        "cloud_search_integration_assets",
-        "cloud_search_integration_vulnerabilities",
-    )
-
     /** Paging parameters this tool drives itself; a caller-supplied value would be overwritten. */
     private val DRIVEN_PARAMS = setOf(PagingDefaults.PAGE_PARAM, PagingDefaults.SIZE_PARAM, PagingDefaults.CURSOR_PARAM)
 
+    /**
+     * Whether an export may drive [op]: only a read, as the catalog classifies it. InsightVM's bulk
+     * searches are POSTs with a filter body, and the catalog already marks those five read-only
+     * (`CatalogLoader.QUERY_ONLY_OPS`, pinned by method and path), so the export tool and
+     * `--read-only` agree on what a read is and there is no second list to drift. `admin` and
+     * `destructive` operations are refused as well, whatever the catalog says about reading.
+     */
     internal fun exportable(op: CatalogOp): Boolean =
-        !op.admin && !op.destructive && (op.readOnly || op.name in EXPORTABLE_NON_GET)
+        !op.admin && !op.destructive && op.readOnly
 
     internal fun modeFor(op: CatalogOp): ExportMode = when {
         PagingDefaults.hasCursor(op) -> ExportMode.CURSOR_V4

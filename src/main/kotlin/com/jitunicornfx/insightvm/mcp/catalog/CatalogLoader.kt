@@ -15,6 +15,26 @@ object CatalogLoader {
      */
     private val MARKUP = Regex("<[A-Za-z/!?]")
 
+    /**
+     * The non-`GET` operations that only query, keyed by method and path. InsightVM's filtered
+     * searches take their criteria as a POST body, and v4 has no other way to list sites, assets or
+     * vulnerabilities, so without these `--read-only` cloud mode could list nothing. They are
+     * `readOnly` in the catalog, which is what `--read-only` and the export tool both go by.
+     *
+     * The generator reads this set and the loader enforces it, so a hand-edited catalog cannot mark
+     * any other POST read-only, nor turn one of these back into a write.
+     */
+    internal val QUERY_ONLY_OPS: Set<Pair<String, String>> = setOf(
+        "POST" to "/api/3/assets/search",
+        "POST" to "/api/3/sonar_queries/search",
+        "POST" to "/v4/integration/assets",
+        "POST" to "/v4/integration/sites",
+        "POST" to "/v4/integration/vulnerabilities",
+    )
+
+    /** Whether an operation is a read: every `GET`, plus the [QUERY_ONLY_OPS]. */
+    internal fun isRead(method: String, path: String): Boolean = method == "GET" || (method to path) in QUERY_ONLY_OPS
+
     fun load(family: ApiFamily): Catalog {
         val stream = CatalogLoader::class.java.getResourceAsStream(family.resource)
             ?: throw IllegalStateException("Catalog resource ${family.resource} is missing from the classpath.")
@@ -50,7 +70,7 @@ object CatalogLoader {
             check(seen.add(op.name)) { "Catalog ${family.id}: duplicate tool name '${op.name}'" }
             check(op.method in METHODS) { "Catalog ${family.id}: '${op.name}' has unsupported method ${op.method}" }
             check(op.path.startsWith("/")) { "Catalog ${family.id}: '${op.name}' path must start with '/'" }
-            check(op.readOnly == (op.method == "GET")) { "Catalog ${family.id}: '${op.name}' readOnly flag disagrees with method" }
+            check(op.readOnly == isRead(op.method, op.path)) { "Catalog ${family.id}: '${op.name}' readOnly flag disagrees with its method and path" }
 
             val pathParams = op.params.filter { it.isPath }.map { it.name }.toSet()
             val placeholders = PLACEHOLDER.findAll(op.path).map { it.groupValues[1] }.toSet()

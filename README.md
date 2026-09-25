@@ -31,7 +31,7 @@ Everything is configured through environment variables. Configure one or both AP
 | `INSIGHTVM_CLOUD_BASE_URL` | | regional | Override the cloud base URL (must be `https`) |
 | `INSIGHTVM_MCP_AUTH_TOKEN` | http | — | Bearer token for `--http`; **mandatory, and at least 32 characters, when binding a non-loopback address** (e.g. `openssl rand -hex 32`). A shorter one on loopback is warned about |
 | `INSIGHTVM_HTTP_ALLOWED_ORIGINS` | | none | Comma-separated browser origins allowed in `--http` mode (`*` is ignored) |
-| `INSIGHTVM_READ_ONLY` | | `0` | Register only `GET` tools |
+| `INSIGHTVM_READ_ONLY` | | `0` | Register only read-only tools: every `GET`, plus the five query-only POST searches |
 | `INSIGHTVM_TAGS` / `INSIGHTVM_EXCLUDE_TAGS` | | all | Comma-separated API tags to include / hide |
 | `INSIGHTVM_ALLOW_ADMIN_COMMANDS` | | `0` | Register `execute_command` (arbitrary console command execution) |
 | `INSIGHTVM_ALLOW_HTTP` | | `0` | Permit cleartext `http://` API URLs (lab use only) |
@@ -81,7 +81,7 @@ java -jar build/libs/rapid7-insightvm-mcp-0.2.1-all.jar --http --host 127.0.0.1 
 |---|---|
 | `--stdio` / `--http` | Transport (default `--stdio`) |
 | `--host`, `--port` | HTTP bind address and port (default `127.0.0.1:3072`) |
-| `--read-only` | Only `GET` tools |
+| `--read-only` | Only read-only tools: every `GET`, plus the five query-only POST searches (`find_assets`, `sonar_query_search` and the three cloud searches) |
 | `--tags Site,Asset` / `--exclude-tags User` | Filter by API tag (repeatable) |
 | `--api console\|cloud\|both` | Which configured family to expose |
 | `--tools 'get_site*'` | Glob on tool names (repeatable, case-insensitive) |
@@ -116,7 +116,8 @@ or glob that matches nothing is reported on stderr as a warning.
 ## Tools
 
 Tool names are the spec's `operationId` in snake_case; cloud (v4) tools carry a `cloud_` prefix. Every tool is annotated
-(`readOnlyHint`, `destructiveHint`) and its description names the HTTP route.
+(`readOnlyHint`; on writes also `destructiveHint` and `idempotentHint`) and its description names the HTTP route. Only
+writes that purely add (`create_*`, `add_*`, `start_*`, `tag_*`, …) are marked non-destructive.
 
 | API | Tag | Tools | Examples |
 |---|---|---|---|
@@ -189,7 +190,7 @@ the tool.
 343 tools is more than some clients handle comfortably. Recommended profiles:
 
 ```bash
---read-only                                   # 186 tools, nothing can change
+--read-only                                   # 191 tools, nothing can change
 --tags Site,Asset,Vulnerability,Scan          # day-to-day vulnerability management
 --api cloud                                   # just the 13 Insight Platform tools
 --tools 'get_*' --tools 'cloud_*'             # custom allow-list by glob
@@ -247,7 +248,8 @@ Summarised here; details and residual risks in [docs/SECURITY.md](docs/SECURITY.
 * **HTTP transport** — bearer token (required off-loopback, constant-time compare, brute-force throttle), `Host`/`Origin`
   checks against DNS rebinding, default-deny CORS, 4 MiB request cap.
 * **Dangerous operations** — `execute_command` is unregistered unless `--allow-admin-commands` *and* then requires
-  `confirm="EXECUTE"`; all mutations are flagged `destructiveHint` where applicable; `--read-only` removes them entirely.
+  `confirm="EXECUTE"`; every mutation that is not purely additive is flagged `destructiveHint`, including list
+  replacements, status changes and credential resets; `--read-only` removes every mutation.
 * **TLS** — strict by default; trust a private CA with `INSIGHTVM_CONSOLE_CA_CERT`; `INSECURE_TLS` is explicit and loud.
 * **Result size** — two tiers: a wire-byte memory guard and a character budget for what reaches the model, with a
   degradation ladder that keeps trimmed JSON valid and always says what it dropped, outside the fence.

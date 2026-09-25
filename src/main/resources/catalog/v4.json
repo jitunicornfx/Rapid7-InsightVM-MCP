@@ -35,7 +35,7 @@
    "tag": "Asset",
    "summary": "Search Assets",
    "description": "Returns the inventory, assessment, and summary details for a page of assets. Only assets which the caller has access to are returned. If using the comparisonTime parameter, the recommended page size is 50.",
-   "readOnly": false,
+   "readOnly": true,
    "destructive": false,
    "admin": false,
    "params": [
@@ -481,7 +481,7 @@
    "summary": "Update Scan Engine Configuration",
    "description": "Updates the custom properties configuration of a scan engine with the specified identifier. May require engine restart before taking effect. Care should be taken when setting custom properties. If you are not familiar with custom properties we recommend contacting Rapid7 Support for assistance.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -601,7 +601,7 @@
    "tag": "Site",
    "summary": "List Sites",
    "description": "Returns the details for sites.",
-   "readOnly": false,
+   "readOnly": true,
    "destructive": false,
    "admin": false,
    "params": [
@@ -663,7 +663,7 @@
    "tag": "Vulnerability",
    "summary": "Search Vulnerabilities",
    "description": "Returns all vulnerabilities that can be assessed.",
-   "readOnly": false,
+   "readOnly": true,
    "destructive": false,
    "admin": false,
    "params": [

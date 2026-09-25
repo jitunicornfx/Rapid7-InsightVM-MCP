@@ -11,9 +11,13 @@ import com.jitunicornfx.insightvm.mcp.testutil.testConfig
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertContentEquals
@@ -407,12 +411,21 @@ class CatalogToolsBehaviourTest {
     }
 
     @Test
-    fun `read-only filter drops every non-GET tool`() = runBlocking {
+    fun `read-only filter keeps the GET tools and the five POST searches`() = runBlocking {
         val h = mcpHarness(testConfig(filter = ToolFilter(readOnly = true)))
         val tools = h.listTools()
         // The export tool is suppressed under --read-only, so this stays at two meta tools.
-        assertEquals(180 + 6 + 2, tools.size)
+        assertEquals(182 + 9 + 2, tools.size)
         assertTrue(tools.all { it.annotations?.readOnlyHint == true })
+        assertTrue(tools.all { it.annotations?.destructiveHint == null && it.annotations?.idempotentHint == null })
+        val names = tools.map { it.name }.toSet()
+        assertTrue(names.containsAll(listOf("find_assets", "sonar_query_search", "cloud_get_sites", "cloud_search_integration_assets")))
+
+        // A search is a POST with a body, and still reaches the API as one.
+        val search = h.callJson("find_assets", buildJsonObject { putJsonObject("body") { put("match", "all"); putJsonArray("filters") {} } })
+        assertFalse(search.isError == true, h.text(search))
+        assertEquals("POST", h.lastRequest.method.value)
+        assertEquals("/api/3/assets/search", h.lastRequest.url.encodedPath)
     }
 
     @Test

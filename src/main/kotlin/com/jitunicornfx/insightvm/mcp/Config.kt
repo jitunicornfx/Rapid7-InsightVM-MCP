@@ -64,7 +64,11 @@ data class CloudConfig(
 
 /** Which catalog operations get registered as tools. */
 data class ToolFilter(
-    /** Only register `GET` operations. */
+    /**
+     * Only register reads: every `GET`, plus the five POST searches in
+     * [com.jitunicornfx.insightvm.mcp.catalog.CatalogLoader.QUERY_ONLY_OPS]. The export tool is
+     * also dropped, because it writes files.
+     */
     val readOnly: Boolean = false,
     /** Keep only operations whose tag (case-insensitive) is in this set; empty = all. */
     val tags: Set<String> = emptySet(),

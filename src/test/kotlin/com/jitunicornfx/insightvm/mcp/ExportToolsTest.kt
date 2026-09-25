@@ -193,12 +193,22 @@ class ExportToolsTest {
     @Test
     fun `the exportable classification matches the catalog`() {
         val all = TEST_CATALOGS.values.flatMap { it.ops }.associateBy { it.name }
-        // Every hard-coded non-GET entry exists, is safe, and really is a POST search.
-        for (name in ExportTools.EXPORTABLE_NON_GET) {
+        // The bulk searches are POSTs, and the catalog classifies them as reads, so the export tool
+        // needs no list of its own that could disagree with --read-only.
+        for (name in listOf("find_assets", "sonar_query_search", "cloud_get_sites", "cloud_search_integration_assets", "cloud_search_integration_vulnerabilities")) {
             val op = assertNotNull(all[name], "$name is not in the catalog")
-            assertFalse(op.admin); assertFalse(op.destructive); assertFalse(op.readOnly)
+            assertEquals("POST", op.method, name)
+            assertFalse(op.admin); assertFalse(op.destructive); assertTrue(op.readOnly, name)
             assertTrue(ExportTools.exportable(op))
         }
+        assertEquals(
+            all.values.filter { it.readOnly }.map { it.name }.toSet(),
+            all.values.filter { ExportTools.exportable(it) }.map { it.name }.toSet(),
+            "exactly the read-only operations are exportable",
+        )
+        // The admin and destructive refusals hold even for an operation marked read-only.
+        assertFalse(ExportTools.exportable(all.getValue("get_assets").copy(destructive = true)))
+        assertFalse(ExportTools.exportable(all.getValue("get_assets").copy(admin = true)))
         assertFalse(ExportTools.exportable(all.getValue("delete_site")))
         assertFalse(ExportTools.exportable(all.getValue("execute_command")))
         assertFalse(ExportTools.exportable(all.getValue("update_site")))

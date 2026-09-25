@@ -36,7 +36,7 @@
    "summary": "Console Commands",
    "description": "Executes a console command against the Security Console. **Privileges:** Global Administrator",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": true,
    "params": [],
    "body": {
@@ -97,7 +97,7 @@
    "summary": "License",
    "description": "Licenses the product with an activation key or a provided license file. If both are provided, the license file is preferred. **Privileges:** Global Administrator",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -500,7 +500,7 @@
    "summary": "Asset Group",
    "description": "Updates the details of an asset group. See the search criteria endpoint (/search_criteria) for more information about building the search criteria and examples.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -674,7 +674,7 @@
    "summary": "Asset Group Assets",
    "description": "Updates all the assets that belong to a static asset group.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -829,7 +829,7 @@
    "summary": "Asset Group Search Criteria",
    "description": "Updates the search criteria of a dynamic asset group. For a reference of valid search criteria input see the Asset Search resource.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -972,7 +972,7 @@
    "summary": "Asset Group Tags",
    "description": "Updates the tags of an asset group.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -1127,7 +1127,7 @@
    "summary": "Asset Group Users",
    "description": "Grants users with sufficient privileges access to an asset group.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -1310,7 +1310,7 @@
    "tag": "Asset",
    "summary": "Asset Search",
    "description": "Returns all assets for which you have access that match the given search criteria.",
-   "readOnly": false,
+   "readOnly": true,
    "destructive": false,
    "admin": false,
    "params": [
@@ -5072,7 +5072,7 @@
    "summary": "Policy Override Expiration",
    "description": "Set the expiration date for a policy override. This must be a valid date in the future.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -5110,7 +5110,7 @@
    "summary": "Policy Override Status",
    "description": "Update the status of the specified policy override. The status can be one of the following: `\"recall\"`, `\"approve\"`, or `\"reject\"`.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -6022,7 +6022,7 @@
    "summary": "Report",
    "description": "Updates the configuration details of a report.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -6808,7 +6808,7 @@
    "summary": "Role",
    "description": "Updates the details of a role.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -7104,7 +7104,7 @@
    "summary": "Engine Pool",
    "description": "Updates the specified engine pool.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -7204,7 +7204,7 @@
    "summary": "Engine Pool Engines",
    "description": "Set the engines in the engine pool.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -7567,7 +7567,7 @@
    "summary": "Scan Engine",
    "description": "Updates the specified scan engine.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -8324,7 +8324,7 @@
    "summary": "Scan Template",
    "description": "Updates a scan template.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -8878,7 +8878,7 @@
    "summary": "Scan Status",
    "description": "Updates the scan status. Can pause, resume, and stop scans using this resource. In order to stop a scan the scan must be running or paused. In order to resume a scan the scan must be paused. In order to pause a scan the scan must be running.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -9251,7 +9251,7 @@
    "summary": "Shared Credential",
    "description": "Updates the specified shared credential.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -9754,7 +9754,7 @@
    "summary": "Site",
    "description": "Updates the configuration of the site with the specified identifier.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -10105,7 +10105,7 @@
    "summary": "Site SMTP Alerts",
    "description": "Updates all SMTP alerts for the specified site in a single request using the array of resources defined in the request body.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -10349,7 +10349,7 @@
    "summary": "Site SMTP Alert",
    "description": "Updates the specified SMTP alert.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -10725,7 +10725,7 @@
    "summary": "Site SNMP Alerts",
    "description": "Updates all SNMP alerts for the specified site in a single request using the array of resources defined in the request body.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -10958,7 +10958,7 @@
    "summary": "Site SNMP Alert",
    "description": "Updates the specified SNMP alert.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -11318,7 +11318,7 @@
    "summary": "Site Syslog Alerts",
    "description": "Updates all Syslog alerts for the specified site in a single request using the array of resources defined in the request body.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -11546,7 +11546,7 @@
    "summary": "Site Syslog Alert",
    "description": "Updates the specified Syslog alert.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -12639,7 +12639,7 @@
    "summary": "Site Discovery Connection",
    "description": "Updates the discovery connection assigned to the site.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -12707,7 +12707,7 @@
    "summary": "Site Discovery Search Criteria",
    "description": "Update the search criteria of the dynamic site.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -12862,7 +12862,7 @@
    "summary": "Site Excluded Asset Groups",
    "description": "Updates the excluded asset groups in a static site.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -13058,7 +13058,7 @@
    "summary": "Site Excluded Targets",
    "description": "Updates the excluded targets in a static site.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -13159,7 +13159,7 @@
    "summary": "Site Included Asset Groups",
    "description": "Updates the included asset groups in a static site.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -13355,7 +13355,7 @@
    "summary": "Site Included Targets",
    "description": "Updates the included targets in a static site.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -13426,7 +13426,7 @@
    "summary": "Site Organization Information",
    "description": "Updates the site organization information.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -13539,7 +13539,7 @@
    "summary": "Site Scan Engine",
    "description": "Updates the assigned scan engine to the site.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -13833,7 +13833,7 @@
    "summary": "Site Scan Schedules",
    "description": "Updates all scan schedules for the specified site in a single request using the array of resources defined in the request body.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -14115,7 +14115,7 @@
    "summary": "Site Scan Schedule",
    "description": "Updates the specified scan schedule.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -14352,7 +14352,7 @@
    "summary": "Site Scan Template",
    "description": "Updates the assigned scan template to the site.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -14579,7 +14579,7 @@
    "summary": "Assigned Shared Credential Enablement",
    "description": "Enable or disable the shared credential for the site's scans.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -14922,7 +14922,7 @@
    "summary": "Site Scan Credentials",
    "description": "Updates multiple site credentials.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -15243,7 +15243,7 @@
    "summary": "Site Scan Credential",
    "description": "Updates the specified site credential.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -15489,7 +15489,7 @@
    "summary": "Site Credential Enablement",
    "description": "Enable or disable the site credential for scans.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -15567,7 +15567,7 @@
    "summary": "Site Tags",
    "description": "Updates the site's list of tags.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -15760,7 +15760,7 @@
    "summary": "Site Users Access",
    "description": "Updates the site's access list.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -16268,7 +16268,7 @@
    "tag": "Asset Discovery",
    "summary": "Sonar Query Search",
    "description": "Executes a Sonar query to discover assets with the given search criteria.",
-   "readOnly": false,
+   "readOnly": true,
    "destructive": false,
    "admin": false,
    "params": [],
@@ -16391,7 +16391,7 @@
    "summary": "Sonar Query",
    "description": "Updates a sonar query.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -16760,7 +16760,7 @@
    "summary": "Tag",
    "description": "Updates the details of a tag. For more information about accepted fields for the tag search criteria see the PUT /search_criteria documentation.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -16948,7 +16948,7 @@
    "summary": "Tag Asset Groups",
    "description": "Sets the asset groups associated with the tag.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -17245,7 +17245,7 @@
    "summary": "Tag Search Criteria",
    "description": "Updates the search criteria associated with the tag. The following table outlines the search criteria fields and the available operators: | Field | Operators | | ---------- | ---------------- | | ip-address | is, is-not, in-range, not-in-range, is-like, not-like | | ip-address-type | in, not-in | | alternate-address-type | in | | host-name | is, is-not, starts-with, ends-with, contains, does-not-contain, is-empty, is-not-empty, is-like, not-like | | host-type | in, not-in | | operating-system | contains, does-not-contain, is-empty, is-not-empty | | software | contains, does-not-contain| | ope…",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -17388,7 +17388,7 @@
    "summary": "Tag Sites",
    "description": "Sets the sites associated with the tag.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -17973,7 +17973,7 @@
    "summary": "User",
    "description": "Updates the details of a user. **Privileges:** Global Administrator",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -18145,7 +18145,7 @@
    "summary": "Two-Factor Authentication",
    "description": "Regenerates a new authentication token seed (key) and updates it for the user. This key may be then be used in the appropriate 2FA authenticator.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -18175,7 +18175,7 @@
    "summary": "Two-Factor Authentication",
    "description": "Sets the authentication token seed (key) for the user. This key may be then be used in the appropriate 2FA authenticator.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -18272,7 +18272,7 @@
    "summary": "Asset Groups Access",
    "description": "Updates the asset groups to which the user has access. Individual asset group access cannot be granted to users with the `allAssetGroups` permission. **Privileges:** Global Administrator",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -18427,7 +18427,7 @@
    "summary": "Password Reset",
    "description": "Changes the password for the user. Users may only change their own password.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -18559,7 +18559,7 @@
    "summary": "Sites Access",
    "description": "Updates the sites to which the user has access. Individual site access cannot be granted to users with the `allSites` permission. **Privileges:** Global Administrator",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -19580,7 +19580,7 @@
    "summary": "Exception Expiration",
    "description": "Set the expiration date for a vulnerability exception. This must be a valid date in the future.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {
@@ -19617,7 +19617,7 @@
    "summary": "Exception Status",
    "description": "Update the status of the vulnerability exception. The status can be one of: `\"recall\"`, `\"approve\"`, or `\"reject\"`.",
    "readOnly": false,
-   "destructive": false,
+   "destructive": true,
    "admin": false,
    "params": [
     {

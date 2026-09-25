@@ -127,7 +127,7 @@ class Rapid7InsightVmCommand internal constructor(
 
     private val readOnly: Boolean by option("--read-only")
         .flag(default = false)
-        .help("Register only read-only (GET) tools. Equivalent to ${Config.ENV_READ_ONLY}=1.")
+        .help("Register only read-only tools: every GET, plus the five query-only POST searches. Equivalent to ${Config.ENV_READ_ONLY}=1.")
 
     private val tags: List<String> by option("--tags")
         .multiple()

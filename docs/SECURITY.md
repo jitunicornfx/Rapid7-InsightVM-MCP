@@ -63,9 +63,16 @@ Out of scope: a compromised operator machine, a malicious bundled specification,
 * `POST /api/3/administration/commands` executes arbitrary console commands. It is **not registered** unless
   `--allow-admin-commands` / `INSIGHTVM_ALLOW_ADMIN_COMMANDS=1`, and even then the call must carry
   `confirm="EXECUTE"`. It is also excluded by `--read-only`.
-* Every `DELETE`, and every operation whose id starts with `delete`, `remove` or `stop`, is annotated
-  `destructiveHint=true`; all non-`GET` operations are `readOnlyHint=false`. Clients that honour annotations can prompt.
-* `--read-only` registers only `GET` operations. Command-line flags can only tighten the environment's filters.
+* Every write is annotated `destructiveHint=true` unless it only adds (its id starts with `create`, `add`, `start`,
+  `generate`, `tag` or `reconnect`): 114 of the 152 writes, including every `DELETE`, every `PUT` that replaces or
+  updates state, scan and status changes, password and 2FA resets, and `execute_command`. The default is destructive,
+  so a verb a future spec adds is flagged until someone looks at it. `PUT` and `DELETE` tools also carry
+  `idempotentHint=true`. Every write is `readOnlyHint=false`. Clients that honour annotations can prompt.
+* `readOnlyHint=true` goes on every `GET` and on five POST searches that only query (`find_assets`,
+  `sonar_query_search`, `cloud_get_sites`, `cloud_search_integration_assets`,
+  `cloud_search_integration_vulnerabilities`). They are pinned by method and path, and the catalog loader refuses any
+  other non-`GET` marked read-only.
+* `--read-only` registers only those reads (191 tools). Command-line flags can only tighten the environment's filters.
 * On/off variables accept only `1`/`true`/`yes`/`on` or `0`/`false`/`no`/`off`. Any other value stops the server,
   so a typo such as `INSIGHTVM_READ_ONLY=y` cannot leave a safety flag off while every mutating tool is registered.
 
@@ -127,8 +134,8 @@ Two tiers, because they defend different things:
 
 `insightvm_export_to_file` is the only tool that writes to the local filesystem, and binary payloads spill through
 the same store. Both are removed by `INSIGHTVM_DISABLE_EXPORT=1`, and the export tool is also removed by
-`--read-only` (whose contract is GET tools only). It is registered with `readOnlyHint=false`, so a client still
-prompts for it.
+`--read-only` (whose contract is that nothing changes, and a file on disk is a change). It is registered with
+`readOnlyHint=false`, so a client still prompts for it.
 
 *No caller-controlled path.* Four independent controls:
 
@@ -154,9 +161,10 @@ inherited rather than enforced: an operator who relocates the spool with `INSIGH
 spool as sensitive storage on Windows and place it accordingly.
 
 An export cannot be used to reach a tool the operator hid: the target is resolved against the **registered
-selection**, not the raw catalog, so `--tags`, `--tools`, `--api` and `--read-only` all still apply. State-changing
-operations are refused; the only non-GET operations permitted are five hard-coded POST *search* endpoints, and
-`admin`/`destructive` operations are refused unconditionally regardless. Every page goes through the normal
+selection**, not the raw catalog, so `--tags`, `--tools`, `--api` and `--read-only` all still apply. Only operations
+the catalog marks read-only can be exported, the same set `--read-only` keeps: every `GET` and the five POST
+searches, which the loader pins by method and path. `admin`/`destructive` operations are refused unconditionally
+regardless. Every page goes through the normal
 `ArgumentBinder`, so unknown-parameter rejection, type coercion, string bounds and path-segment encoding apply
 unchanged. Paging uses a page index or the API's own opaque cursor token — never a URL taken from a response body,
 so no request target is ever attacker-controlled. Runs are bounded by pages, records, bytes and wall-clock, and the

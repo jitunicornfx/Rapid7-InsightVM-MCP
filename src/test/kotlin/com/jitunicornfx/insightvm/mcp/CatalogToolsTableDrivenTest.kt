@@ -62,6 +62,13 @@ class CatalogToolsTableDrivenTest {
         val tool = assertNotNull(toolsByName[op.name], "tool ${op.name} not registered")
         assertEquals(op.readOnly, tool.annotations?.readOnlyHint, "readOnlyHint for ${op.name}")
         if (op.readOnly) assertNull(tool.annotations?.destructiveHint) else assertEquals(op.destructive, tool.annotations?.destructiveHint)
+        // MCP gives idempotentHint meaning only on a tool that is not read-only. PUT and DELETE are
+        // idempotent by HTTP semantics; a POST may create a second record or start a second scan.
+        assertEquals(
+            if (op.readOnly) null else op.method in setOf("PUT", "DELETE"),
+            tool.annotations?.idempotentHint,
+            "idempotentHint for ${op.name}",
+        )
         assertTrue(tool.description!!.contains("${op.method} ${op.path}"), "description names the route")
 
         val props = tool.inputSchema.properties ?: JsonObject(emptyMap())

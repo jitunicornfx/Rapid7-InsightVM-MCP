@@ -36,7 +36,17 @@ object CatalogGenerator {
     const val MAX_DEPTH = 8
 
     private val HTTP_METHODS = listOf("get", "post", "put", "delete", "patch")
-    private val DESTRUCTIVE_OPID = Regex("^(delete|remove|stop)", RegexOption.IGNORE_CASE)
+
+    /**
+     * The `operationId` verbs of writes that only add: a new record, a membership, a scan, a report
+     * instance. MCP defines `destructiveHint: false` as "only additive updates", so every other write
+     * is destructive, and the default is destructive rather than safe: a PUT that replaces a list
+     * deletes whatever the new list omits (`set_site_scan_schedules` with `[]` does what
+     * `delete_all_site_scan_schedules` does), and a status change, password reset or 2FA reset
+     * overwrites state. A new verb in a future spec is therefore flagged until someone looks at it.
+     * The verb must end at a camel-case boundary, so `addendum` is not `add`.
+     */
+    private val ADDITIVE_OPID = Regex("^(create|add|start|generate|tag|reconnect)[A-Z]")
     private val ADMIN_OPS = setOf("POST" to "/api/3/administration/commands")
     private val STRIP_KEYS = setOf("example", "examples", "xml", "title", "deprecated", "discriminator", "externalDocs")
     private val COMPOSITIONS = setOf("allOf", "oneOf", "anyOf")
@@ -461,6 +471,8 @@ object CatalogGenerator {
                 val opId = op["operationId"]?.jsonPrimitive?.contentOrNull
                     ?: throw CatalogGenerationException("missing operationId for ${method.uppercase()} $path")
                 val upper = method.uppercase()
+                val readOnly = CatalogLoader.isRead(upper, path)
+                val admin = (upper to path) in ADMIN_OPS
                 ops += CatalogOp(
                     name = family.toolPrefix + snakeCase(opId),
                     opId = opId,
@@ -469,9 +481,10 @@ object CatalogGenerator {
                     tag = (op["tags"] as? JsonArray)?.firstOrNull()?.jsonPrimitive?.content ?: "Untagged",
                     summary = cleanText(op["summary"]?.jsonPrimitive?.contentOrNull, MAX_SUMMARY),
                     description = cleanText(op["description"]?.jsonPrimitive?.contentOrNull),
-                    readOnly = upper == "GET",
-                    destructive = upper == "DELETE" || DESTRUCTIVE_OPID.containsMatchIn(opId),
-                    admin = (upper to path) in ADMIN_OPS,
+                    readOnly = readOnly,
+                    // A DELETE and the console command are destructive whatever their id says.
+                    destructive = !readOnly && (upper == "DELETE" || admin || !ADDITIVE_OPID.containsMatchIn(opId)),
+                    admin = admin,
                     params = buildParams(op, inliner, family),
                     body = buildBody(op, upper, path, inliner),
                     responses = successContentType(op),

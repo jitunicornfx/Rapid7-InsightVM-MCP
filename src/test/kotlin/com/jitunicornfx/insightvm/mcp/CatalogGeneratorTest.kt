@@ -214,6 +214,70 @@ class CatalogGeneratorTest {
     }
 
     @Test
+    fun `build rules - only additive operations escape destructiveHint, and five POST searches are reads`() {
+        fun catalog(family: ApiFamily, vararg routes: Triple<String, String, String>) = CatalogGenerator.buildCatalog(
+            family,
+            spec(buildJsonObject {
+                for ((path, ops) in routes.groupBy { it.second }) {
+                    putJsonObject(path) { for ((method, _, opId) in ops) putJsonObject(method) { put("operationId", opId) } }
+                }
+            }),
+            "s",
+            "f",
+        ).ops.associateBy { it.opId }
+
+        val console = catalog(
+            ApiFamily.CONSOLE,
+            Triple("post", "/api/3/things", "createThing"),
+            Triple("put", "/api/3/things/tags", "addThingTag"),
+            Triple("put", "/api/3/things/tagged", "tagThing"),
+            Triple("post", "/api/3/things/scans", "startThingScan"),
+            Triple("post", "/api/3/things/report", "generateThingReport"),
+            Triple("post", "/api/3/things/connect", "reconnectThing"),
+            // Replacing a whole list with [] deletes every entry, exactly as a DELETE would.
+            Triple("put", "/api/3/things/all", "setThings"),
+            Triple("put", "/api/3/things/one", "updateThing"),
+            Triple("post", "/api/3/things/status", "setThingStatus"),
+            Triple("put", "/api/3/things/password", "resetPassword"),
+            Triple("post", "/api/3/things/2fa", "regenerateTwoFactorAuthentication"),
+            Triple("post", "/api/3/things/stop", "stopThing"),
+            // A DELETE is never additive, whatever its id says; 'add' must start a word.
+            Triple("delete", "/api/3/things/cleanup", "startCleanup"),
+            Triple("post", "/api/3/things/adder", "addendum"),
+            // The admin operation is destructive even under an additive-looking id.
+            Triple("post", "/api/3/administration/commands", "createCommand"),
+            Triple("post", "/api/3/assets/search", "findAssets"),
+            Triple("post", "/api/3/sonar_queries/search", "sonarQuerySearch"),
+            // Only the listed routes are reads: another POST search, or the same path under PUT, is a write.
+            Triple("post", "/api/3/sites/search", "findSites"),
+            Triple("put", "/api/3/assets/search", "putSearch"),
+            Triple("get", "/api/3/things", "getThings"),
+        )
+        val cloud = catalog(
+            ApiFamily.CLOUD,
+            Triple("post", "/v4/integration/assets", "searchIntegrationAssets"),
+            Triple("post", "/v4/integration/sites", "getSites"),
+            Triple("post", "/v4/integration/vulnerabilities", "searchIntegrationVulnerabilities"),
+            Triple("post", "/v4/integration/scan", "startScan"),
+            Triple("post", "/v4/integration/scan/stop", "stopScan"),
+        )
+        val all = console + cloud
+        fun flags(opId: String) = all.getValue(opId).let { "readOnly=${it.readOnly} destructive=${it.destructive}" }
+
+        val additive = listOf("createThing", "addThingTag", "tagThing", "startThingScan", "generateThingReport", "reconnectThing", "startScan")
+        val destructive = listOf(
+            "setThings", "updateThing", "setThingStatus", "resetPassword", "regenerateTwoFactorAuthentication", "stopThing",
+            "startCleanup", "addendum", "createCommand", "findSites", "putSearch", "stopScan",
+        )
+        val reads = listOf("findAssets", "sonarQuerySearch", "getThings", "searchIntegrationAssets", "getSites", "searchIntegrationVulnerabilities")
+        assertEquals(all.keys, (additive + destructive + reads).toSet())
+        for (id in additive) assertEquals("readOnly=false destructive=false", flags(id), id)
+        for (id in destructive) assertEquals("readOnly=false destructive=true", flags(id), id)
+        for (id in reads) assertEquals("readOnly=true destructive=false", flags(id), id)
+        assertTrue(all.getValue("createCommand").admin)
+    }
+
+    @Test
     fun `build rules - errors`() {
         fun fails(paths: JsonObject, schemas: JsonObject = JsonObject(emptyMap())) =
             assertFailsWith<CatalogGenerator.CatalogGenerationException> { CatalogGenerator.buildCatalog(ApiFamily.CONSOLE, spec(paths, schemas), "s", "f") }
@@ -560,6 +624,37 @@ class CatalogGeneratorTest {
             }
         }
         assertEquals(0, duplicated, "array item descriptions that repeat their parent's")
+    }
+
+    @Test
+    fun `catalog - every write that is not purely additive is destructive`() {
+        val all = (v3.ops + v4.ops).associateBy { it.name }
+        val writes = all.values.filter { !it.readOnly }
+        assertEquals(114, writes.count { it.destructive })
+        assertEquals(38, writes.count { !it.destructive })
+        assertTrue(all.values.none { it.readOnly && it.destructive })
+        // Each of these can remove or overwrite state: a list replaced with [], a scan stopped, a
+        // credential reset, an arbitrary console command.
+        for (name in listOf(
+            "set_site_scan_schedules", "set_site_users", "update_included_targets", "set_scan_status", "reset_password",
+            "regenerate_two_factor_authentication", "execute_command", "enable_site_credential", "activate_license",
+            "cloud_update_scan_engine_configuration", "cloud_stop_scan", "delete_site",
+        )) {
+            assertTrue(all.getValue(name).destructive, name)
+        }
+        for (name in listOf("create_site", "add_site_tag", "tag_asset", "start_scan", "generate_report", "cloud_start_scan")) {
+            assertFalse(all.getValue(name).destructive, name)
+        }
+    }
+
+    @Test
+    fun `catalog - the five POST searches are the only non-GET reads`() {
+        val reads = (v3.ops + v4.ops).filter { it.readOnly && it.method != "GET" }
+        assertEquals(
+            listOf("cloud_get_sites", "cloud_search_integration_assets", "cloud_search_integration_vulnerabilities", "find_assets", "sonar_query_search"),
+            reads.map { it.name }.sorted(),
+        )
+        assertTrue(reads.all { it.method == "POST" && !it.destructive && !it.admin })
     }
 
     @Test
