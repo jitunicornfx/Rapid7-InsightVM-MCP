@@ -9,8 +9,11 @@ object CatalogFilter {
 
     /**
      * Select operations from [catalogs] honouring [filter]. Order of the checks: family → admin
-     * gate → read-only → tags → excluded tags → name globs. The admin gate always applies: the
-     * console command operation is never registered unless [ToolFilter.allowAdminCommands] is set.
+     * gate → secret gate → read-only → tags → excluded tags → name globs. Both gates always apply:
+     * the console command operation is never registered unless [ToolFilter.allowAdminCommands] is
+     * set, and an operation that returns or sets an authentication secret never unless
+     * [ToolFilter.allowSecretTools] is. The secret gate is not a read-only question: two of those
+     * operations are `GET`s, which `--read-only` would otherwise keep.
      */
     fun select(catalogs: Map<ApiFamily, Catalog>, filter: ToolFilter): List<Selection> {
         val tags = filter.tags.map { it.lowercase() }.toSet()
@@ -22,6 +25,7 @@ object CatalogFilter {
             .flatMap { (family, catalog) ->
                 catalog.ops.asSequence()
                     .filter { op -> !op.admin || filter.allowAdminCommands }
+                    .filter { op -> !op.sensitive || filter.allowSecretTools }
                     .filter { op -> !filter.readOnly || op.readOnly }
                     .filter { op -> tags.isEmpty() || op.tag.lowercase() in tags }
                     .filter { op -> op.tag.lowercase() !in excluded }
@@ -43,6 +47,7 @@ object CatalogFilter {
             if (filter.excludeTags.isNotEmpty()) add("exclude-tags=${filter.excludeTags.joinToString("|")}")
             if (filter.nameGlobs.isNotEmpty()) add("tools=${filter.nameGlobs.joinToString("|")}")
             if (filter.allowAdminCommands) add("ADMIN COMMANDS ENABLED")
+            if (filter.allowSecretTools) add("SECRET TOOLS ENABLED")
         }
         return "registered ${selected.size}/$total API tools ($perFamily)" +
             if (flags.isEmpty()) "" else " [${flags.joinToString(", ")}]"
@@ -64,6 +69,19 @@ object CatalogFilter {
     fun unmatchedGlobs(catalogs: Map<ApiFamily, Catalog>, globs: Collection<String>): List<String> {
         val names = catalogs.values.flatMap { catalog -> catalog.ops.map { it.name } }
         return globs.filter { glob -> globToRegex(glob).let { regex -> names.none { regex.matches(it) } } }
+    }
+
+    /**
+     * The entries of [globs] that match at least one operation in [catalogs], and only operations
+     * behind the secret gate. Such a glob is not a typo, so [unmatchedGlobs] stays quiet about it,
+     * yet without `--allow-secret-tools` it registers nothing.
+     */
+    fun secretOnlyGlobs(catalogs: Map<ApiFamily, Catalog>, globs: Collection<String>): List<String> {
+        val ops = catalogs.values.flatMap { it.ops }
+        return globs.filter { glob ->
+            val matched = globToRegex(glob).let { regex -> ops.filter { regex.matches(it.name) } }
+            matched.isNotEmpty() && matched.all { it.sensitive }
+        }
     }
 
     /**

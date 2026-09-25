@@ -68,6 +68,17 @@ Out of scope: a compromised operator machine, a malicious bundled specification,
 * `POST /api/3/administration/commands` executes arbitrary console commands. It is **not registered** unless
   `--allow-admin-commands` / `INSIGHTVM_ALLOW_ADMIN_COMMANDS=1`, and even then the call must carry
   `confirm="EXECUTE"`. It is also excluded by `--read-only`.
+* Six operations exist to return or set an authentication secret: a user's two-factor seed (`GET`, `POST` and
+  `PUT /api/3/users/{id}/2FA`), a user's password (`PUT /api/3/users/{id}/password`) and the scan-engine pairing
+  secret (`GET` and `POST /api/3/scan_engines/shared_secret`). They are **not registered** unless `--allow-secret-tools` /
+  `INSIGHTVM_ALLOW_SECRET_TOOLS=1`. This gate is separate from `--read-only`: two of them are `GET`s, so a read-only
+  server used to offer any user's TOTP seed, and a single injected instruction could pull it into the transcript.
+  The catalog marks them `sensitive`; the list is pinned by method and path (`CatalogLoader.SENSITIVE_OPS`), the
+  loader refuses a catalog that clears or moves the flag, and generation fails if a listed route disappears from the
+  specification, so a renamed route cannot be published ungated. The list is deliberately narrow: an operation that
+  merely carries a credential among other fields, such as a site's scan credentials, is not on it. The export tool
+  refuses these operations even when the flag registers them, because an export writes its result to disk. Startup
+  logs `SECRET TOOLS ENABLED` and `insightvm_server_info` reports `secretToolsEnabled`.
 * Every write is annotated `destructiveHint=true` unless it only adds (its id starts with `create`, `add`, `start`,
   `generate`, `tag` or `reconnect`): 114 of the 152 writes, including every `DELETE`, every `PUT` that replaces or
   updates state, scan and status changes, password and 2FA resets, and `execute_command`. The default is destructive,
@@ -77,7 +88,9 @@ Out of scope: a compromised operator machine, a malicious bundled specification,
   `sonar_query_search`, `cloud_get_sites`, `cloud_search_integration_assets`,
   `cloud_search_integration_vulnerabilities`). They are pinned by method and path, and the catalog loader refuses any
   other non-`GET` marked read-only.
-* `--read-only` registers only those reads (191 tools). Command-line flags can only tighten the environment's filters.
+* `--read-only` registers only those reads, less the two secret ones unless `--allow-secret-tools` is also given (189
+  tools). Command-line flags can only tighten the environment's filters, except `--allow-admin-commands` and
+  `--allow-secret-tools`, which each open one named gate and are logged at startup.
 * On/off variables accept only `1`/`true`/`yes`/`on` or `0`/`false`/`no`/`off`. Any other value stops the server,
   so a typo such as `INSIGHTVM_READ_ONLY=y` cannot leave a safety flag off while every mutating tool is registered.
 
@@ -168,8 +181,9 @@ spool as sensitive storage on Windows and place it accordingly.
 An export cannot be used to reach a tool the operator hid: the target is resolved against the **registered
 selection**, not the raw catalog, so `--tags`, `--tools`, `--api` and `--read-only` all still apply. Only operations
 the catalog marks read-only can be exported, the same set `--read-only` keeps: every `GET` and the five POST
-searches, which the loader pins by method and path. `admin`/`destructive` operations are refused unconditionally
-regardless. Every page goes through the normal
+searches, which the loader pins by method and path. `admin`, `destructive` and `sensitive` operations are refused
+unconditionally, so a secret that `--allow-secret-tools` lets into the conversation is still never written to a
+spool file. Every page goes through the normal
 `ArgumentBinder`, so unknown-parameter rejection, type coercion, string bounds and path-segment encoding apply
 unchanged. Paging uses a page index or the API's own opaque cursor token — never a URL taken from a response body,
 so no request target is ever attacker-controlled. Runs are bounded by pages, records, bytes and wall-clock, and the

@@ -5,10 +5,12 @@ import com.jitunicornfx.insightvm.mcp.catalog.CatalogLoader
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogResponses
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogTools
 import com.jitunicornfx.insightvm.mcp.testutil.Canned
+import com.jitunicornfx.insightvm.mcp.testutil.McpTestHarness
 import com.jitunicornfx.insightvm.mcp.testutil.TEST_CLOUD
 import com.jitunicornfx.insightvm.mcp.testutil.TEST_CONSOLE
 import com.jitunicornfx.insightvm.mcp.testutil.mcpHarness
 import com.jitunicornfx.insightvm.mcp.testutil.testConfig
+import com.jitunicornfx.insightvm.mcp.tools.ExportTools
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
@@ -147,9 +149,12 @@ class CatalogToolsBehaviourTest {
         }
     }
 
+    /** The only text/plain tools are the shared-secret pair, which stay behind the secret gate unless opened. */
+    private val textPlainConfig = testConfig(filter = ToolFilter(allowSecretTools = true))
+
     @Test
     fun `text plain responses are scrubbed and fenced`() = runBlocking {
-        val h = mcpHarness { Canned(body = "secret\u0000value\u001b[31m", contentType = "text/plain") }
+        val h = mcpHarness(textPlainConfig) { Canned(body = "secret\u0000value\u001b[31m", contentType = "text/plain") }
         val text = h.text(h.call("get_current_shared_secret"))
         assertContains(text, "secretvalue[31m")
         assertFalse(text.contains('\u0000'))
@@ -283,7 +288,7 @@ class CatalogToolsBehaviourTest {
     @Test
     fun `oversized responses are truncated with a notice outside the fence`() = runBlocking {
         val big = "x".repeat(10_000)
-        val h = mcpHarness(testConfig(maxResponseBytes = 1000)) { Canned(body = big, contentType = "text/plain") }
+        val h = mcpHarness(textPlainConfig.copy(maxResponseBytes = 1000)) { Canned(body = big, contentType = "text/plain") }
         val text = h.text(h.call("get_current_shared_secret"))
         assertContains(text, "truncated at 1000 bytes")
         assertTrue(text.substringAfter(UNTRUSTED_END).contains("truncated"))
@@ -456,12 +461,49 @@ class CatalogToolsBehaviourTest {
         assertEquals("text/plain", on.lastRequest.body.contentType?.withoutParameters().toString())
     }
 
+    /**
+     * Regression: the tools that return a user's TOTP seed or the engine pairing secret were
+     * registered by default, and --read-only kept the two that are GETs.
+     */
+    @Test
+    fun `secret tools are absent by default, reported when enabled, and never exported`() = runBlocking {
+        val secrets = listOf(
+            "get_two_factor_authentication_key", "regenerate_two_factor_authentication", "set_two_factor_authentication",
+            "reset_password", "get_current_shared_secret", "create_shared_secret",
+        )
+        suspend fun filters(h: McpTestHarness) =
+            JsonCodec.compact.parseToJsonElement(h.text(h.call(CatalogTools.SERVER_INFO_TOOL))).jsonObject["filters"]!!.jsonObject
+        val seedCall = mapOf("tool" to "get_two_factor_authentication_key", "arguments" to mapOf("id" to 1))
+
+        val off = mcpHarness()
+        val offNames = off.listTools().map { it.name }.toSet()
+        assertEquals(emptySet(), offNames intersect secrets.toSet())
+        assertEquals("false", filters(off)["secretToolsEnabled"]!!.jsonPrimitive.content)
+        // The export tool resolves against what is registered, so it cannot reach them either.
+        assertContains(off.text(off.call(ExportTools.EXPORT_TOOL, seedCall)), "Unknown or unavailable tool")
+        assertEquals(0, off.requests.size)
+
+        val on = mcpHarness(testConfig(filter = ToolFilter(allowSecretTools = true))) { Canned(body = """{"key":"SEEDVALUE"}""") }
+        assertTrue(on.listTools().map { it.name }.containsAll(secrets))
+        assertEquals("true", filters(on)["secretToolsEnabled"]!!.jsonPrimitive.content)
+        // Enabled, the tool answers in the conversation as the operator chose; an export would also
+        // write the secret to a file that outlives it, so that is refused before any request.
+        val exported = on.call(ExportTools.EXPORT_TOOL, seedCall)
+        assertTrue(exported.isError == true)
+        assertContains(on.text(exported), "authentication secret")
+        assertEquals(0, on.requests.size)
+        val direct = on.call("get_two_factor_authentication_key", mapOf("id" to 1))
+        assertFalse(direct.isError == true, on.text(direct))
+        assertEquals("/api/3/users/1/2FA", on.lastRequest.url.encodedPath)
+    }
+
     @Test
     fun `read-only filter keeps the GET tools and the five POST searches`() = runBlocking {
         val h = mcpHarness(testConfig(filter = ToolFilter(readOnly = true)))
         val tools = h.listTools()
         // The export tool is suppressed under --read-only; the search-criteria reference is read-only and stays.
-        assertEquals(182 + 9 + 3, tools.size)
+        // The two console reads that return a secret stay behind --allow-secret-tools.
+        assertEquals(182 - 2 + 9 + 3, tools.size)
         assertTrue(tools.all { it.annotations?.readOnlyHint == true })
         assertTrue(tools.all { it.annotations?.destructiveHint == null && it.annotations?.idempotentHint == null })
         val names = tools.map { it.name }.toSet()
@@ -483,8 +525,9 @@ class CatalogToolsBehaviourTest {
         assertFalse(CatalogTools.SEARCH_CRITERIA_TOOL in names, "the reference serves console tools only")
 
         val consoleOnly = mcpHarness(testConfig(cloud = null))
-        // Two meta tools, the search-criteria reference and the export tool.
-        assertEquals(329 + 4, consoleOnly.listTools().size)
+        // Every console tool but the gated admin command and six secret tools; two meta tools, the
+        // search-criteria reference and the export tool.
+        assertEquals(330 - 1 - 6 + 4, consoleOnly.listTools().size)
     }
 
     /**

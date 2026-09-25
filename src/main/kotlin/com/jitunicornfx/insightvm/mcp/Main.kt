@@ -94,7 +94,7 @@ class Rapid7InsightVmCommand internal constructor(
         |
         |${Config.ENV_HTTP_ALLOWED_ORIGINS} (optional): comma-separated browser origins allowed in --http mode.
         |
-        |${Config.ENV_READ_ONLY}, ${Config.ENV_TAGS}, ${Config.ENV_EXCLUDE_TAGS}, ${Config.ENV_ALLOW_ADMIN_COMMANDS}: tool filters (same as the flags).
+        |${Config.ENV_READ_ONLY}, ${Config.ENV_TAGS}, ${Config.ENV_EXCLUDE_TAGS}, ${Config.ENV_ALLOW_ADMIN_COMMANDS}, ${Config.ENV_ALLOW_SECRET_TOOLS}: tool filters (same as the flags).
         |
         |${Config.ENV_TIMEOUT_MS} (default ${Config.DEFAULT_TIMEOUT_MS}), ${Config.ENV_MAX_RESPONSE_BYTES} (default ${Config.DEFAULT_MAX_RESPONSE_BYTES}, a memory guard on the wire).
         |
@@ -152,6 +152,14 @@ class Rapid7InsightVmCommand internal constructor(
                 "commands on the Security Console. Off by default. Equivalent to ${Config.ENV_ALLOW_ADMIN_COMMANDS}=1.",
         )
 
+    private val allowSecretTools: Boolean by option("--allow-secret-tools")
+        .flag(default = false)
+        .help(
+            "Register the six tools that return or set authentication secrets: a user's two-factor seed (read, " +
+                "regenerate, set), a user's password, and the scan-engine pairing secret (read, create). Off by default, " +
+                "including under --read-only. Equivalent to ${Config.ENV_ALLOW_SECRET_TOOLS}=1.",
+        )
+
     private val noAutoUpdate: Boolean by option("--no-auto-update")
         .flag(default = false)
         .help("Never download or install a new release; only report that one is available. Equivalent to ${Config.ENV_DISABLE_AUTO_UPDATE}=1.")
@@ -177,12 +185,15 @@ class Rapid7InsightVmCommand internal constructor(
             readOnly = readOnly,
             tags = tags.flatMap { Config.csv(it) }.toSet(),
             excludeTags = excludeTags.flatMap { Config.csv(it) }.toSet(),
-            // The only flag that loosens the environment: it is explicit and logged at startup.
+            // The only two flags that loosen the environment: each opens one named gate, is explicit, and
+            // is logged at startup and reported by insightvm_server_info.
             allowAdminCommands = fromEnv.filter.allowAdminCommands || allowAdminCommands,
+            allowSecretTools = fromEnv.filter.allowSecretTools || allowSecretTools,
             families = families,
             nameGlobs = tools.flatMap { Config.csv(it) },
         )
-        val filter = fromEnv.filter.tighten(cliFilter).copy(allowAdminCommands = cliFilter.allowAdminCommands)
+        val filter = fromEnv.filter.tighten(cliFilter)
+            .copy(allowAdminCommands = cliFilter.allowAdminCommands, allowSecretTools = cliFilter.allowSecretTools)
 
         val config = fromEnv.copy(
             filter = filter,
@@ -231,6 +242,16 @@ class Rapid7InsightVmCommand internal constructor(
         }
         CatalogFilter.unmatchedGlobs(catalogs, filter.nameGlobs).forEach {
             echo("[insightvm-mcp] WARNING: --tools glob '$it' matches no tool name.", err = true)
+        }
+        // A glob naming a gated tool is not a typo, so it would otherwise register nothing in silence.
+        if (!filter.allowSecretTools) {
+            CatalogFilter.secretOnlyGlobs(catalogs, filter.nameGlobs).forEach {
+                echo(
+                    "[insightvm-mcp] WARNING: --tools glob '$it' names only tools that return or set authentication " +
+                        "secrets, which are registered only with --allow-secret-tools / ${Config.ENV_ALLOW_SECRET_TOOLS}=1.",
+                    err = true,
+                )
+            }
         }
 
         val validTags = "Valid tags: ${CatalogFilter.tags(catalogs).joinToString(", ")}."

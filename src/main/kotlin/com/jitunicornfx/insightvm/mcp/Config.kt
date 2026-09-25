@@ -67,7 +67,8 @@ data class ToolFilter(
     /**
      * Only register reads: every `GET`, plus the five POST searches in
      * [com.jitunicornfx.insightvm.mcp.catalog.CatalogLoader.QUERY_ONLY_OPS]. The export tool is
-     * also dropped, because it writes files.
+     * also dropped, because it writes files. The secret gate ([allowSecretTools]) still applies to
+     * the reads it keeps.
      */
     val readOnly: Boolean = false,
     /** Keep only operations whose tag (case-insensitive) is in this set; empty = all. */
@@ -76,6 +77,12 @@ data class ToolFilter(
     val excludeTags: Set<String> = emptySet(),
     /** Register the console command-execution operation (off by default). */
     val allowAdminCommands: Boolean = false,
+    /**
+     * Register the operations that return or set authentication secrets (off by default, and
+     * independent of [readOnly]: two of them are reads). See
+     * [com.jitunicornfx.insightvm.mcp.catalog.CatalogLoader.SENSITIVE_OPS].
+     */
+    val allowSecretTools: Boolean = false,
     /** API families to expose; intersected with what is configured. */
     val families: Set<ApiFamily> = ApiFamily.entries.toSet(),
     /** Glob patterns (`*`, `?`) on tool names, case-insensitive like [tags]; empty = all. */
@@ -97,6 +104,7 @@ data class ToolFilter(
         },
         excludeTags = excludeTags + other.excludeTags,
         allowAdminCommands = allowAdminCommands && other.allowAdminCommands,
+        allowSecretTools = allowSecretTools && other.allowSecretTools,
         families = families.intersect(other.families),
         nameGlobs = nameGlobs + other.nameGlobs,
     )
@@ -182,6 +190,7 @@ data class Config(
         const val ENV_TAGS = "INSIGHTVM_TAGS"
         const val ENV_EXCLUDE_TAGS = "INSIGHTVM_EXCLUDE_TAGS"
         const val ENV_ALLOW_ADMIN_COMMANDS = "INSIGHTVM_ALLOW_ADMIN_COMMANDS"
+        const val ENV_ALLOW_SECRET_TOOLS = "INSIGHTVM_ALLOW_SECRET_TOOLS"
         const val ENV_DISABLE_UPDATE_CHECK = "INSIGHTVM_DISABLE_UPDATE_CHECK"
         const val ENV_DISABLE_AUTO_UPDATE = "INSIGHTVM_DISABLE_AUTO_UPDATE"
 
@@ -278,6 +287,7 @@ data class Config(
                 tags = csv(env[ENV_TAGS]).toSet(),
                 excludeTags = csv(env[ENV_EXCLUDE_TAGS]).toSet(),
                 allowAdminCommands = flag(ENV_ALLOW_ADMIN_COMMANDS),
+                allowSecretTools = flag(ENV_ALLOW_SECRET_TOOLS),
             )
             val keepRecordLinks = flag(ENV_KEEP_RECORD_LINKS)
             val exportDisabled = flag(ENV_DISABLE_EXPORT)

@@ -26,17 +26,22 @@ class McpServerFactoryTest {
     fun `full registration counts`() {
         val config = testConfig()
         val built = buildInsightVmServer(client(config), config, TEST_CATALOGS)
-        assertEquals(342, built.selected.size) // 343 ops minus the gated admin command
-        assertEquals("registered 342/343 API tools (console=329, cloud=13)", built.summary)
-        assertEquals(329, built.selected.count { it.family == ApiFamily.CONSOLE })
+        // 343 ops minus the gated admin command and the six gated secret tools.
+        assertEquals(336, built.selected.size)
+        assertEquals("registered 336/343 API tools (console=323, cloud=13)", built.summary)
+        assertEquals(323, built.selected.count { it.family == ApiFamily.CONSOLE })
+
+        val open = testConfig(filter = ToolFilter(allowAdminCommands = true, allowSecretTools = true))
+        val all = buildInsightVmServer(client(open), open, TEST_CATALOGS)
+        assertEquals("registered 343/343 API tools (console=330, cloud=13) [ADMIN COMMANDS ENABLED, SECRET TOOLS ENABLED]", all.summary)
     }
 
     @Test
     fun `console-only and cloud-only`() {
         val consoleOnly = testConfig(cloud = null)
         val b1 = buildInsightVmServer(client(consoleOnly), consoleOnly)
-        assertEquals(329, b1.selected.size)
-        assertEquals("registered 329/330 API tools (console=329)", b1.summary)
+        assertEquals(323, b1.selected.size)
+        assertEquals("registered 323/330 API tools (console=323)", b1.summary)
 
         val cloudOnly = testConfig(console = null)
         val b2 = buildInsightVmServer(client(cloudOnly), cloudOnly)

@@ -43,7 +43,8 @@ class CatalogToolsTableDrivenTest {
 
     @BeforeAll
     fun start() = runBlocking {
-        harness = mcpHarness(testConfig(filter = ToolFilter(allowAdminCommands = true)))
+        // Both gates open, so every catalog operation is registered and exercised.
+        harness = mcpHarness(testConfig(filter = ToolFilter(allowAdminCommands = true, allowSecretTools = true)))
         toolsByName = harness.listTools().associateBy { it.name }
     }
 

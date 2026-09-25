@@ -221,6 +221,7 @@ object CatalogTools {
             putJsonArray("excludeTags") { config.filter.excludeTags.sorted().forEach { add(it) } }
             putJsonArray("tools") { config.filter.nameGlobs.forEach { add(it) } }
             put("adminCommandsEnabled", config.filter.allowAdminCommands)
+            put("secretToolsEnabled", config.filter.allowSecretTools)
         }
         put("totalTools", selected.size + metaToolCount)
     }

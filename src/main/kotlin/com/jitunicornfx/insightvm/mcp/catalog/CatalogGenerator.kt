@@ -670,6 +670,7 @@ object CatalogGenerator {
                     // A DELETE and the console command are destructive whatever their id says.
                     destructive = !readOnly && (upper == "DELETE" || admin || !ADDITIVE_OPID.containsMatchIn(opId)),
                     admin = admin,
+                    sensitive = CatalogLoader.isSensitive(upper, path),
                     params = buildParams(op, inliner, family),
                     body = buildBody(op, upper, path, inliner)?.let { body ->
                         if (searchNote != null && (upper to path) in SEARCH_NOTE_OPS) withNote(body, searchNote) else body
@@ -698,11 +699,14 @@ object CatalogGenerator {
     /**
      * Generate every catalog, and the console's search-criteria reference, from [specDir]; validates
      * with the runtime loaders' own invariants. The console specification must carry the reference:
-     * the tool that serves it is registered whenever console tools are.
+     * the tool that serves it is registered whenever console tools are. The specifications must also
+     * still have every route in [CatalogLoader.SENSITIVE_OPS]: the secret gate is keyed by route, so
+     * a route the vendor renamed would otherwise be published as an ordinary tool, with no error.
      */
     fun generate(specDir: Path): Map<String, String> {
         val result = LinkedHashMap<String, String>()
         val allNames = HashMap<String, String>()
+        val allRoutes = HashSet<Pair<String, String>>()
         var reference: SearchCriteriaReference? = null
         for (src in SOURCES) {
             val raw = Files.readAllBytes(specDir.resolve(src.specFile))
@@ -715,11 +719,19 @@ object CatalogGenerator {
             CatalogLoader.validate(catalog, src.family)
             for (op in catalog.ops) {
                 allNames.put(op.name, src.family.id)?.let { throw CatalogGenerationException("duplicate tool name ${op.name} ($it and ${src.family.id})") }
+                allRoutes += op.method to op.path
             }
             result[src.outputFile] = output.encodeToString(Catalog.serializer(), catalog) + "\n"
         }
         val console = SOURCES.first { it.family == ApiFamily.CONSOLE }.specFile
         val found = reference ?: throw CatalogGenerationException("specs/$console has no search-criteria reference ('Fields' table) in its introduction")
+        val lost = CatalogLoader.SENSITIVE_OPS - allRoutes
+        if (lost.isNotEmpty()) {
+            throw CatalogGenerationException(
+                "the specifications no longer have ${lost.joinToString { (method, path) -> "$method $path" }}, which " +
+                    "CatalogLoader.SENSITIVE_OPS gates as returning or setting a secret; find the renamed route and update the list",
+            )
+        }
         result[SEARCH_CRITERIA_FILE] = output.encodeToString(SearchCriteriaReference.serializer(), found) + "\n"
         return result
     }

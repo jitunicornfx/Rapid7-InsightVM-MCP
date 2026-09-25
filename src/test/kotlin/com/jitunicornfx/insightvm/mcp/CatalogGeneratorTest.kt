@@ -663,6 +663,58 @@ class CatalogGeneratorTest {
         assertTrue(all.getValue("createCommand").admin)
     }
 
+    /** One minimal operation; [withId] declares the `{id}` path parameter its route needs. */
+    private fun operation(opId: String, withId: Boolean = false) = buildJsonObject {
+        put("operationId", opId)
+        if (withId) {
+            putJsonArray("parameters") {
+                add(buildJsonObject { put("name", "id"); put("in", "path"); put("required", true); putJsonObject("schema") { put("type", "integer") } })
+            }
+        }
+    }
+
+    /** Every route of `CatalogLoader.SENSITIVE_OPS`, plus the shared secret's revoke, as a spec's paths. */
+    private val secretPaths = buildJsonObject {
+        putJsonObject("/api/3/users/{id}/2FA") {
+            put("get", operation("getTwoFactorAuthenticationKey", withId = true))
+            put("post", operation("regenerateTwoFactorAuthentication", withId = true))
+            put("put", operation("setTwoFactorAuthentication", withId = true))
+        }
+        putJsonObject("/api/3/users/{id}/password") { put("put", operation("resetPassword", withId = true)) }
+        putJsonObject("/api/3/scan_engines/shared_secret") {
+            put("get", operation("getCurrentSharedSecret"))
+            put("post", operation("createSharedSecret"))
+            put("delete", operation("deleteSharedSecret"))
+        }
+    }
+
+    @Test
+    fun `build rules - the routes that return or set an authentication secret are sensitive`() {
+        val paths = JsonObject(
+            secretPaths + buildJsonObject {
+                putJsonObject("/api/3/scan_engines/shared_secret/time_to_live") { put("get", operation("getCurrentSharedSecretTimeToLive")) }
+                putJsonObject("/api/3/users/{id}") { put("get", operation("getUser", withId = true)); put("put", operation("updateUser", withId = true)) }
+            },
+        )
+        val ops = CatalogGenerator.buildCatalog(ApiFamily.CONSOLE, spec(paths), "s", "f").ops.associateBy { it.opId }
+        val sensitive = ops.values.filter { it.sensitive }
+        assertEquals(CatalogLoader.SENSITIVE_OPS, sensitive.map { it.method to it.path }.toSet())
+        assertEquals(
+            setOf(
+                "get_two_factor_authentication_key", "regenerate_two_factor_authentication", "set_two_factor_authentication",
+                "reset_password", "get_current_shared_secret", "create_shared_secret",
+            ),
+            sensitive.map { it.name }.toSet(),
+        )
+        // The flag is independent of the others: the seed read is still a read, the reset still destructive.
+        assertTrue(ops.getValue("getTwoFactorAuthenticationKey").readOnly)
+        assertTrue(ops.getValue("resetPassword").destructive)
+        // Revoking the secret returns nothing, and a neighbouring route is ordinary.
+        for (id in listOf("deleteSharedSecret", "getCurrentSharedSecretTimeToLive", "getUser", "updateUser")) {
+            assertFalse(ops.getValue(id).sensitive, id)
+        }
+    }
+
     @Test
     fun `build rules - errors`() {
         fun fails(paths: JsonObject, schemas: JsonObject = JsonObject(emptyMap())) =
@@ -933,7 +985,7 @@ class CatalogGeneratorTest {
             val e = assertFailsWith<CatalogGenerator.CatalogGenerationException> { CatalogGenerator.generate(dir) }
             assertContains(e.message!!, "specs/insightvm-console-v3.json has no search-criteria reference")
 
-            write(spec(criteriaPaths, criteriaSchemas(), criteriaIntro))
+            write(spec(JsonObject(criteriaPaths + secretPaths), criteriaSchemas(), criteriaIntro))
             val generated = CatalogGenerator.generate(dir)
             assertEquals(CatalogGenerator.OUTPUTS, generated.keys.toList())
             val reference = SearchCriteria.parse(generated.getValue(CatalogGenerator.SEARCH_CRITERIA_FILE))
@@ -943,6 +995,32 @@ class CatalogGeneratorTest {
             // The catalog was built against the same reference: its filter lists the same fields.
             val find = CatalogLoader.parse(generated.getValue("v3.json"), ApiFamily.CONSOLE).ops.single { it.opId == "findAssets" }
             assertEquals(2, find.body!!.schema.at("properties", "filters", "items", "properties", "field")["enum"]!!.jsonArray.size)
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    /**
+     * The secret gate is keyed by route, so a route the specification renames would otherwise be
+     * published as an ordinary tool: generation stops instead.
+     */
+    @Test
+    fun `generate fails when the specification lacks a route the secret gate names`() {
+        val dir = createTempDirectory("secret-specs")
+        try {
+            val cloud = spec(buildJsonObject { putJsonObject("/y") { putJsonObject("get") { put("operationId", "getY") } } })
+            Files.writeString(dir.resolve("insightvm-cloud-v4.json"), Json.encodeToString(JsonObject.serializer(), cloud))
+            val renamed = JsonObject(
+                secretPaths - "/api/3/users/{id}/password" + buildJsonObject {
+                    putJsonObject("/api/3/users/{id}/credentials") { put("put", operation("resetPassword", withId = true)) }
+                },
+            )
+            val console = spec(JsonObject(criteriaPaths + renamed), criteriaSchemas(), criteriaIntro)
+            Files.writeString(dir.resolve("insightvm-console-v3.json"), Json.encodeToString(JsonObject.serializer(), console))
+            val e = assertFailsWith<CatalogGenerator.CatalogGenerationException> { CatalogGenerator.generate(dir) }
+            assertContains(e.message!!, "PUT /api/3/users/{id}/password")
+            assertContains(e.message!!, "SENSITIVE_OPS")
+            assertFalse(e.message!!.contains("2FA"), "only the missing route is named: ${e.message}")
         } finally {
             dir.toFile().deleteRecursively()
         }

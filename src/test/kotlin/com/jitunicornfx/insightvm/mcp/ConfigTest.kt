@@ -143,6 +143,7 @@ class ConfigTest {
                 Config.ENV_EXCLUDE_TAGS to "User",
                 Config.ENV_READ_ONLY to "1",
                 Config.ENV_ALLOW_ADMIN_COMMANDS to "on",
+                Config.ENV_ALLOW_SECRET_TOOLS to "yes",
                 Config.ENV_DISABLE_UPDATE_CHECK to "true",
                 Config.ENV_DISABLE_AUTO_UPDATE to "1",
             ),
@@ -155,6 +156,8 @@ class ConfigTest {
         assertEquals(setOf("User"), c.filter.excludeTags)
         assertTrue(c.filter.readOnly)
         assertTrue(c.filter.allowAdminCommands)
+        assertTrue(c.filter.allowSecretTools)
+        assertFalse(Config.fromEnv(cloudEnv).filter.allowSecretTools, "off unless set")
         assertTrue(c.updateCheckDisabled)
         assertTrue(c.autoUpdateDisabled)
     }
@@ -208,6 +211,7 @@ class ConfigTest {
         val flags = listOf(
             Config.ENV_READ_ONLY, Config.ENV_DISABLE_EXPORT, Config.ENV_DISABLE_UPDATE_CHECK, Config.ENV_DISABLE_AUTO_UPDATE,
             Config.ENV_ALLOW_ADMIN_COMMANDS, Config.ENV_ALLOW_HTTP, Config.ENV_CONSOLE_INSECURE_TLS, Config.ENV_KEEP_RECORD_LINKS,
+            Config.ENV_ALLOW_SECRET_TOOLS,
         )
         for (flag in flags) {
             val e = assertFailsWith<IllegalArgumentException>(flag) { Config.fromEnv(consoleEnv + cloudEnv + (flag to "y")) }
@@ -281,13 +285,15 @@ class ConfigTest {
 
     @Test
     fun `ToolFilter tighten is monotonic`() {
-        val env = ToolFilter(readOnly = false, tags = setOf("Site", "Asset"), excludeTags = setOf("User"), allowAdminCommands = true)
+        val env = ToolFilter(readOnly = false, tags = setOf("Site", "Asset"), excludeTags = setOf("User"), allowAdminCommands = true, allowSecretTools = true)
         val cli = ToolFilter(readOnly = true, tags = setOf("asset", "Scan"), excludeTags = setOf("Tag"), allowAdminCommands = false, families = setOf(ApiFamily.CONSOLE), nameGlobs = listOf("get_*"))
         val t = env.tighten(cli)
         assertTrue(t.readOnly)
         assertEquals(setOf("asset"), t.tags)
         assertEquals(setOf("User", "Tag"), t.excludeTags)
         assertFalse(t.allowAdminCommands)
+        assertFalse(t.allowSecretTools)
+        assertTrue(env.tighten(env).allowSecretTools, "both must allow it")
         assertEquals(setOf(ApiFamily.CONSOLE), t.families)
         assertEquals(listOf("get_*"), t.nameGlobs)
 

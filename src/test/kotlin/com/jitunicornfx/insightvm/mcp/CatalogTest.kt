@@ -32,6 +32,14 @@ import kotlin.test.assertTrue
 
 class CatalogTest {
 
+    private companion object {
+        /** The operations that return or set an authentication secret, by tool name. */
+        val SECRET_TOOLS = setOf(
+            "get_two_factor_authentication_key", "regenerate_two_factor_authentication", "set_two_factor_authentication",
+            "reset_password", "get_current_shared_secret", "create_shared_secret",
+        )
+    }
+
     private val v3 get() = TEST_CATALOGS.getValue(ApiFamily.CONSOLE)
     private val v4 get() = TEST_CATALOGS.getValue(ApiFamily.CLOUD)
 
@@ -54,6 +62,8 @@ class CatalogTest {
         assertEquals(9, v4.ops.count { it.readOnly })
         assertEquals(3, v4.ops.count { it.destructive })
         assertEquals(1, v3.ops.count { it.admin })
+        assertEquals(SECRET_TOOLS, v3.ops.filter { it.sensitive }.map { it.name }.toSet())
+        assertTrue(v4.ops.none { it.sensitive })
         assertTrue(v4.ops.all { it.name.startsWith("cloud_") })
         assertTrue(v4.ops.none { op -> op.params.any { it.name == "region" } })
         val execute = v3.ops.single { it.admin }
@@ -96,6 +106,15 @@ class CatalogTest {
         assertTrue(bad(op("put_search", method = "PUT", path = "/api/3/assets/search").copy(readOnly = true)).contains("readOnly"))
         CatalogLoader.validate(catalog(ApiFamily.CONSOLE, op("find_assets", method = "POST", path = "/api/3/assets/search").copy(readOnly = true)), ApiFamily.CONSOLE)
         CatalogLoader.validate(catalog(ApiFamily.CLOUD, op("cloud_get_sites", method = "POST", path = "/v4/integration/sites").copy(readOnly = true)), ApiFamily.CLOUD)
+        // The secret gate is pinned the same way: a hand-edited catalog can neither clear the flag on
+        // one of the listed routes nor set it on any other.
+        val idParam = listOf(CatalogParam("id", "path", required = true, schema = JsonObject(emptyMap())))
+        val seed = op("get_two_factor_authentication_key", path = "/api/3/users/{id}/2FA", params = idParam)
+        assertTrue(bad(seed).contains("sensitive"))
+        assertTrue(bad(op("get_current_shared_secret", path = "/api/3/scan_engines/shared_secret")).contains("sensitive"))
+        assertTrue(bad(op("get_site").copy(sensitive = true)).contains("sensitive"))
+        assertTrue(bad(op("delete_shared_secret", method = "DELETE", path = "/api/3/scan_engines/shared_secret").copy(sensitive = true)).contains("sensitive"))
+        CatalogLoader.validate(catalog(ApiFamily.CONSOLE, seed.copy(sensitive = true)), ApiFamily.CONSOLE)
         assertTrue(bad(op("t", path = "/a/{id}")).contains("placeholders"))
         assertTrue(bad(op("t", params = listOf(CatalogParam("id", "path", schema = JsonObject(emptyMap()))))).contains("placeholders"))
         assertTrue(bad(op("h", params = listOf(CatalogParam("x", "header", schema = JsonObject(emptyMap()))))).contains("location"))
@@ -168,6 +187,9 @@ class CatalogTest {
         assertTrue(summary.contains("read-only") && summary.contains("tags=Site"), summary)
         val loud = CatalogFilter.summarize(emptyList(), cats, ToolFilter(allowAdminCommands = true, excludeTags = setOf("User"), nameGlobs = listOf("x*")))
         assertTrue(loud.contains("ADMIN COMMANDS ENABLED") && loud.contains("exclude-tags=User") && loud.contains("tools=x*"), loud)
+        assertFalse(loud.contains("SECRET"), loud)
+        val secrets = CatalogFilter.summarize(emptyList(), cats, ToolFilter(allowSecretTools = true))
+        assertTrue(secrets.endsWith("[SECRET TOOLS ENABLED]"), secrets)
         assertFalse(CatalogFilter.summarize(emptyList(), cats, ToolFilter()).contains("["))
     }
 
@@ -177,12 +199,44 @@ class CatalogTest {
         val readOnly = CatalogFilter.select(TEST_CATALOGS, ToolFilter(readOnly = true))
         val names = readOnly.map { it.op.name }.toSet()
         for (name in searches) assertTrue(name in names, name)
-        assertEquals(182 + 9, readOnly.size)
-        assertTrue(readOnly.all { it.op.readOnly && !it.op.destructive && !it.op.admin })
+        // Every console read but the two that return a secret, plus every cloud read.
+        assertEquals(182 - 2 + 9, readOnly.size)
+        assertTrue(readOnly.all { it.op.readOnly && !it.op.destructive && !it.op.admin && !it.op.sensitive })
         // Without the searches, read-only cloud mode could not list a single site, asset or vulnerability.
         val cloud = CatalogFilter.select(TEST_CATALOGS, ToolFilter(readOnly = true, families = setOf(ApiFamily.CLOUD)))
         assertEquals(9, cloud.size)
         assertTrue(cloud.map { it.op.name }.containsAll(searches.filter { it.startsWith("cloud_") }))
+    }
+
+    /**
+     * Regression: get_two_factor_authentication_key returns any user's TOTP seed and
+     * get_current_shared_secret the engine pairing secret. Both are GETs, so --read-only kept them,
+     * and a single injected instruction could pull either into the transcript.
+     */
+    @Test
+    fun `tools that return or set authentication secrets are not registered by default, even under read-only`() {
+        fun names(filter: ToolFilter) = CatalogFilter.select(TEST_CATALOGS, filter).map { it.op.name }.toSet()
+        for (filter in listOf(ToolFilter(), ToolFilter(readOnly = true), ToolFilter(allowAdminCommands = true))) {
+            assertEquals(emptySet(), names(filter) intersect SECRET_TOOLS, filter.toString())
+        }
+        // A glob naming one does not reach it either: the gate comes before the name filters.
+        assertEquals(emptySet(), names(ToolFilter(nameGlobs = listOf("get_two_factor_authentication_key", "*shared_secret"))) intersect SECRET_TOOLS)
+
+        // The explicit opt-in registers all six; with --read-only as well, only the two reads.
+        assertEquals(SECRET_TOOLS, names(ToolFilter(allowSecretTools = true)) intersect SECRET_TOOLS)
+        assertEquals(
+            setOf("get_two_factor_authentication_key", "get_current_shared_secret"),
+            names(ToolFilter(readOnly = true, allowSecretTools = true)) intersect SECRET_TOOLS,
+        )
+        // It opens this gate only: execute_command stays behind its own.
+        assertFalse("execute_command" in names(ToolFilter(allowSecretTools = true)))
+        assertEquals(343 - 1 - SECRET_TOOLS.size, names(ToolFilter()).size)
+
+        // For the startup warning: globs that match only gated tools (not ones that match nothing).
+        assertEquals(
+            listOf("*two_factor*", "Reset_Password"),
+            CatalogFilter.secretOnlyGlobs(TEST_CATALOGS, listOf("*two_factor*", "*secret*", "get_site", "nothing_*", "Reset_Password")),
+        )
     }
 
     @Test

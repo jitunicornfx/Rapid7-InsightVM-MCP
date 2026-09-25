@@ -34,6 +34,7 @@ Everything is configured through environment variables. Configure one or both AP
 | `INSIGHTVM_READ_ONLY` | | `0` | Register only read-only tools: every `GET`, plus the five query-only POST searches |
 | `INSIGHTVM_TAGS` / `INSIGHTVM_EXCLUDE_TAGS` | | all | Comma-separated API tags to include / hide |
 | `INSIGHTVM_ALLOW_ADMIN_COMMANDS` | | `0` | Register `execute_command` (arbitrary console command execution) |
+| `INSIGHTVM_ALLOW_SECRET_TOOLS` | | `0` | Register the six tools that return or set authentication secrets: a user's 2FA seed (read, regenerate, set) or password, and the scan-engine pairing secret (read, create). Off by default, `--read-only` included |
 | `INSIGHTVM_ALLOW_HTTP` | | `0` | Permit cleartext `http://` API URLs (lab use only) |
 | `INSIGHTVM_TIMEOUT_MS` | | `60000` | Per-request timeout |
 | `INSIGHTVM_MAX_RESULT_CHARS` | | `200000` | Characters of API data one tool result may carry (~50k tokens). See [Large results](#large-results) |
@@ -86,11 +87,13 @@ java -jar build/libs/rapid7-insightvm-mcp-0.2.1-all.jar --http --host 127.0.0.1 
 | `--api console\|cloud\|both` | Which configured family to expose |
 | `--tools 'get_site*'` | Glob on tool names (repeatable, case-insensitive) |
 | `--allow-admin-commands` | Enable `execute_command` (off by default) |
+| `--allow-secret-tools` | Enable the six tools that return or set authentication secrets (off by default, `--read-only` included) |
 | `--no-update-check`, `--no-auto-update` | Update behaviour |
 
-Command-line flags can only tighten what the environment allows; `--allow-admin-commands` is the single explicit exception.
-If the filters leave no API tool at all, the server stops at startup and lists the valid tags. A tag, excluded tag
-or glob that matches nothing is reported on stderr as a warning.
+Command-line flags can only tighten what the environment allows; `--allow-admin-commands` and `--allow-secret-tools`
+are the two explicit exceptions. If the filters leave no API tool at all, the server stops at startup and lists the
+valid tags. A tag, excluded tag or glob that matches nothing is reported on stderr as a warning, and so is a glob
+that names only secret tools while they are gated.
 
 ### Use with Claude Desktop
 
@@ -194,7 +197,7 @@ the tool.
 343 tools is more than some clients handle comfortably. Recommended profiles:
 
 ```bash
---read-only                                   # 191 tools, nothing can change
+--read-only                                   # 189 tools, nothing can change
 --tags Site,Asset,Vulnerability,Scan          # day-to-day vulnerability management
 --api cloud                                   # just the 13 Insight Platform tools
 --tools 'get_*' --tools 'cloud_*'             # custom allow-list by glob
@@ -254,11 +257,15 @@ Summarised here; details and residual risks in [docs/SECURITY.md](docs/SECURITY.
 * **Dangerous operations** — `execute_command` is unregistered unless `--allow-admin-commands` *and* then requires
   `confirm="EXECUTE"`; every mutation that is not purely additive is flagged `destructiveHint`, including list
   replacements, status changes and credential resets; `--read-only` removes every mutation.
+* **Secrets** — the six tools that return or set an authentication secret (`get_two_factor_authentication_key` returns
+  any user's TOTP seed, `get_current_shared_secret` the engine pairing secret) are unregistered unless
+  `--allow-secret-tools`, even under `--read-only`, and the export tool refuses them even then.
 * **TLS** — strict by default; trust a private CA with `INSIGHTVM_CONSOLE_CA_CERT`; `INSECURE_TLS` is explicit and loud.
 * **Result size** — two tiers: a wire-byte memory guard and a character budget for what reaches the model, with a
   degradation ladder that keeps trimmed JSON valid and always says what it dropped, outside the fence.
 * **Spooled files** — `insightvm_export_to_file` is the only tool that writes to disk. It takes no path, names files
-  itself inside a user-only directory, refuses state-changing operations, and cannot reach a tool the filters hid.
+  itself inside a user-only directory, refuses state-changing and secret-returning operations, and cannot reach a tool
+  the filters hid.
 
 ### Troubleshooting a start-up failure
 

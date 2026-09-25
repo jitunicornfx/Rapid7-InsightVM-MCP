@@ -96,9 +96,14 @@ object ExportTools {
      * (`CatalogLoader.QUERY_ONLY_OPS`, pinned by method and path), so the export tool and
      * `--read-only` agree on what a read is and there is no second list to drift. `admin` and
      * `destructive` operations are refused as well, whatever the catalog says about reading.
+     *
+     * So is a `sensitive` one, even when `--allow-secret-tools` registered it. That flag lets the
+     * model see a secret in the conversation; an export would also write it to a spool file that
+     * outlives the conversation (and put it in the summary's samples), which nobody opted into. The
+     * target is resolved against the registered selection, so without the flag it is unknown anyway.
      */
     internal fun exportable(op: CatalogOp): Boolean =
-        !op.admin && !op.destructive && op.readOnly
+        !op.admin && !op.destructive && !op.sensitive && op.readOnly
 
     internal fun modeFor(op: CatalogOp): ExportMode = when {
         PagingDefaults.hasCursor(op) -> ExportMode.CURSOR_V4
@@ -141,6 +146,12 @@ object ExportTools {
                     "Only tools registered on this server can be exported — use ${CatalogTools.TOOL_GROUPS_TOOL} to find one.",
             )
         val (family, op) = selection
+        if (op.sensitive) {
+            return errorResult(
+                "'${op.name}' cannot be exported: it returns or sets an authentication secret, and this server never " +
+                    "writes one to a file.",
+            )
+        }
         if (!exportable(op)) {
             return errorResult(
                 "'${op.name}' cannot be exported: it changes state (${op.method} ${op.path}). " +

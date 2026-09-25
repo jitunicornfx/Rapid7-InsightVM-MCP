@@ -94,6 +94,54 @@ class MainTest {
     }
 
     @Test
+    fun `secret tools stay off by default and can be enabled from the cli or the environment, with read-only too`() {
+        val (off, servedOff) = command()
+        assertEquals(0, off.test("--read-only").statusCode)
+        assertFalse(servedOff.single().config.filter.allowSecretTools)
+
+        // Like --allow-admin-commands, the flag loosens the environment, and --read-only does not undo it.
+        val (cli, servedCli) = command()
+        assertEquals(0, cli.test("--allow-secret-tools --read-only").statusCode)
+        val f = servedCli.single().config.filter
+        assertTrue(f.allowSecretTools)
+        assertTrue(f.readOnly)
+        assertFalse(f.allowAdminCommands, "one gate does not open the other")
+
+        val (env, servedEnv) = command { testConfig(filter = ToolFilter(allowSecretTools = true)) }
+        assertEquals(0, env.test("--read-only").statusCode)
+        assertTrue(servedEnv.single().config.filter.allowSecretTools)
+    }
+
+    @Test
+    fun `a glob that names only secret tools is explained rather than silently dropped`() {
+        // Alone, it selects nothing, so the server stops, and the warning says which flag it needs.
+        val (gated, served) = command()
+        val alone = gated.test("--tools get_two_factor_authentication_key")
+        assertEquals(1, alone.statusCode, alone.output)
+        assertContains(alone.stderr, "'get_two_factor_authentication_key' names only tools that return or set authentication secrets")
+        assertContains(alone.stderr, "--allow-secret-tools")
+        assertContains(alone.stderr, Config.ENV_ALLOW_SECRET_TOOLS)
+        assertTrue(served.isEmpty())
+
+        // Beside another glob the server starts, and still says why that one registered nothing.
+        val (mixed, servedMixed) = command()
+        val partial = mixed.test("--tools '*two_factor*' --tools 'get_site'")
+        assertEquals(0, partial.statusCode, partial.output)
+        assertContains(partial.stderr, "'*two_factor*' names only tools")
+        assertFalse(partial.stderr.contains("'get_site'"), partial.stderr)
+        assertEquals(1, servedMixed.size)
+
+        // A glob that also matches ordinary tools, or the flag itself, earns no warning.
+        val (broad, _) = command()
+        assertFalse(broad.test("--tools '*secret*'").stderr.contains("WARNING"))
+        val (allowed, servedAllowed) = command()
+        val ok = allowed.test("--allow-secret-tools --tools get_two_factor_authentication_key")
+        assertEquals(0, ok.statusCode, ok.output)
+        assertFalse(ok.stderr.contains("WARNING"), ok.stderr)
+        assertEquals(1, servedAllowed.size)
+    }
+
+    @Test
     fun `no-update-check implies no-auto-update`() {
         val (cmd, served) = command { testConfig().copy(updateCheckDisabled = false, autoUpdateDisabled = false) }
         assertEquals(0, cmd.test("--no-update-check").statusCode)
@@ -231,10 +279,10 @@ class MainTest {
     fun `help lists every switch and environment variable`() {
         val (cmd, _) = command()
         val help = cmd.test("--help").output
-        listOf("--stdio", "--http", "--host", "--port", "3072", "--read-only", "--tags", "--exclude-tags", "--api", "--tools", "--allow-admin-commands", "--no-auto-update", "--no-update-check").forEach {
+        listOf("--stdio", "--http", "--host", "--port", "3072", "--read-only", "--tags", "--exclude-tags", "--api", "--tools", "--allow-admin-commands", "--allow-secret-tools", "--no-auto-update", "--no-update-check").forEach {
             assertContains(help, it)
         }
-        listOf(Config.ENV_CONSOLE_URL, Config.ENV_API_KEY, Config.ENV_MCP_AUTH_TOKEN, Config.ENV_CONSOLE_CA_CERT, Config.ENV_READ_ONLY).forEach { assertContains(help, it) }
+        listOf(Config.ENV_CONSOLE_URL, Config.ENV_API_KEY, Config.ENV_MCP_AUTH_TOKEN, Config.ENV_CONSOLE_CA_CERT, Config.ENV_READ_ONLY, Config.ENV_ALLOW_SECRET_TOOLS).forEach { assertContains(help, it) }
         assertContains(help, "aps2")
     }
 

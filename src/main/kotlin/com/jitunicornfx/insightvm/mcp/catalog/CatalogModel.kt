@@ -54,6 +54,11 @@ data class CatalogOp(
     val readOnly: Boolean,
     val destructive: Boolean = false,
     val admin: Boolean = false,
+    /**
+     * Returns or sets an authentication secret (a user's 2FA seed or password, the engine pairing
+     * secret), so it is registered only with `--allow-secret-tools`. See [CatalogLoader.SENSITIVE_OPS].
+     */
+    val sensitive: Boolean = false,
     val params: List<CatalogParam> = emptyList(),
     val body: CatalogBody? = null,
     val responses: CatalogResponses = CatalogResponses(),

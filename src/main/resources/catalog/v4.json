@@ -20,6 +20,7 @@
    "readOnly": true,
    "destructive": false,
    "admin": false,
+   "sensitive": false,
    "params": [],
    "body": null,
    "responses": {
@@ -38,6 +39,7 @@
    "readOnly": true,
    "destructive": false,
    "admin": false,
+   "sensitive": false,
    "params": [
     {
      "name": "cursor",
@@ -170,6 +172,7 @@
    "readOnly": true,
    "destructive": false,
    "admin": false,
+   "sensitive": false,
    "params": [
     {
      "name": "id",
@@ -254,6 +257,7 @@
    "readOnly": true,
    "destructive": false,
    "admin": false,
+   "sensitive": false,
    "params": [
     {
      "name": "includeDetails",
@@ -304,6 +308,7 @@
    "readOnly": false,
    "destructive": false,
    "admin": false,
+   "sensitive": false,
    "params": [],
    "body": {
     "contentType": "application/json",
@@ -374,6 +379,7 @@
    "readOnly": true,
    "destructive": false,
    "admin": false,
+   "sensitive": false,
    "params": [
     {
      "name": "page",
@@ -413,6 +419,7 @@
    "readOnly": true,
    "destructive": false,
    "admin": false,
+   "sensitive": false,
    "params": [
     {
      "name": "id",
@@ -442,6 +449,7 @@
    "readOnly": false,
    "destructive": true,
    "admin": false,
+   "sensitive": false,
    "params": [
     {
      "name": "id",
@@ -484,6 +492,7 @@
    "readOnly": false,
    "destructive": true,
    "admin": false,
+   "sensitive": false,
    "params": [
     {
      "name": "id",
@@ -536,6 +545,7 @@
    "readOnly": true,
    "destructive": false,
    "admin": false,
+   "sensitive": false,
    "params": [
     {
      "name": "id",
@@ -576,6 +586,7 @@
    "readOnly": false,
    "destructive": true,
    "admin": false,
+   "sensitive": false,
    "params": [
     {
      "name": "id",
@@ -605,6 +616,7 @@
    "readOnly": true,
    "destructive": false,
    "admin": false,
+   "sensitive": false,
    "params": [
     {
      "name": "cursor",
@@ -667,6 +679,7 @@
    "readOnly": true,
    "destructive": false,
    "admin": false,
+   "sensitive": false,
    "params": [
     {
      "name": "cursor",

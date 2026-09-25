@@ -203,13 +203,16 @@ class ExportToolsTest {
             assertTrue(ExportTools.exportable(op))
         }
         assertEquals(
-            all.values.filter { it.readOnly }.map { it.name }.toSet(),
+            all.values.filter { it.readOnly && !it.sensitive }.map { it.name }.toSet(),
             all.values.filter { ExportTools.exportable(it) }.map { it.name }.toSet(),
-            "exactly the read-only operations are exportable",
+            "exactly the read-only operations are exportable, less the two that return a secret",
         )
-        // The admin and destructive refusals hold even for an operation marked read-only.
+        // The admin, destructive and secret refusals hold even for an operation marked read-only.
         assertFalse(ExportTools.exportable(all.getValue("get_assets").copy(destructive = true)))
         assertFalse(ExportTools.exportable(all.getValue("get_assets").copy(admin = true)))
+        assertFalse(ExportTools.exportable(all.getValue("get_assets").copy(sensitive = true)))
+        assertFalse(ExportTools.exportable(all.getValue("get_two_factor_authentication_key")))
+        assertFalse(ExportTools.exportable(all.getValue("get_current_shared_secret")))
         assertFalse(ExportTools.exportable(all.getValue("delete_site")))
         assertFalse(ExportTools.exportable(all.getValue("execute_command")))
         assertFalse(ExportTools.exportable(all.getValue("update_site")))
