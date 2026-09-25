@@ -7,7 +7,7 @@ import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.header
-import io.ktor.client.request.request
+import io.ktor.client.request.prepareRequest
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
@@ -30,9 +30,9 @@ import java.util.Base64
  *    TLS trust ([TlsSupport]).
  *  - Cloud Integrations (v4): `X-Api-Key` against the regional Insight Platform host.
  *
- * Responses are never thrown on non-2xx; bodies are read through a size cap so a hostile or
- * runaway response cannot exhaust memory; redirects are never followed (a 3xx could otherwise
- * bounce credentials to an arbitrary `Location`).
+ * Responses are never thrown on non-2xx; bodies are streamed through a size cap that stops the
+ * transfer, so a hostile or runaway response cannot exhaust memory; redirects are never followed
+ * (a 3xx could otherwise bounce credentials to an arbitrary `Location`).
  */
 class Rapid7Client(
     private val config: Config,
@@ -135,7 +135,7 @@ class Rapid7Client(
         accept: ContentType = ContentType.Application.Json,
     ): ApiResponse {
         require(path.startsWith("/")) { "path must start with '/'" }
-        val response = httpFor(family).request(baseUrlFor(family) + path) {
+        return httpFor(family).prepareRequest(baseUrlFor(family) + path) {
             this.method = method
             applyAuth(family)
             header(HttpHeaders.Accept, accept.toString())
@@ -152,19 +152,17 @@ class Rapid7Client(
                     setBody(rawBody)
                 }
             }
-        }
-        return response.toApiResponse()
+        }.execute { it.toApiResponse() }
     }
 
     /** GET an absolute URL returned by the API itself, refused unless it targets the configured origin. */
     suspend fun requestAbsolute(family: ApiFamily, url: String, accept: ContentType = ContentType.Application.Json): ApiResponse {
         require(isAllowedFollowUrl(family, url)) { "Refusing to follow a URL outside the configured ${family.displayName} origin." }
-        val response = httpFor(family).request(url) {
+        return httpFor(family).prepareRequest(url) {
             method = HttpMethod.Get
             applyAuth(family)
             header(HttpHeaders.Accept, accept.toString())
-        }
-        return response.toApiResponse()
+        }.execute { it.toApiResponse() }
     }
 
     private fun io.ktor.client.request.HttpRequestBuilder.applyAuth(family: ApiFamily) {
@@ -177,6 +175,14 @@ class Rapid7Client(
         }
     }
 
+    /**
+     * Read this response through the [Config.maxResponseBytes] cap.
+     *
+     * Only ever call this inside `prepareRequest(...).execute { }`. There the body is still the live
+     * socket stream, so [readCapped] stops the transfer at the cap and its `cancel` aborts the rest.
+     * `request()` instead has Ktor save the ENTIRE body to memory before returning, which leaves the
+     * cap trimming bytes the heap has already paid for — twice over, once buffered and once copied.
+     */
     private suspend fun HttpResponse.toApiResponse(): ApiResponse {
         val limit = config.maxResponseBytes
         val (read, truncated) = readCapped(bodyAsChannel(), limit)

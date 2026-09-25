@@ -1,6 +1,7 @@
 package com.jitunicornfx.insightvm.mcp
 
 import com.jitunicornfx.insightvm.mcp.catalog.ApiFamily
+import com.jitunicornfx.insightvm.mcp.testutil.MeteredBody
 import com.jitunicornfx.insightvm.mcp.testutil.TEST_CLOUD
 import com.jitunicornfx.insightvm.mcp.testutil.TEST_CONSOLE
 import com.jitunicornfx.insightvm.mcp.testutil.testConfig
@@ -129,6 +130,40 @@ class Rapid7ClientTest {
         val exact = client.request(ApiFamily.CLOUD, HttpMethod.Get, "/x")
         assertFalse(exact.truncated)
         assertEquals(100, exact.text!!.length)
+        client.close()
+    }
+
+    /**
+     * Regression: request() had Ktor save the whole body to memory before readCapped saw a byte, so
+     * the cap only trimmed what the heap had already paid for — a console streaming a large log
+     * download or report was an OutOfMemoryError. Read as a stream, the cap stops the transfer.
+     */
+    @Test
+    fun `the response cap stops the transfer rather than trimming a buffered body`() = runBlocking {
+        val limit = 1L * 1024 * 1024
+        val body = MeteredBody(totalBytes = 64L * 1024 * 1024)
+        val e = MockEngine { respond(body.channel(), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/octet-stream")) }
+        val client = Rapid7Client(testConfig(maxResponseBytes = limit), consoleEngine = e, cloudEngine = engine())
+
+        val r = client.request(ApiFamily.CONSOLE, HttpMethod.Get, "/api/3/administration/logs")
+
+        assertTrue(r.truncated)
+        assertEquals(limit.toInt(), r.bytes!!.size)
+        assertTrue(body.wasStreamed(kept = limit), "${body.produced.get()} of ${body.totalBytes} bytes were pulled to return $limit")
+        client.close()
+    }
+
+    @Test
+    fun `requestAbsolute streams under the same cap`() = runBlocking {
+        val body = MeteredBody(totalBytes = 64L * 1024 * 1024)
+        val e = MockEngine { respond(body.channel(), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "text/plain")) }
+        val client = Rapid7Client(testConfig(maxResponseBytes = 1024), consoleEngine = e, cloudEngine = engine())
+
+        val r = client.requestAbsolute(ApiFamily.CONSOLE, "https://console.test:3780/api/3/sites?page=2")
+
+        assertTrue(r.truncated)
+        assertEquals(1024, r.text!!.length)
+        assertTrue(body.wasStreamed(kept = 1024), "${body.produced.get()} of ${body.totalBytes} bytes were pulled to return 1024")
         client.close()
     }
 

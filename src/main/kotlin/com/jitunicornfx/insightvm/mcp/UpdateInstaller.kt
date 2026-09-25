@@ -224,44 +224,74 @@ object UpdateInstaller {
             var hops = 0
             while (true) {
                 if (!UpdateChecker.isAllowedDownloadUrl(url)) return null
-                val response = client.get(url) {
+                // execute { }, not get(): get() buffers the ENTIRE body in memory before returning,
+                // so the size stop in streamVerified would only ever see bytes the heap had already
+                // accepted — an endless answer from any hop was an OutOfMemoryError in the server.
+                // Leaving the block cancels whatever of the body is still unread.
+                val hop = client.prepareGet(url) {
                     header(HttpHeaders.Accept, "application/octet-stream")
                     header(HttpHeaders.UserAgent, "$SERVER_NAME/$SERVER_VERSION")
-                }
-                if (response.status.value in 300..399) {
-                    // Follow the CDN hop ourselves so the allow-list is re-checked for the target.
-                    val location = response.headers[HttpHeaders.Location] ?: return null
-                    if (++hops > MAX_REDIRECTS) return null
-                    url = location
-                    continue
-                }
-                if (response.status.value !in 200..299) return null
-                val declared = response.contentLength()
-                if (declared != null && declared > asset.sizeBytes) return null
-
-                val digest = MessageDigest.getInstance("SHA-256")
-                var written = 0L
-                val channel = response.bodyAsChannel()
-                destination.outputStream().buffered().use { out ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        val read = channel.readAvailable(buffer, 0, buffer.size)
-                        if (read == -1) break
-                        if (read == 0) continue
-                        written += read
-                        // Hard-stop a response that exceeds the advertised size rather than
-                        // buffering an unbounded stream to disk.
-                        if (written > asset.sizeBytes) return null
-                        digest.update(buffer, 0, read)
-                        out.write(buffer, 0, read)
+                }.execute { response ->
+                    if (response.status.value in 300..399) {
+                        Hop.Redirect(response.headers[HttpHeaders.Location])
+                    } else {
+                        Hop.Final(streamVerified(response, asset, destination))
                     }
                 }
-                if (written != asset.sizeBytes) return null
-                return digest.digest().toHex()
+                when (hop) {
+                    is Hop.Final -> return hop.digest
+                    is Hop.Redirect -> {
+                        // Follow the CDN hop ourselves so the allow-list is re-checked for the target.
+                        val location = hop.location ?: return null
+                        if (++hops > MAX_REDIRECTS) return null
+                        url = location
+                    }
+                }
             }
             @Suppress("UNREACHABLE_CODE") null
         }
     }.getOrNull()
+
+    /** What one request in the redirect chain turned out to be, carried out of `execute { }`. */
+    private sealed interface Hop {
+        data class Redirect(val location: String?) : Hop
+        data class Final(val digest: String?) : Hop
+    }
+
+    /**
+     * Write a final (non-redirect) [response] to [destination], hashing and size-capping it as it
+     * streams. Returns the SHA-256 of exactly the bytes written, or null when the response is not a
+     * success or its length disagrees with what the release advertised.
+     */
+    private suspend fun streamVerified(
+        response: HttpResponse,
+        asset: UpdateChecker.ReleaseAsset,
+        destination: File,
+    ): String? {
+        if (response.status.value !in 200..299) return null
+        val declared = response.contentLength()
+        if (declared != null && declared > asset.sizeBytes) return null
+
+        val digest = MessageDigest.getInstance("SHA-256")
+        var written = 0L
+        val channel = response.bodyAsChannel()
+        destination.outputStream().buffered().use { out ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val read = channel.readAvailable(buffer, 0, buffer.size)
+                if (read == -1) break
+                if (read == 0) continue
+                written += read
+                // Hard-stop a response that exceeds the advertised size rather than writing an
+                // unbounded stream to disk. Returning ends the transfer: see downloadTo.
+                if (written > asset.sizeBytes) return null
+                digest.update(buffer, 0, read)
+                out.write(buffer, 0, read)
+            }
+        }
+        if (written != asset.sizeBytes) return null
+        return digest.digest().toHex()
+    }
 
     /**
      * Replace [target] with [staged].

@@ -39,7 +39,8 @@ object UpdateChecker {
 
     /**
      * Largest response body inspected. A release payload is a few KB; anything beyond this is
-     * refused unread rather than buffered, so a hostile or runaway endpoint cannot exhaust memory.
+     * refused, and its transfer is stopped at this many bytes rather than buffered, so a hostile or
+     * runaway endpoint cannot exhaust memory.
      */
     const val MAX_BODY_BYTES = 1_000_000L
 
@@ -214,17 +215,26 @@ object UpdateChecker {
             val body = run {
                 val http = if (engine != null) HttpClient(engine) { configure() } else HttpClient(OkHttp) { configure() }
                 http.use { client ->
-                    val response = client.get(LATEST_RELEASE_URL) {
+                    // execute { }, not get(): get() buffers the ENTIRE body in memory before
+                    // returning, so no check made afterwards could bound what was read.
+                    client.prepareGet(LATEST_RELEASE_URL) {
                         header(HttpHeaders.Accept, "application/vnd.github+json")
                         header("X-GitHub-Api-Version", "2022-11-28")
                         // GitHub requires a User-Agent; identify the server without leaking anything.
                         header(HttpHeaders.UserAgent, "$SERVER_NAME/$currentVersion")
-                    }
-                    val declaredLength = response.contentLength()
-                    when {
-                        response.status.value !in 200..299 -> null
-                        declaredLength != null && declaredLength > MAX_BODY_BYTES -> null
-                        else -> response.bodyAsText()
+                    }.execute { response ->
+                        val declaredLength = response.contentLength()
+                        when {
+                            response.status.value !in 200..299 -> null
+                            // An early exit only. api.github.com answers gzipped, and OkHttp strips
+                            // Content-Length when it decodes that transparently, so this rarely fires;
+                            // the streamed cap below is the bound that actually holds.
+                            declaredLength != null && declaredLength > MAX_BODY_BYTES -> null
+                            else -> {
+                                val (bytes, truncated) = Rapid7Client.readCapped(response.bodyAsChannel(), MAX_BODY_BYTES)
+                                if (truncated) null else bytes.decodeToString()
+                            }
+                        }
                     }
                 }
             }

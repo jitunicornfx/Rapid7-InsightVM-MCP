@@ -1,5 +1,6 @@
 package com.jitunicornfx.insightvm.mcp
 
+import com.jitunicornfx.insightvm.mcp.testutil.MeteredBody
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
@@ -128,6 +129,24 @@ class UpdateInstallerTest {
 
         assertTrue(outcome is UpdateInstaller.Outcome.Failed, "an over-long response must abort")
         assertEquals(originalDigest, sha256(target))
+    }
+
+    /**
+     * Regression: get() buffered the whole body in memory before returning, so the `written >
+     * sizeBytes` stop only ever saw bytes the heap had already accepted — an endless or multi-gigabyte
+     * answer from a hop was an OutOfMemoryError inside the server. Streamed, the advertised size is
+     * where the transfer stops.
+     */
+    @Test
+    fun `a download far larger than advertised is abandoned as a stream, not buffered`() = runBlocking {
+        val source = serverJar(File(tempDir, "source.jar"))
+        val body = MeteredBody(totalBytes = 64L * 1024 * 1024)
+        val engine = MockEngine { respond(body.channel(), HttpStatusCode.OK) }
+
+        val digest = UpdateInstaller.downloadTo(assetFor(source).copy(sizeBytes = 1000), File(tempDir, "staged.new"), engine)
+
+        assertNull(digest)
+        assertTrue(body.wasStreamed(kept = 1000), "${body.produced.get()} of ${body.totalBytes} bytes were pulled for a 1000-byte asset")
     }
 
     @Test

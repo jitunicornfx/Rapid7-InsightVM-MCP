@@ -1,5 +1,6 @@
 package com.jitunicornfx.insightvm.mcp
 
+import com.jitunicornfx.insightvm.mcp.testutil.MeteredBody
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
@@ -237,6 +238,44 @@ class UpdateCheckerTest {
         // started from the coroutine that serves the session, so an escaping exception is fatal.
         val nasty = MockEngine { throw IllegalStateException("boom") }
         assertFalse(UpdateChecker.check("0.1.6", nasty).updateAvailable)
+    }
+
+    /**
+     * Regression: the Content-Length guard was the only bound, and api.github.com answers gzipped,
+     * which OkHttp decodes transparently and strips the header from — so it never fired, and get()
+     * had already buffered the whole body anyway. The body here is a well-formed release that would
+     * be an update; only its size may reject it, and only the first megabyte or so may be read.
+     */
+    @Test
+    fun `an oversized release body without a Content-Length is refused after reading only the cap`() = runBlocking {
+        val body = MeteredBody(
+            totalBytes = 64L * 1024 * 1024,
+            prefix = """{"tag_name":"v99.0.0","body":"""".toByteArray(),
+            suffix = """"}""".toByteArray(),
+        )
+        val engine = MockEngine { respond(body.channel(), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json")) }
+
+        val result = UpdateChecker.check("0.1.6", engine)
+
+        assertFalse(result.updateAvailable, "a body over MAX_BODY_BYTES is not a release")
+        assertNull(engine.responseHistory.single().headers[HttpHeaders.ContentLength], "precondition: nothing declared up front")
+        assertTrue(
+            body.wasStreamed(kept = UpdateChecker.MAX_BODY_BYTES),
+            "${body.produced.get()} of ${body.totalBytes} bytes were pulled against a ${UpdateChecker.MAX_BODY_BYTES}-byte cap",
+        )
+    }
+
+    @Test
+    fun `a release body at exactly the cap is still read`() = runBlocking {
+        // The cap refuses bodies ABOVE it; the boundary itself must not be an off-by-one rejection.
+        val prefix = """{"tag_name":"v99.0.0","body":"""".toByteArray()
+        val body = MeteredBody(totalBytes = UpdateChecker.MAX_BODY_BYTES, prefix = prefix, suffix = """"}""".toByteArray())
+        val engine = MockEngine { respond(body.channel(), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json")) }
+
+        val result = UpdateChecker.check("0.1.6", engine)
+
+        assertTrue(result.updateAvailable)
+        assertEquals("99.0.0", result.latestVersion)
     }
 
     @Test
