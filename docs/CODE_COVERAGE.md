@@ -36,8 +36,9 @@ Coverage is measured with JaCoCo and **enforced**: `./gradlew check` fails below
   API family, `Accept` header, plus annotations and the untrusted-data fence on the result. Adding an operation to the
   spec automatically adds a test.
 * **`CatalogToolsBehaviourTest`** — sanitisation (HTML, binary, text), error hints per status, truncation, fence
-  neutralisation, argument rejection, the admin-command gate, filters and the meta tools. It also checks that tool
-  text and notices follow the configuration (page size, export tool, links), and pins the size of `tools/list`.
+  neutralisation, argument rejection, the admin-command and secret-tool gates, filters and the meta tools. It also
+  checks that tool text and notices follow the configuration (page size, export tool, links), and pins the size of
+  `tools/list`.
   `McpServerFactoryTest` checks that Servers built from one `CatalogTools.prepare` share every tool definition.
 * **`HttpTransportSecurityTest`** — Ktor `testApplication` against the guard: bearer, throttle, Host/Origin, CORS
   preflight, size cap, helper functions.
@@ -46,8 +47,9 @@ Coverage is measured with JaCoCo and **enforced**: `./gradlew check` fails below
 * **`HttpRuntimeTest`** — the `--http` runtime on a real socket, driving the protocol by hand where the SDK client
   would hide the behaviour: the session cap (oldest closed and answered `404`, `DELETE` releasing at once, an evicted
   legacy stream ending), an update notice dropped when the client's stream opens late and delivered within the grace
-  period, `insightvm_server_info` answering either way, and an allow-listed browser origin reaching a session on both
-  transports through the real routes.
+  period, `insightvm_server_info` answering either way, a chunked body over 4 MiB refused on both transports (the
+  guard sees no `Content-Length`, so this pins the SDK's own limit), and an allow-listed browser origin reaching a
+  session on both transports through the real routes.
 * **`UpdateStatusTest`** — every check and install state as `insightvm_server_info` reports it, including "could not
   tell" kept apart from "up to date", and no path in the payload.
 * **`Rapid7ClientTest`, `TlsSupportTest`, `ConfigTest`, `ResponseSanitizerTest`, `ArgumentBinderTest`, `CatalogTest`,
@@ -81,5 +83,5 @@ they are skipped on a Java runtime without `keytool`.
 * JUnit silently skips test methods that return a value. `@Test fun x() = runBlocking { … }` is fine only because
   `runBlocking` returns `Unit` here; if a test's last expression is an assertion that returns a value, wrap it.
   Cross-check declared `@Test` counts against `build/test-results/test/TEST-*.xml` when in doubt.
-* The catalog is loaded once per JVM in tests (`TEST_CATALOGS`); re-parsing 500 KB per test would dominate the run.
+* The catalog is loaded once per JVM in tests (`TEST_CATALOGS`); re-parsing 600 KB per test would dominate the run.
 * `verifyCatalog` (part of `check`) re-runs `CatalogGenerator` and fails on drift; `CatalogGeneratorTest` asserts the same byte-for-byte.

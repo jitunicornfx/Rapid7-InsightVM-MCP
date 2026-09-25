@@ -1,7 +1,7 @@
 # Catalog generation
 
 `CatalogGenerator` (`src/main/kotlin/com/jitunicornfx/insightvm/mcp/catalog/CatalogGenerator.kt`) generates the MCP tool catalog (`src/main/resources/catalog/v3.json`, `v4.json`) from the OpenAPI
-documents in `specs/`. The server registers one tool per catalog entry at startup and never parses
+documents in `specs/`. The server registers one tool per catalog entry its filters and gates select, and never parses
 the raw specifications. A third file, `search-criteria.json`, holds the console's search-criteria tables, which
 the `insightvm_search_criteria` tool serves (see the *Search criteria* rule below).
 
@@ -19,13 +19,16 @@ The generator serialises through the runtime's own `CatalogModel` data classes a
 `CatalogLoader.validate`, so the catalog can never drift from what the server expects. Output is deterministic
 (one-space indent, LF); `CatalogGeneratorTest` asserts the committed files are byte-identical to a fresh run.
 
+The committed catalog holds 330 v3 operations (182 read-only, 111 destructive, 1 `admin`, 6 `sensitive`) and 13 v4
+operations (9 read-only, 3 destructive). `CatalogTest` pins these counts, so a change to them is a decision.
+
 ### Rules encoded in the generator
 
 | Concern | Rule |
 |---|---|
 | Tool name | `snake_case(operationId)`; cloud (v4) tools are prefixed `cloud_` to avoid the six name collisions with v3 (`getScans`, `getScan`, `startScan`, …). |
 | `readOnlyHint` | `GET` operations, plus five POST searches that only query: `POST /api/3/assets/search`, `/api/3/sonar_queries/search`, `/v4/integration/assets`, `/v4/integration/sites` and `/v4/integration/vulnerabilities` (`CatalogLoader.QUERY_ONLY_OPS`). The loader refuses a catalog that marks any other non-`GET` read-only, or one of these five a write. `--read-only` and the export tool both go by this flag. |
-| `destructiveHint` | Every operation that is not read-only, unless its `operationId` starts with `create`, `add`, `start`, `generate`, `tag` or `reconnect` followed by a capital letter. MCP defines `false` as "only additive updates", so the default is destructive: a `PUT` that replaces a list (`set_site_scan_schedules` with `[]` removes every schedule), a status change, a password or 2FA reset, and `execute_command` are all destructive. A `DELETE` and the `admin` operation are destructive whatever their id. |
+| `destructiveHint` | Every operation that is not read-only, unless its `operationId` starts with `create`, `add`, `start`, `generate`, `tag` or `reconnect` followed by a capital letter. MCP defines `false` as "only additive updates", so the default is destructive: a `PUT` that replaces a list (`set_site_scan_schedules` with `[]` removes every schedule), a status change, a password or 2FA reset, and `execute_command` are all destructive. A `DELETE` and the `admin` operation are destructive whatever their id. At registration a destructive tool's description gains a `[destructive]` marker after its route (the `admin` operation gets its own `[ADMIN: …]` marker instead). |
 | `idempotentHint` | Not stored in the catalog: set at registration on every `PUT` and `DELETE`, `false` on other writes, and absent on reads, where MCP gives it no meaning. |
 | `admin` | `POST /api/3/administration/commands` (arbitrary console command execution). Registered only with `--allow-admin-commands`, and then still requires `confirm="EXECUTE"`. |
 | `sensitive` | The six operations that return or set an authentication secret: `GET`/`POST`/`PUT /api/3/users/{id}/2FA`, `PUT /api/3/users/{id}/password` and `GET`/`POST /api/3/scan_engines/shared_secret` (`CatalogLoader.SENSITIVE_OPS`). Registered only with `--allow-secret-tools`, whatever `--read-only` says, and never exported. The loader refuses a catalog whose flag disagrees with that list, and generation fails if any listed route is missing from the specifications. |

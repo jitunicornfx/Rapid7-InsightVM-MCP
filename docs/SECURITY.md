@@ -88,9 +88,11 @@ Out of scope: a compromised operator machine, a malicious bundled specification,
   `sonar_query_search`, `cloud_get_sites`, `cloud_search_integration_assets`,
   `cloud_search_integration_vulnerabilities`). They are pinned by method and path, and the catalog loader refuses any
   other non-`GET` marked read-only.
-* `--read-only` registers only those reads, less the two secret ones unless `--allow-secret-tools` is also given (189
-  tools). Command-line flags can only tighten the environment's filters, except `--allow-admin-commands` and
-  `--allow-secret-tools`, which each open one named gate and are logged at startup.
+* `--read-only` registers only those reads, less the two secret ones unless `--allow-secret-tools` is also given: 189
+  API tools, plus `insightvm_server_info`, `insightvm_list_tool_groups` and `insightvm_search_criteria`, which only
+  report on the server and its bundled reference. The export tool is removed (see *Spooled results*). Command-line
+  flags can only tighten the environment's filters, except `--allow-admin-commands` and `--allow-secret-tools`, which
+  each open one named gate and are logged at startup.
 * On/off variables accept only `1`/`true`/`yes`/`on` or `0`/`false`/`no`/`off`. Any other value stops the server,
   so a typo such as `INSIGHTVM_READ_ONLY=y` cannot leave a safety flag off while every mutating tool is registered.
 
@@ -129,7 +131,7 @@ Out of scope: a compromised operator machine, a malicious bundled specification,
 | DNS rebinding | On loopback binds the `Host` header must name the server (bind address, `localhost`, loopback literals, or an allow-listed origin's host) → else `421`. |
 | Browser origins | Any request carrying `Origin` must match `INSIGHTVM_HTTP_ALLOWED_ORIGINS` exactly (scheme+host+port, default ports normalised) → else `403`. `*` is ignored. |
 | CORS | Default-deny; only allow-listed origins receive CORS headers. Preflights skip the bearer check but not the origin check. |
-| Request size | Declared `Content-Length` above 4 MiB → `413`. |
+| Request size | Declared `Content-Length` above 4 MiB → `413`, before the body is read. A body that declares no length (chunked) is read by the SDK transport under its own 4 MiB limit, on `/mcp` and on the legacy message endpoint alike (the legacy route passes it the guard's figure), and refused with `413` once it passes it. A test through the real routes pins both, so an SDK upgrade that drops the limit fails the build. |
 | Sessions | Each session has its own MCP server; the tool definitions they register are built once per process and shared. At most 32 are kept: beyond that the oldest is closed, and its client gets `404` (Streamable HTTP) or sees its event stream end (legacy SSE) and initializes again. A limit that refused new sessions was rejected, because clients that exit without `DELETE` would lock the rest out for good. Any client that passes the guard can therefore close other clients' sessions by opening new ones. |
 | SDK guard | The SDK's built-in DNS-rebinding plugin is disabled because it only understands localhost binds, and it would answer `403` to an origin in `INSIGHTVM_HTTP_ALLOWED_ORIGINS`; the guard above runs before both the Streamable HTTP (`/mcp`) and legacy SSE (`/sse`) routes. A test through the real routes shows an allow-listed origin reaching a session on both, and an unlisted one refused. |
 
@@ -138,9 +140,11 @@ Out of scope: a compromised operator machine, a malicious bundled specification,
 Two tiers, because they defend different things:
 
 * **Wire bytes** — response bodies are streamed into a buffer capped at `INSIGHTVM_MAX_RESPONSE_BYTES` (16 MiB
-  default, hard ceiling 256 MiB so an environment typo cannot exhaust the heap). This bounds memory only. The cap is
-  applied in `Long` arithmetic, and a body cut mid-character has its incomplete trailing UTF-8 sequence removed so
-  decoding cannot yield U+FFFD.
+  default, hard ceiling 256 MiB so an environment typo cannot exhaust the heap). This bounds memory only: reading stops
+  at the cap and the rest of the transfer is cancelled, so an endless or oversized body is never buffered whole. The
+  cap is applied in `Long` arithmetic. A text body cut mid-character has its incomplete trailing UTF-8 sequence
+  removed so decoding cannot yield U+FFFD; a binary body is kept byte for byte, so its size and SHA-256 describe
+  exactly what arrived.
 * **Rendered characters** — `INSIGHTVM_MAX_RESULT_CHARS` (200,000, ~50k tokens) bounds what reaches the model, and is
   measured *after* markup neutralisation so escaping cannot inflate a result past the ceiling. There is deliberately
   no unlimited value; the floor is 2,000 so a misconfiguration cannot erase a diagnostic. An error body is never
@@ -149,8 +153,10 @@ Two tiers, because they defend different things:
   `StackOverflowError` from deeply nested hostile JSON is caught at every rung, and a body above 12M characters is
   never parsed into a tree at all. A structural trim keeps the document valid, parseable JSON and never touches
   `links`, `page` or `metadata`.
-* Every truncation notice is server-authored — only integers are interpolated — and is emitted **outside** the
-  untrusted-data fence, so API content can never forge one. A cut never splits a surrogate pair.
+* Every truncation notice is server-authored — it interpolates only integers, fixed setting and tool names, and the
+  trimmed array's key reduced to letters, digits, `_` and `-` — and is emitted **outside** the untrusted-data fence, so
+  API content can never forge one. It names the real reason for a cut (not JSON, too large to parse, cut off at the
+  wire cap, or nested too deeply to re-encode). A cut never splits a surrogate pair.
 * Binary payloads are inlined only up to 4 KiB of base64; anything larger goes to a file (below).
 * All per-request work is bounded by `INSIGHTVM_TIMEOUT_MS`.
 
@@ -201,29 +207,37 @@ selection**, not the raw catalog, so `--tags`, `--tools`, `--api` and `--read-on
 the catalog marks read-only can be exported, the same set `--read-only` keeps: every `GET` and the five POST
 searches, which the loader pins by method and path. `admin`, `destructive` and `sensitive` operations are refused
 unconditionally, so a secret that `--allow-secret-tools` lets into the conversation is still never written to a
-spool file. Every page goes through the normal
-`ArgumentBinder`, so unknown-parameter rejection, type coercion, string bounds and path-segment encoding apply
-unchanged. Paging uses a page index or the API's own opaque cursor token — never a URL taken from a response body,
-so no request target is ever attacker-controlled. Runs are bounded by pages, records, bytes and wall-clock. After the
-first page, a page starts only if the slowest page so far fits in the time left, and is abandoned when the budget runs
-out, so a run ends before a client's tool timeout with its summary and an exact resume point. The volume must have
-256 MiB free before the first API call is spent; the byte cap is lowered to what lies above that reserve, and free
-space is read again every 10 pages. Blocking file writes run on the I/O dispatcher, not on the threads the SDK shares
-between sessions. The API text the summary quotes (the sample
-records, and at most the first 500 characters of an API error body) sits inside the untrusted-data fence, neutralised
-like any tool result; the error body never goes into the status line or the manifest. The resume hint echoes the
-continuation cursor only as an allow-listed token.
+spool file. A binary operation's body (`download_report`, `get_logs`) is never parsed as records. Every page goes
+through the normal `ArgumentBinder`, so unknown-parameter rejection, type coercion, string bounds and path-segment
+encoding apply unchanged. Paging uses a page index or the API's own opaque cursor token — never a URL taken from a
+response body, so no request target is ever attacker-controlled.
+
+Runs are bounded by pages, records, bytes and wall-clock. After the first page, a page starts only if the slowest page
+so far fits in the time left, and is abandoned when the budget runs out, so a run ends before a client's tool timeout
+with its summary and an exact resume point. The volume must have 256 MiB free before the first API call is spent; the
+byte cap is lowered to what lies above that reserve, and free space is read again every 10 pages. Blocking file writes
+run on the I/O dispatcher, not on the threads the SDK shares between sessions. The API text the summary quotes (the
+sample records, and at most the first 500 characters of an API error body) sits inside the untrusted-data fence,
+neutralised like any tool result; the error body never goes into the status line or the manifest. The resume hint
+echoes the continuation cursor only as an allow-listed token.
 
 ### Self-update
 
 Ported from the InsightIDR server with its protections intact: exact-match GitHub host allow-list, a strict version-tag
 regex as the only remote text that reaches the model, mandatory SHA-256 verified from disk, entry-point check on the
-downloaded JAR, a cross-process lock, and staged swap-at-shutdown on Windows with rollback.
+downloaded JAR, a cross-process lock, and staged swap-at-shutdown on Windows with rollback. Both transfers are read as
+streams under a cap: the release metadata stops at 1 MB (a longer answer is a failed check), and the download stops as
+soon as it passes the size the release declares, so neither can be made to fill memory or disk.
 
 The update state reaches the model two ways, both carrying only server-authored text and versions that passed the tag
 regex, and never a path: a logging notification, which is best-effort (over HTTP a notification sent while the client
 has no event stream open is dropped, so it waits two seconds after `initialized`), and the `update` object of
 `insightvm_server_info`, answered from state the process keeps.
+
+Where the operating system allows it (Linux, macOS), the verified JAR is moved over the old one atomically: a server
+already running keeps reading the file it opened, and the next start runs the new release. It first takes the old
+JAR's permissions, since the staging file is created owner-only; a warning is printed when the move also changes the
+file's owner.
 
 Windows refuses to move anything over a JAR a JVM is running from, so there the update is written into the JAR in place
 as the server exits. That rewrite is guarded:
@@ -236,8 +250,6 @@ as the server exits. That rewrite is guarded:
   the server exits (another server installed a newer release meanwhile), the stale stage is discarded, not written.
 * **Durability.** The backup and the new bytes are each forced to disk before the backup is deleted, so a power cut
   cannot leave neither a working JAR nor a backup.
-* **Permissions.** On POSIX, where the new JAR is moved into place, it first gets the old JAR's permissions; a warning
-  is printed when the move also changes the file's owner.
 
 Housekeeping: the `<jar>.update.lock` and `<jar>.running` sidecars are 0-byte lock carriers and are never deleted.
 Abandoned `<jar>.*.new` / `<jar>.bak` files older than 24 hours are swept at startup and before each install (only
@@ -251,6 +263,10 @@ compromise of the GitHub repository or release would not be detected. Set `INSIG
 Also residual: a server that starts during the brief in-place rewrite at another server's exit can read a half-written
 JAR and fail to start, or fail on a later class load. Only versioned install paths would close that window.
 
+And on the atomic-move path (Linux, macOS) the downloaded file is not forced to disk before it is moved over the JAR,
+and that path keeps no backup. On a filesystem that can commit the rename before the data, a power cut in the moments
+after an update can leave a damaged JAR, to be replaced by hand.
+
 ## Audit findings (v0.1.0)
 
 The pre-release audit reviewed every file for the classic smells (`println` to stdout, secrets in strings, unbounded
@@ -263,9 +279,6 @@ were fixed before release:
 
 Known, accepted:
 
-* The request-size cap relies on `Content-Length`; a chunked upload is bounded by the SDK's own 4 MiB limit on the SSE
-  message endpoint but not on the Streamable HTTP endpoint. Keep the server on loopback or behind a reverse proxy that
-  enforces body limits if this matters.
 * A structural trim leaves the `page`/`metadata` object describing the full page the API returned, so its counts will
   not match the number of records left in the document. Both the in-band `_mcp_truncated` marker and the
   authoritative out-of-band notice say so explicitly.

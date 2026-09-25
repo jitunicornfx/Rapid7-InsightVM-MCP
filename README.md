@@ -3,7 +3,8 @@
 A [Model Context Protocol](https://modelcontextprotocol.io) server for Rapid7 InsightVM, written in Kotlin with the
 [MCP Kotlin SDK](https://github.com/modelcontextprotocol/kotlin-sdk). It exposes the complete
 **Security Console API v3** (330 operations) and **Insight Platform Cloud Integrations API v4** (13 operations) as MCP
-tools, generated from the official OpenAPI specifications.
+tools, generated from the official OpenAPI specifications. Seven of them are registered only when the operator opts in:
+console command execution, and six operations that return or set authentication secrets.
 
 > Coverage is derived from Rapid7's published OpenAPI documents — *Rapid7 VM API 3* and *InsightVM Cloud Integrations
 > API v4*. The documents themselves are not part of this repository; the generated catalog under
@@ -31,7 +32,7 @@ Everything is configured through environment variables. Configure one or both AP
 | `INSIGHTVM_CLOUD_BASE_URL` | | regional | Override the cloud base URL (must be `https`) |
 | `INSIGHTVM_MCP_AUTH_TOKEN` | http | — | Bearer token for `--http`; **mandatory, and at least 32 characters, when binding a non-loopback address** (e.g. `openssl rand -hex 32`). A shorter one on loopback is warned about |
 | `INSIGHTVM_HTTP_ALLOWED_ORIGINS` | | none | Comma-separated browser origins allowed in `--http` mode (`*` is ignored) |
-| `INSIGHTVM_READ_ONLY` | | `0` | Register only read-only tools: every `GET`, plus the five query-only POST searches |
+| `INSIGHTVM_READ_ONLY` | | `0` | Register only read-only tools: every `GET`, plus the five query-only POST searches. The export tool is removed too |
 | `INSIGHTVM_TAGS` / `INSIGHTVM_EXCLUDE_TAGS` | | all | Comma-separated API tags to include / hide |
 | `INSIGHTVM_ALLOW_ADMIN_COMMANDS` | | `0` | Register `execute_command` (arbitrary console command execution) |
 | `INSIGHTVM_ALLOW_SECRET_TOOLS` | | `0` | Register the six tools that return or set authentication secrets: a user's 2FA seed (read, regenerate, set) or password, and the scan-engine pairing secret (read, create). Off by default, `--read-only` included |
@@ -119,8 +120,11 @@ that names only secret tools while they are gated.
 ## Tools
 
 Tool names are the spec's `operationId` in snake_case; cloud (v4) tools carry a `cloud_` prefix. Every tool is annotated
-(`readOnlyHint`; on writes also `destructiveHint` and `idempotentHint`) and its description names the HTTP route. Only
-writes that purely add (`create_*`, `add_*`, `start_*`, `tag_*`, …) are marked non-destructive.
+(`readOnlyHint`; on writes also `destructiveHint` and `idempotentHint`) and its description names the HTTP route
+(`[v3 GET /api/3/assets]`). Only writes that purely add (`create_*`, `add_*`, `start_*`, `tag_*`, …) are marked
+non-destructive; every other write also carries a `[destructive]` marker after its route (`execute_command` an
+`[ADMIN: …]` one). `PUT` and `DELETE` tools are marked idempotent. The read-only tools are every `GET` plus five POST
+searches that only query.
 
 | API | Tag | Tools | Examples |
 |---|---|---|---|
@@ -201,10 +205,11 @@ instead of being inlined as base64. Set `INSIGHTVM_DISABLE_EXPORT=1` for a deplo
 
 ### Working with a large tool set
 
-343 tools is more than some clients handle comfortably. Recommended profiles:
+By default the server lists 340 tools: 336 API tools (the seven gated ones stay off) and its own 4. That is more than
+some clients handle comfortably, and above 128 the server says so on stderr. Recommended profiles:
 
 ```bash
---read-only                                   # 189 tools, nothing can change
+--read-only                                   # 189 API tools + 3 server tools, nothing can change
 --tags Site,Asset,Vulnerability,Scan          # day-to-day vulnerability management
 --api cloud                                   # just the 13 Insight Platform tools
 --tools 'get_*' --tools 'cloud_*'             # custom allow-list by glob
@@ -222,7 +227,7 @@ flowchart LR
         direction TB
         T1[stdio] --> F
         T2["Streamable HTTP /mcp<br/>legacy SSE /sse"] --> G["Transport guard<br/>bearer · Host/Origin · CORS · size · throttle"] --> F
-        F["CatalogFilter<br/>--read-only · --tags · --api · --tools"] --> R["CatalogTools<br/>~343 generated tools + 4 server tools"]
+        F["CatalogFilter<br/>admin · secret gates<br/>--read-only · --tags · --api · --tools"] --> R["CatalogTools<br/>up to 343 generated tools + 4 server tools"]
         R --> B["ArgumentBinder<br/>schema coercion · path encoding · caps"]
         B --> K["Rapid7Client (OkHttp)<br/>no redirects · wire cap"]
         K --> S["ResponseSanitizer<br/>HTML→text · markup neutralised · fenced"]
@@ -233,7 +238,7 @@ flowchart LR
     end
 
     subgraph BuildTime["build time"]
-        SP["specs/*.json"] --> GEN["CatalogGenerator.kt<br/>./gradlew generateCatalog"] --> CAT["catalog/v3.json · v4.json"]
+        SP["specs/*.json"] --> GEN["CatalogGenerator.kt<br/>./gradlew generateCatalog"] --> CAT["catalog/v3.json · v4.json<br/>search-criteria.json"]
     end
 
     C -- "JSON-RPC" --> T1
@@ -258,10 +263,12 @@ Summarised here; details and residual risks in [docs/SECURITY.md](docs/SECURITY.
 * **Request integrity** — URLs are built only from catalog templates; path values are percent-encoded (`;` included)
   and `.`/`..` are refused; unknown arguments are rejected; strings, bodies, arrays and nesting are bounded.
 * **Credential egress** — redirects are never followed; no URL taken from an API response is ever requested; `https`
-  is mandatory unless `INSIGHTVM_ALLOW_HTTP=1`; secrets never appear in logs or `toString`.
+  is mandatory unless `INSIGHTVM_ALLOW_HTTP=1`; secrets never appear in logs or `toString`, and a key or token that
+  could not be sent as a header stops the server at startup, before a library error could quote it to the model.
 * **HTTP transport** — bearer token (required off-loopback, constant-time compare, brute-force throttle), `Host`/`Origin`
-  checks against DNS rebinding, default-deny CORS, 4 MiB request cap. At most 32 sessions are kept: beyond that the
-  oldest is closed, and its client gets `404` (or sees its SSE stream end) and initializes again.
+  checks against DNS rebinding, default-deny CORS, 4 MiB request cap (chunked bodies included). At most 32 sessions
+  are kept: beyond that the oldest is closed, and its client gets `404` (or sees its SSE stream end) and initializes
+  again.
 * **Dangerous operations** — `execute_command` is unregistered unless `--allow-admin-commands` *and* then requires
   `confirm="EXECUTE"`; every mutation that is not purely additive is flagged `destructiveHint`, including list
   replacements, status changes and credential resets; `--read-only` removes every mutation.
@@ -295,11 +302,22 @@ log, so that is the first place to look:
 
 On start the server checks GitHub for a newer release (set `INSIGHTVM_DISABLE_UPDATE_CHECK=1` in air-gapped environments)
 and, unless `INSIGHTVM_DISABLE_AUTO_UPDATE=1` / `--no-auto-update`, downloads and verifies (SHA-256, size, entry point)
-the new JAR and swaps it in at shutdown. Clients are sent an MCP logging notification either way, but only on a
-best-effort basis: over HTTP it goes out two seconds after the client initializes, and a client with no event stream
-open by then never receives it. `insightvm_server_info` is the authoritative answer, whatever the transport: it
-reports the running version, the latest release, and whether an update is available, downloaded and waiting for the
-server to exit, or installed.
+the new JAR and installs it:
+
+* **Linux and macOS** — the JAR is replaced at once. The running server keeps the file it started from; the next start
+  runs the new release.
+* **Windows** — a running JAR cannot be replaced, so the update is staged beside it and written into it as the server
+  exits. It is written only if no other server is still running from the same JAR (stdio clients each start their
+  own) and the JAR is still the one the update was staged for; otherwise the staged copy is discarded and a later
+  start fetches the update again.
+
+Two empty files beside the JAR, `<jar>.update.lock` and `<jar>.running`, are the locks that coordinate this between
+servers; they are left in place on purpose.
+
+Clients are sent an MCP logging notification either way, but only on a best-effort basis: over HTTP it goes out two
+seconds after the client initializes, and a client with no event stream open by then never receives it.
+`insightvm_server_info` is the authoritative answer, whatever the transport: it reports the running version, the
+latest release, and whether an update is available, downloaded and waiting for the server to exit, or installed.
 
 ## Development
 

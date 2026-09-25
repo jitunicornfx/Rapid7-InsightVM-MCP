@@ -17,9 +17,12 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.OutgoingContent
 import io.ktor.http.contentType
 import io.ktor.http.headersOf
+import io.ktor.utils.io.ByteWriteChannel
 import io.ktor.utils.io.readLine
+import io.ktor.utils.io.writeFully
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -327,6 +330,78 @@ class HttpRuntimeTest {
         // testConfig switches automatic installation off, and the status says so.
         assertEquals("disabled", update["install"]!!.jsonPrimitive.content)
         assertContains(update["summary"]!!.jsonPrimitive.content, "9.9.9")
+    }
+
+    // ------------------------------------------------------------------------- request size
+
+    /**
+     * [text] repeated to at least [bytes] bytes and sent with no Content-Length, so the client streams
+     * it chunked and the guard's Content-Length check never sees a size. Written in slices, so nothing
+     * is sized up front.
+     */
+    private fun chunked(text: String, bytes: Int = text.length): OutgoingContent = object : OutgoingContent.WriteChannelContent() {
+        override val contentType = ContentType.Application.Json
+        override val contentLength: Long? = null
+        override suspend fun writeTo(channel: ByteWriteChannel) {
+            val slice = text.toByteArray(Charsets.UTF_8)
+            var written = 0
+            while (written < bytes) {
+                channel.writeFully(slice)
+                written += slice.size
+            }
+        }
+    }
+
+    /**
+     * The guard refuses a declared Content-Length over 4 MiB before the body is read, but a chunked
+     * body declares none. SECURITY.md once listed that as an accepted gap on Streamable HTTP. Measured
+     * against SDK 0.15.0 instead: both transports read a body under their own 4 MiB limit
+     * (`maxRequestBodySize`, which the legacy route sets to the guard's own figure), and answer 413
+     * past it. If this starts failing after an SDK upgrade, the gap is back and SECURITY.md is wrong.
+     */
+    @Test
+    fun `a chunked body over the 4 MiB cap is refused on both transports`() = runBlocking {
+        val base = start()
+        // Just past the cap: the rest of the body fits in the socket buffers, so the client finishes
+        // sending and reads the answer rather than racing the server's close.
+        val over = HttpSecurity.DEFAULT_MAX_BODY_BYTES.toInt() + 16 * 1024
+        val padding = " ".repeat(8 * 1024)
+
+        // Premise: a chunked body under the cap reaches the SDK and opens a session.
+        val accepted = http.post("$base$STREAMABLE_HTTP_PATH") {
+            mcpHeaders()
+            setBody(chunked(initialize))
+        }
+        assertEquals(HttpStatusCode.OK, accepted.status, accepted.bodyAsText())
+        val session = assertNotNull(accepted.headers["Mcp-Session-Id"])
+
+        val streamable = http.post("$base$STREAMABLE_HTTP_PATH") {
+            mcpHeaders(session)
+            setBody(chunked(padding, over))
+        }
+        assertEquals(HttpStatusCode.PayloadTooLarge, streamable.status)
+
+        val lines = Channel<String?>(Channel.UNLIMITED)
+        val stream = async {
+            http.prepareGet("$base$LEGACY_SSE_PATH") { mcpHeaders() }.execute { response ->
+                val channel = response.bodyAsChannel()
+                while (true) {
+                    val line = channel.readLine()
+                    lines.send(line)
+                    if (line == null) break
+                }
+            }
+        }
+        try {
+            val endpoint = withTimeout(10_000) { legacyEndpoint(lines) }
+            val legacy = http.post("$base$endpoint") {
+                mcpHeaders()
+                setBody(chunked(padding, over))
+            }
+            assertEquals(HttpStatusCode.PayloadTooLarge, legacy.status)
+        } finally {
+            stream.cancel()
+        }
     }
 
     // ------------------------------------------------------------------------- browser origins
