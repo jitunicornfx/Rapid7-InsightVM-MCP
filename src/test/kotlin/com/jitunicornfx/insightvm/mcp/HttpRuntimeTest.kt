@@ -191,6 +191,36 @@ class HttpRuntimeTest {
         assertEquals(2, live)
     }
 
+    /**
+     * Regression: the SDK builds a Server for every sessionless POST before it reads the body, so a
+     * probe or a buggy client posting anything but initialize took a slot too — and past the cap each
+     * one closed the oldest REAL session, cancelling its calls. A Server that never initialized serves
+     * no client, so it now goes first; memory stays bounded all the same.
+     */
+    @Test
+    fun `sessionless POSTs that never initialize cannot evict a live session`() = runBlocking {
+        val base = start(maxLiveSessions = 2)
+        val kept = openSession(base)
+        repeat(5) {
+            val stray = http.post("$base$STREAMABLE_HTTP_PATH") {
+                mcpHeaders()
+                contentType(ContentType.Application.Json)
+                setBody("""{"jsonrpc":"2.0","id":9,"method":"tools/list","params":{}}""")
+            }
+            assertTrue(stray.status.value in 400..499, "a sessionless call that is not initialize is refused: ${stray.status}")
+            stray.bodyAsText()
+        }
+        // The eviction is asynchronous, so give a wrong one the time to happen before judging.
+        assertEquals(HttpStatusCode.OK, eventually(HttpStatusCode.NotFound, timeoutMillis = 2_000) { listToolsStatus(base, kept) })
+        assertTrue(live <= 2, "still bounded: $live")
+
+        // A real client still gets in, and it is a stray that makes room, not the live session.
+        val second = openSession(base)
+        assertEquals(HttpStatusCode.OK, eventually(HttpStatusCode.NotFound, timeoutMillis = 2_000) { listToolsStatus(base, kept) })
+        assertEquals(HttpStatusCode.OK, listToolsStatus(base, second))
+        assertEquals(2, live)
+    }
+
     @Test
     fun `a session the client ends with DELETE stops counting at once`() = runBlocking {
         val base = start(maxLiveSessions = 2)

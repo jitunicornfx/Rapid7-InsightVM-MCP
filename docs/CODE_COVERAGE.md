@@ -45,8 +45,8 @@ Coverage is measured with JaCoCo and **enforced**: `./gradlew check` fails below
 * **`MainTest`** — Clikt option parsing through the `test()` helper, plus real transports: a stdio session over pipes
   and a Streamable HTTP session on an ephemeral port behind the guard.
 * **`HttpRuntimeTest`** — the `--http` runtime on a real socket, driving the protocol by hand where the SDK client
-  would hide the behaviour: the session cap (oldest closed and answered `404`, `DELETE` releasing at once, an evicted
-  legacy stream ending), an update notice dropped when the client's stream opens late and delivered within the grace
+  would hide the behaviour: the session cap (oldest closed and answered `404`, sessionless strays never evicting a
+  live session, `DELETE` releasing at once, an evicted legacy stream ending), an update notice dropped when the client's stream opens late and delivered within the grace
   period, `insightvm_server_info` answering either way, a chunked body over 4 MiB refused on both transports (the
   guard sees no `Content-Length`, so this pins the SDK's own limit), and an allow-listed browser origin reaching a
   session on both transports through the real routes.

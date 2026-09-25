@@ -21,9 +21,15 @@ import java.util.concurrent.atomic.AtomicBoolean
  * initializing again; a legacy client sees its event stream end.
  *
  * A Server whose session ends (a DELETE, or a legacy stream the server sees end) leaves the count at
- * once. Everything else stays counted until it is the oldest, which is the bound this class exists
- * to keep: a client that never finished initializing, and a legacy client that dropped its stream,
- * since Ktor's CIO engine does not notice a client leaving a stream nothing is being written to.
+ * once. Everything else stays counted until it is evicted, which is the bound this class exists to
+ * keep: a client that never finished initializing, and a legacy client that dropped its stream, since
+ * Ktor's CIO engine does not notice a client leaving a stream nothing is being written to.
+ *
+ * A Server whose session never initialized is evicted before any that did. The SDK builds one for
+ * every sessionless POST before it reads the body, so a probe or a buggy client posting anything but
+ * `initialize` gets a Server too, answered 400 and never registered; counted like a live session, each
+ * one past the cap closed the oldest real client. Among the uninitialized, the oldest goes first — a
+ * real client is uninitialized only for its handshake — and the newcomer itself is never its own victim.
  */
 internal class ServerGovernor(
     val maxLive: Int,
@@ -37,6 +43,9 @@ internal class ServerGovernor(
     /** Insertion-ordered, so the first element is the oldest. Guarded by itself. */
     private val live = LinkedHashSet<Server>()
 
+    /** The members of [live] whose session has finished initializing. Guarded by [live]. */
+    private val initialized = HashSet<Server>()
+
     /** How many Servers are currently counted against [maxLive]. */
     val liveCount: Int get() = synchronized(live) { live.size }
 
@@ -48,16 +57,22 @@ internal class ServerGovernor(
         val watching = AtomicBoolean(false)
         server.onConnect {
             if (watching.compareAndSet(false, true)) {
-                server.sessions.values.forEach { session -> session.onClose { release(server) } }
+                server.sessions.values.forEach { session ->
+                    session.onClose { release(server) }
+                    // onInitialized chains onto any earlier handler (the update notifier's), it does not replace it.
+                    session.onInitialized { markInitialized(server) }
+                }
             }
         }
         val evicted = synchronized(live) {
             live += server
             buildList {
                 while (live.size > maxLive) {
-                    val oldest = live.first()
-                    live.remove(oldest)
-                    add(oldest)
+                    // live.first() is never the newcomer here: live holds at least two when over a cap of one or more.
+                    val victim = live.firstOrNull { it !in initialized && it !== server } ?: live.first()
+                    live.remove(victim)
+                    initialized.remove(victim)
+                    add(victim)
                 }
             }
         }
@@ -67,7 +82,14 @@ internal class ServerGovernor(
         return server
     }
 
+    private fun markInitialized(server: Server) {
+        synchronized(live) { if (server in live) initialized += server }
+    }
+
     private fun release(server: Server) {
-        synchronized(live) { live.remove(server) }
+        synchronized(live) {
+            live.remove(server)
+            initialized.remove(server)
+        }
     }
 }

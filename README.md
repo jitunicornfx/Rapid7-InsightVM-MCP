@@ -267,8 +267,8 @@ Summarised here; details and residual risks in [docs/SECURITY.md](docs/SECURITY.
   could not be sent as a header stops the server at startup, before a library error could quote it to the model.
 * **HTTP transport** — bearer token (required off-loopback, constant-time compare, brute-force throttle), `Host`/`Origin`
   checks against DNS rebinding, default-deny CORS, 4 MiB request cap (chunked bodies included). At most 32 sessions
-  are kept: beyond that the oldest is closed, and its client gets `404` (or sees its SSE stream end) and initializes
-  again.
+  are kept: beyond that one that never initialized is closed first, otherwise the oldest, whose client gets `404` (or
+  sees its SSE stream end) and initializes again.
 * **Dangerous operations** — `execute_command` is unregistered unless `--allow-admin-commands` *and* then requires
   `confirm="EXECUTE"`; every mutation that is not purely additive is flagged `destructiveHint`, including list
   replacements, status changes and credential resets; `--read-only` removes every mutation.
