@@ -178,18 +178,6 @@ internal object SearchCriteriaTables {
      * through [OPERATOR_ALIASES]; a name that is still not one a field uses fails. A name listed twice
      * (`does-not-contain` also appears as `not-contains`) must read the same properties both times.
      */
-    /**
-     * Where the console reads a value of [type] that the Operator Properties table lists under [column].
-     *
-     * The specification contradicts itself here. Its table puts `Array[ string ]` under `value` for
-     * `in`, `not-in` and `includes`, but its own filter schema calls `value` "the single value to match"
-     * and carries a separate array property, `values`, which published usage fills for those operators
-     * (`{"field": "site-id", "operator": "in", "values": [1]}`). Following the table steered the model
-     * away from the schema's array property, so the schema wins: an array listed under `value` is `values`.
-     */
-    private fun listPropertyFor(column: String, type: String): String =
-        if (column == "value" && type.startsWith("Array")) "values" else column
-
     private fun operators(body: String, used: Set<String>): Map<String, Map<String, String>> {
         val what = "Operator Properties"
         val out = LinkedHashMap<String, Map<String, String>>()
@@ -207,4 +195,16 @@ internal object SearchCriteriaTables {
         }
         return out
     }
+
+    /**
+     * Where the console reads a value of [type] that the Operator Properties table lists under [column].
+     *
+     * The specification contradicts itself here. Its table puts `Array[ string ]` under `value` for
+     * `in`, `not-in` and `includes`, but its own filter schema calls `value` "the single value to match"
+     * and carries a separate array property, `values`, which published usage fills for those operators
+     * (`{"field": "site-id", "operator": "in", "values": [1]}`). Following the table steered the model
+     * away from the schema's array property, so the schema wins: an array listed under `value` is `values`.
+     */
+    private fun listPropertyFor(column: String, type: String): String =
+        if (column == "value" && type.startsWith("Array")) "values" else column
 }

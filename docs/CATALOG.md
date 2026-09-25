@@ -52,12 +52,12 @@ operations (9 read-only, 3 destructive). `CatalogTest` pins these counts, so a c
   or an ISO-8601 date.
 * v4 descriptions that are only unrendered template keys (`${scanid.id.description}, …`) are dropped.
 * The search-criteria filters declare `value`, `lower` and `upper` as `object`, which no operator takes; they are left
-  untyped and described as a string, number or array.
+  untyped and described as a string or number. A list goes in `values`, whose items are left untyped too.
 
 ### Search criteria quirks passed through
 
 * The Operator Properties table gives `is-between`'s `upper` as `numeric (yyyy-MM-dd)` and `is-less-than`'s `value` as
-  `string`, and names `value` (not `values`) as the array property of `in`, `not-in` and `includes`.
-  `does-not-include` has no row at all, and the tool says so.
+  `string`. `does-not-include` has no row at all, and the tool says so. (The same table's `value` as the array
+  property of `in`, `not-in` and `includes` is corrected to `values`, not passed through — see *Search criteria*.)
 * `update_tag_search_criteria`'s own copy of the tables disagrees with the introduction in places (for example
   `vulnerability-cvss-v3-score` operators, and `vasset-*` field spellings). The introduction is the one used.

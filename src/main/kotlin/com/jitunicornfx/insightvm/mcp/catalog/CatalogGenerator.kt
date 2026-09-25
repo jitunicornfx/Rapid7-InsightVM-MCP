@@ -407,7 +407,7 @@ object CatalogGenerator {
      * The search-criteria filter components with [reference] applied. `field` and `operator` gain an
      * `enum` of the names the tables list: for discovery, the union over every connection type. The
      * value properties lose the `object` type the spec gives them, which no operator takes: a value is
-     * a string, a number or an array, and a bound a string or a number. Once the reference exists, a
+     * a string or a number, a list goes in `values`, and a bound is a string or a number. Once the reference exists, a
      * filter component or property it cannot find fails generation rather than going unconstrained.
      */
     private fun criteriaOverrides(components: JsonObject?, reference: SearchCriteriaReference?): Map<String, Map<String, JsonObject>> {

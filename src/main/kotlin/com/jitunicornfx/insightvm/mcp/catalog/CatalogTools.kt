@@ -226,7 +226,7 @@ object CatalogTools {
     private val SEARCH_CRITERIA_DEFINITION = toolDefinition(
         name = SEARCH_CRITERIA_TOOL,
         description = "The Security Console's search-criteria reference: the fields a filter can name, the operators each " +
-            "field accepts, the values of enumerated fields, and the value, lower or upper property each operator reads. " +
+            "field accepts, the values of enumerated fields, and the value, values, lower or upper property each operator reads. " +
             "Use it to build the filters of find_assets and of asset group and tag search criteria (kind \"asset\", the " +
             "default), or of a dynamic site's discovery search criteria (kind \"discovery\"). Pass field to look up one field.",
         inputSchema = ToolSchema(
