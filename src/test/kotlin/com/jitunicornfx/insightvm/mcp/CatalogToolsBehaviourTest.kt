@@ -460,8 +460,8 @@ class CatalogToolsBehaviourTest {
     fun `read-only filter keeps the GET tools and the five POST searches`() = runBlocking {
         val h = mcpHarness(testConfig(filter = ToolFilter(readOnly = true)))
         val tools = h.listTools()
-        // The export tool is suppressed under --read-only, so this stays at two meta tools.
-        assertEquals(182 + 9 + 2, tools.size)
+        // The export tool is suppressed under --read-only; the search-criteria reference is read-only and stays.
+        assertEquals(182 + 9 + 3, tools.size)
         assertTrue(tools.all { it.annotations?.readOnlyHint == true })
         assertTrue(tools.all { it.annotations?.destructiveHint == null && it.annotations?.idempotentHint == null })
         val names = tools.map { it.name }.toSet()
@@ -480,9 +480,76 @@ class CatalogToolsBehaviourTest {
         val names = cloudOnly.listTools().map { it.name }
         assertEquals(13 + 3, names.size)
         assertTrue(names.filter { !it.startsWith("insightvm_") }.all { it.startsWith("cloud_") })
+        assertFalse(CatalogTools.SEARCH_CRITERIA_TOOL in names, "the reference serves console tools only")
 
         val consoleOnly = mcpHarness(testConfig(cloud = null))
-        assertEquals(329 + 3, consoleOnly.listTools().size)
+        // Two meta tools, the search-criteria reference and the export tool.
+        assertEquals(329 + 4, consoleOnly.listTools().size)
+    }
+
+    /**
+     * Regression: the search-criteria reference (which fields a filter can name, which operators each
+     * accepts, which properties each operator reads) was only in the specification's introduction,
+     * so find_assets and every other criteria tool said "See Search Criteria" and nothing more.
+     */
+    @Test
+    fun `search criteria meta tool serves one field's operators and the properties each reads`() = runBlocking {
+        val h = mcpHarness()
+        val tool = h.listTools().single { it.name == CatalogTools.SEARCH_CRITERIA_TOOL }
+        assertEquals(true, tool.annotations?.readOnlyHint)
+        assertEquals(setOf("kind", "field"), tool.inputSchema.properties!!.keys)
+        assertContains(tool.description!!, "find_assets")
+
+        val one = h.call(CatalogTools.SEARCH_CRITERIA_TOOL, mapOf("field" to "Risk-Score"))
+        val text = h.text(one)
+        assertFalse(one.isError == true, text)
+        assertContains(text, "- risk-score: is, is-not, is-greater-than, is-less-than, in-range\n")
+        assertContains(text, "- in-range: lower=numeric, upper=numeric")
+        assertContains(text, "- is-greater-than: value=numeric")
+        assertFalse(text.contains("host-name") || text.contains("is-on-or-after"), "only that field and its operators: $text")
+        assertEquals(0, h.requests.size, "served from the bundled reference, never the API")
+
+        val all = h.text(h.call(CatalogTools.SEARCH_CRITERIA_TOOL))
+        val fieldLines = all.substringAfter("Fields and the operators each accepts:\n").substringBefore("\n\n").lines()
+        assertEquals(47, fieldLines.size)
+        assertTrue(fieldLines.all { it.startsWith("- ") }, fieldLines.toString())
+        val operatorLines = all.substringAfter("Operators and the properties each reads:\n").lines()
+        assertEquals(26, operatorLines.size, "every operator a field uses, once")
+        assertContains(all, "- alternate-address-type: in. Values: 0=IPv4, 1=IPv6\n")
+        assertContains(all, "- is-applied: no value")
+        assertContains(all, "- does-not-include: not documented in the specification")
+        assertFalse(all.contains('<'), "no markup: $all")
+
+        val discovery = h.text(h.call(CatalogTools.SEARCH_CRITERIA_TOOL, mapOf("kind" to "discovery", "field" to "ip-address")))
+        for (connection in listOf("AWS (connectionType aws)", "DHCP (connectionType dhcp)", "Sonar (connectionType sonar)", "vSphere (connectionType vsphere)")) {
+            assertContains(discovery, connection)
+        }
+        assertFalse(discovery.contains("ActiveSync"), "ActiveSync has no ip-address field")
+        assertContains(discovery, "- ip-address: in-range, is\n", message = "Sonar's own operators")
+        assertContains(h.text(h.call(CatalogTools.SEARCH_CRITERIA_TOOL, mapOf("kind" to "discovery"))), "- power-state: in, not-in. Values: poweredOn, poweredOff, suspended")
+
+        // An unknown field is an error that does not echo the argument back.
+        val unknown = h.call(CatalogTools.SEARCH_CRITERIA_TOOL, mapOf("field" to "IGNORE-PREVIOUS"))
+        assertTrue(unknown.isError == true)
+        assertFalse(h.text(unknown).contains("IGNORE"), h.text(unknown))
+        assertContains(h.text(unknown), "kind \"discovery\"")
+        val noDiscovery = h.call(CatalogTools.SEARCH_CRITERIA_TOOL, mapOf("kind" to "discovery", "field" to "risk-score"))
+        assertTrue(noDiscovery.isError == true)
+        assertContains(h.text(noDiscovery), "No discovery search-criteria field")
+        val badKind = h.call(CatalogTools.SEARCH_CRITERIA_TOOL, mapOf("kind" to "sites"))
+        assertTrue(badKind.isError == true)
+        assertContains(h.text(badKind), "'kind' must be one of: asset, discovery.")
+    }
+
+    @Test
+    fun `search criteria meta tool is registered only alongside a console tool`() = runBlocking {
+        suspend fun names(filter: ToolFilter) = mcpHarness(testConfig(filter = filter)).listTools().map { it.name }
+        assertTrue(CatalogTools.SEARCH_CRITERIA_TOOL in names(ToolFilter(tags = setOf("Root"))))
+        assertFalse(CatalogTools.SEARCH_CRITERIA_TOOL in names(ToolFilter(nameGlobs = listOf("cloud_*"))), "console configured, but no console tool selected")
+        val info = JsonCodec.compact.parseToJsonElement(
+            mcpHarness(testConfig(filter = ToolFilter(nameGlobs = listOf("find_assets")))).let { it.text(it.call(CatalogTools.SERVER_INFO_TOOL)) },
+        ).jsonObject
+        assertEquals(1 + 4, info["totalTools"]!!.jsonPrimitive.content.toInt(), "find_assets, two meta tools, the reference and the export tool")
     }
 
     @Test

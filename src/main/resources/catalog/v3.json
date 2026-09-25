@@ -336,7 +336,7 @@
    "path": "/api/3/asset_groups",
    "tag": "Asset Group",
    "summary": "Asset Groups",
-   "description": "Creates a new asset group. The `searchCriteria` field can be passed no matter what the type of the asset group is. The asset group `type` changes when the assets are refreshed. Dynamic asset groups constantly refreshed their membership as assets are scanned whereas static asset groups do not change membership automatically. See the Search Criteria for more information on using dynamic criteria.",
+   "description": "Creates a new asset group. The `searchCriteria` field can be passed no matter what the type of the asset group is. The asset group `type` changes when the assets are refreshed. Dynamic asset groups constantly refreshed their membership as assets are scanned whereas static asset groups do not change membership automatically. Call insightvm_search_criteria for the operators each field accepts and the value each operator takes.",
    "readOnly": false,
    "destructive": false,
    "admin": false,
@@ -360,35 +360,107 @@
        "properties": {
         "filters": {
          "type": "array",
-         "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
+         "description": "Filters used to match assets. Call insightvm_search_criteria for the operators each field accepts and the value each operator takes.",
          "items": {
           "properties": {
            "field": {
             "type": "string",
-            "description": "The filter field for the search criteria."
+            "description": "The filter field for the search criteria.",
+            "enum": [
+             "alternate-address-type",
+             "container-image",
+             "container-status",
+             "containers",
+             "criticality-tag",
+             "custom-tag",
+             "cve",
+             "cvss-access-complexity",
+             "cvss-authentication-required",
+             "cvss-access-vector",
+             "cvss-availability-impact",
+             "cvss-confidentiality-impact",
+             "cvss-integrity-impact",
+             "cvss-v3-confidentiality-impact",
+             "cvss-v3-integrity-impact",
+             "cvss-v3-availability-impact",
+             "cvss-v3-attack-vector",
+             "cvss-v3-attack-complexity",
+             "cvss-v3-user-interaction",
+             "cvss-v3-privileges-required",
+             "host-name",
+             "host-type",
+             "ip-address",
+             "ip-address-type",
+             "last-scan-date",
+             "location-tag",
+             "mobile-device-last-sync-time",
+             "open-ports",
+             "operating-system",
+             "owner-tag",
+             "pci-compliance",
+             "risk-score",
+             "service-name",
+             "site-id",
+             "software",
+             "vAsset-cluster",
+             "vAsset-datacenter",
+             "vAsset-host-name",
+             "vAsset-power-state",
+             "vAsset-resource-pool-path",
+             "vulnerability-assessed",
+             "vulnerability-category",
+             "vulnerability-cvss-v3-score",
+             "vulnerability-cvss-score",
+             "vulnerability-exposures",
+             "vulnerability-title",
+             "vulnerability-validated-status"
+            ]
            },
            "lower": {
-            "type": "object",
-            "description": "The lower value to match in a range criteria."
+            "description": "The lower value to match in a range criteria. A string or number, depending on the operator."
            },
            "operator": {
             "type": "string",
-            "description": "The operator on how to match the search criteria."
+            "description": "The operator on how to match the search criteria.",
+            "enum": [
+             "in",
+             "is",
+             "is-not",
+             "starts-with",
+             "ends-with",
+             "contains",
+             "does-not-contain",
+             "is-like",
+             "not-like",
+             "are",
+             "is-greater-than",
+             "is-less-than",
+             "is-applied",
+             "is-not-applied",
+             "is-empty",
+             "is-not-empty",
+             "not-in",
+             "in-range",
+             "not-in-range",
+             "is-on-or-before",
+             "is-on-or-after",
+             "is-between",
+             "is-earlier-than",
+             "is-within-the-last",
+             "includes",
+             "does-not-include"
+            ]
            },
            "upper": {
-            "type": "object",
-            "description": "The upper value to match in a range criteria."
+            "description": "The upper value to match in a range criteria. A string or number, depending on the operator."
            },
            "value": {
-            "type": "object",
-            "description": "The single value to match using the operator."
+            "description": "The single value to match using the operator. A string, number or array, depending on the operator."
            },
            "values": {
             "type": "array",
             "description": "An array of values to match using the operator.",
-            "items": {
-             "type": "object"
-            }
+            "items": {}
            }
           },
           "type": "object"
@@ -534,35 +606,107 @@
        "properties": {
         "filters": {
          "type": "array",
-         "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
+         "description": "Filters used to match assets. Call insightvm_search_criteria for the operators each field accepts and the value each operator takes.",
          "items": {
           "properties": {
            "field": {
             "type": "string",
-            "description": "The filter field for the search criteria."
+            "description": "The filter field for the search criteria.",
+            "enum": [
+             "alternate-address-type",
+             "container-image",
+             "container-status",
+             "containers",
+             "criticality-tag",
+             "custom-tag",
+             "cve",
+             "cvss-access-complexity",
+             "cvss-authentication-required",
+             "cvss-access-vector",
+             "cvss-availability-impact",
+             "cvss-confidentiality-impact",
+             "cvss-integrity-impact",
+             "cvss-v3-confidentiality-impact",
+             "cvss-v3-integrity-impact",
+             "cvss-v3-availability-impact",
+             "cvss-v3-attack-vector",
+             "cvss-v3-attack-complexity",
+             "cvss-v3-user-interaction",
+             "cvss-v3-privileges-required",
+             "host-name",
+             "host-type",
+             "ip-address",
+             "ip-address-type",
+             "last-scan-date",
+             "location-tag",
+             "mobile-device-last-sync-time",
+             "open-ports",
+             "operating-system",
+             "owner-tag",
+             "pci-compliance",
+             "risk-score",
+             "service-name",
+             "site-id",
+             "software",
+             "vAsset-cluster",
+             "vAsset-datacenter",
+             "vAsset-host-name",
+             "vAsset-power-state",
+             "vAsset-resource-pool-path",
+             "vulnerability-assessed",
+             "vulnerability-category",
+             "vulnerability-cvss-v3-score",
+             "vulnerability-cvss-score",
+             "vulnerability-exposures",
+             "vulnerability-title",
+             "vulnerability-validated-status"
+            ]
            },
            "lower": {
-            "type": "object",
-            "description": "The lower value to match in a range criteria."
+            "description": "The lower value to match in a range criteria. A string or number, depending on the operator."
            },
            "operator": {
             "type": "string",
-            "description": "The operator on how to match the search criteria."
+            "description": "The operator on how to match the search criteria.",
+            "enum": [
+             "in",
+             "is",
+             "is-not",
+             "starts-with",
+             "ends-with",
+             "contains",
+             "does-not-contain",
+             "is-like",
+             "not-like",
+             "are",
+             "is-greater-than",
+             "is-less-than",
+             "is-applied",
+             "is-not-applied",
+             "is-empty",
+             "is-not-empty",
+             "not-in",
+             "in-range",
+             "not-in-range",
+             "is-on-or-before",
+             "is-on-or-after",
+             "is-between",
+             "is-earlier-than",
+             "is-within-the-last",
+             "includes",
+             "does-not-include"
+            ]
            },
            "upper": {
-            "type": "object",
-            "description": "The upper value to match in a range criteria."
+            "description": "The upper value to match in a range criteria. A string or number, depending on the operator."
            },
            "value": {
-            "type": "object",
-            "description": "The single value to match using the operator."
+            "description": "The single value to match using the operator. A string, number or array, depending on the operator."
            },
            "values": {
             "type": "array",
             "description": "An array of values to match using the operator.",
-            "items": {
-             "type": "object"
-            }
+            "items": {}
            }
           },
           "type": "object"
@@ -852,35 +996,107 @@
      "properties": {
       "filters": {
        "type": "array",
-       "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
+       "description": "Filters used to match assets. Call insightvm_search_criteria for the operators each field accepts and the value each operator takes.",
        "items": {
         "properties": {
          "field": {
           "type": "string",
-          "description": "The filter field for the search criteria."
+          "description": "The filter field for the search criteria.",
+          "enum": [
+           "alternate-address-type",
+           "container-image",
+           "container-status",
+           "containers",
+           "criticality-tag",
+           "custom-tag",
+           "cve",
+           "cvss-access-complexity",
+           "cvss-authentication-required",
+           "cvss-access-vector",
+           "cvss-availability-impact",
+           "cvss-confidentiality-impact",
+           "cvss-integrity-impact",
+           "cvss-v3-confidentiality-impact",
+           "cvss-v3-integrity-impact",
+           "cvss-v3-availability-impact",
+           "cvss-v3-attack-vector",
+           "cvss-v3-attack-complexity",
+           "cvss-v3-user-interaction",
+           "cvss-v3-privileges-required",
+           "host-name",
+           "host-type",
+           "ip-address",
+           "ip-address-type",
+           "last-scan-date",
+           "location-tag",
+           "mobile-device-last-sync-time",
+           "open-ports",
+           "operating-system",
+           "owner-tag",
+           "pci-compliance",
+           "risk-score",
+           "service-name",
+           "site-id",
+           "software",
+           "vAsset-cluster",
+           "vAsset-datacenter",
+           "vAsset-host-name",
+           "vAsset-power-state",
+           "vAsset-resource-pool-path",
+           "vulnerability-assessed",
+           "vulnerability-category",
+           "vulnerability-cvss-v3-score",
+           "vulnerability-cvss-score",
+           "vulnerability-exposures",
+           "vulnerability-title",
+           "vulnerability-validated-status"
+          ]
          },
          "lower": {
-          "type": "object",
-          "description": "The lower value to match in a range criteria."
+          "description": "The lower value to match in a range criteria. A string or number, depending on the operator."
          },
          "operator": {
           "type": "string",
-          "description": "The operator on how to match the search criteria."
+          "description": "The operator on how to match the search criteria.",
+          "enum": [
+           "in",
+           "is",
+           "is-not",
+           "starts-with",
+           "ends-with",
+           "contains",
+           "does-not-contain",
+           "is-like",
+           "not-like",
+           "are",
+           "is-greater-than",
+           "is-less-than",
+           "is-applied",
+           "is-not-applied",
+           "is-empty",
+           "is-not-empty",
+           "not-in",
+           "in-range",
+           "not-in-range",
+           "is-on-or-before",
+           "is-on-or-after",
+           "is-between",
+           "is-earlier-than",
+           "is-within-the-last",
+           "includes",
+           "does-not-include"
+          ]
          },
          "upper": {
-          "type": "object",
-          "description": "The upper value to match in a range criteria."
+          "description": "The upper value to match in a range criteria. A string or number, depending on the operator."
          },
          "value": {
-          "type": "object",
-          "description": "The single value to match using the operator."
+          "description": "The single value to match using the operator. A string, number or array, depending on the operator."
          },
          "values": {
           "type": "array",
           "description": "An array of values to match using the operator.",
-          "items": {
-           "type": "object"
-          }
+          "items": {}
          }
         },
         "type": "object"
@@ -1363,35 +1579,107 @@
      "properties": {
       "filters": {
        "type": "array",
-       "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
+       "description": "Filters used to match assets. Call insightvm_search_criteria for the operators each field accepts and the value each operator takes.",
        "items": {
         "properties": {
          "field": {
           "type": "string",
-          "description": "The filter field for the search criteria."
+          "description": "The filter field for the search criteria.",
+          "enum": [
+           "alternate-address-type",
+           "container-image",
+           "container-status",
+           "containers",
+           "criticality-tag",
+           "custom-tag",
+           "cve",
+           "cvss-access-complexity",
+           "cvss-authentication-required",
+           "cvss-access-vector",
+           "cvss-availability-impact",
+           "cvss-confidentiality-impact",
+           "cvss-integrity-impact",
+           "cvss-v3-confidentiality-impact",
+           "cvss-v3-integrity-impact",
+           "cvss-v3-availability-impact",
+           "cvss-v3-attack-vector",
+           "cvss-v3-attack-complexity",
+           "cvss-v3-user-interaction",
+           "cvss-v3-privileges-required",
+           "host-name",
+           "host-type",
+           "ip-address",
+           "ip-address-type",
+           "last-scan-date",
+           "location-tag",
+           "mobile-device-last-sync-time",
+           "open-ports",
+           "operating-system",
+           "owner-tag",
+           "pci-compliance",
+           "risk-score",
+           "service-name",
+           "site-id",
+           "software",
+           "vAsset-cluster",
+           "vAsset-datacenter",
+           "vAsset-host-name",
+           "vAsset-power-state",
+           "vAsset-resource-pool-path",
+           "vulnerability-assessed",
+           "vulnerability-category",
+           "vulnerability-cvss-v3-score",
+           "vulnerability-cvss-score",
+           "vulnerability-exposures",
+           "vulnerability-title",
+           "vulnerability-validated-status"
+          ]
          },
          "lower": {
-          "type": "object",
-          "description": "The lower value to match in a range criteria."
+          "description": "The lower value to match in a range criteria. A string or number, depending on the operator."
          },
          "operator": {
           "type": "string",
-          "description": "The operator on how to match the search criteria."
+          "description": "The operator on how to match the search criteria.",
+          "enum": [
+           "in",
+           "is",
+           "is-not",
+           "starts-with",
+           "ends-with",
+           "contains",
+           "does-not-contain",
+           "is-like",
+           "not-like",
+           "are",
+           "is-greater-than",
+           "is-less-than",
+           "is-applied",
+           "is-not-applied",
+           "is-empty",
+           "is-not-empty",
+           "not-in",
+           "in-range",
+           "not-in-range",
+           "is-on-or-before",
+           "is-on-or-after",
+           "is-between",
+           "is-earlier-than",
+           "is-within-the-last",
+           "includes",
+           "does-not-include"
+          ]
          },
          "upper": {
-          "type": "object",
-          "description": "The upper value to match in a range criteria."
+          "description": "The upper value to match in a range criteria. A string or number, depending on the operator."
          },
          "value": {
-          "type": "object",
-          "description": "The single value to match using the operator."
+          "description": "The single value to match using the operator. A string, number or array, depending on the operator."
          },
          "values": {
           "type": "array",
           "description": "An array of values to match using the operator.",
-          "items": {
-           "type": "object"
-          }
+          "items": {}
          }
         },
         "type": "object"
@@ -12742,35 +13030,71 @@
       },
       "filters": {
        "type": "array",
-       "description": "Filters used to match assets from a discovery connection. See Discovery Connection Search Criteria for more information on the structure and format.",
+       "description": "Filters used to match assets from a discovery connection. Call insightvm_search_criteria with kind \"discovery\" for the fields each connection type supports, the operators each accepts and the value each operator takes.",
        "items": {
         "properties": {
          "field": {
           "type": "string",
-          "description": "The filter field for the search criteria."
+          "description": "The filter field for the search criteria.",
+          "enum": [
+           "last-sync-time",
+           "operating-system",
+           "user",
+           "availability-zone",
+           "guest-os-family",
+           "instance-id",
+           "instance-name",
+           "instance-state",
+           "instance-type",
+           "ip-address",
+           "region",
+           "vpc-id",
+           "host-name",
+           "mac-address",
+           "search-domain",
+           "sonar-scan-date",
+           "cluster",
+           "data-center",
+           "discovered-time",
+           "power-state",
+           "resource-pool-path",
+           "last-time-seen",
+           "vm"
+          ]
          },
          "lower": {
-          "type": "object",
-          "description": "The lower value to match in a range criteria."
+          "description": "The lower value to match in a range criteria. A string or number, depending on the operator."
          },
          "operator": {
           "type": "string",
-          "description": "The operator on how to match the search criteria."
+          "description": "The operator on how to match the search criteria.",
+          "enum": [
+           "is-within-the-last",
+           "is-earlier-than",
+           "contains",
+           "does-not-contain",
+           "is",
+           "is-not",
+           "starts-with",
+           "in",
+           "not-in",
+           "in-range",
+           "not-in-range",
+           "is-on-or-before",
+           "is-on-or-after",
+           "is-between"
+          ]
          },
          "upper": {
-          "type": "object",
-          "description": "The upper value to match in a range criteria."
+          "description": "The upper value to match in a range criteria. A string or number, depending on the operator."
          },
          "value": {
-          "type": "object",
-          "description": "The single value to match using the operator."
+          "description": "The single value to match using the operator. A string, number or array, depending on the operator."
          },
          "values": {
           "type": "array",
           "description": "An array of values to match using the operator.",
-          "items": {
-           "type": "object"
-          }
+          "items": {}
          }
         },
         "type": "object"
@@ -16623,35 +16947,107 @@
        "properties": {
         "filters": {
          "type": "array",
-         "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
+         "description": "Filters used to match assets. Call insightvm_search_criteria for the operators each field accepts and the value each operator takes.",
          "items": {
           "properties": {
            "field": {
             "type": "string",
-            "description": "The filter field for the search criteria."
+            "description": "The filter field for the search criteria.",
+            "enum": [
+             "alternate-address-type",
+             "container-image",
+             "container-status",
+             "containers",
+             "criticality-tag",
+             "custom-tag",
+             "cve",
+             "cvss-access-complexity",
+             "cvss-authentication-required",
+             "cvss-access-vector",
+             "cvss-availability-impact",
+             "cvss-confidentiality-impact",
+             "cvss-integrity-impact",
+             "cvss-v3-confidentiality-impact",
+             "cvss-v3-integrity-impact",
+             "cvss-v3-availability-impact",
+             "cvss-v3-attack-vector",
+             "cvss-v3-attack-complexity",
+             "cvss-v3-user-interaction",
+             "cvss-v3-privileges-required",
+             "host-name",
+             "host-type",
+             "ip-address",
+             "ip-address-type",
+             "last-scan-date",
+             "location-tag",
+             "mobile-device-last-sync-time",
+             "open-ports",
+             "operating-system",
+             "owner-tag",
+             "pci-compliance",
+             "risk-score",
+             "service-name",
+             "site-id",
+             "software",
+             "vAsset-cluster",
+             "vAsset-datacenter",
+             "vAsset-host-name",
+             "vAsset-power-state",
+             "vAsset-resource-pool-path",
+             "vulnerability-assessed",
+             "vulnerability-category",
+             "vulnerability-cvss-v3-score",
+             "vulnerability-cvss-score",
+             "vulnerability-exposures",
+             "vulnerability-title",
+             "vulnerability-validated-status"
+            ]
            },
            "lower": {
-            "type": "object",
-            "description": "The lower value to match in a range criteria."
+            "description": "The lower value to match in a range criteria. A string or number, depending on the operator."
            },
            "operator": {
             "type": "string",
-            "description": "The operator on how to match the search criteria."
+            "description": "The operator on how to match the search criteria.",
+            "enum": [
+             "in",
+             "is",
+             "is-not",
+             "starts-with",
+             "ends-with",
+             "contains",
+             "does-not-contain",
+             "is-like",
+             "not-like",
+             "are",
+             "is-greater-than",
+             "is-less-than",
+             "is-applied",
+             "is-not-applied",
+             "is-empty",
+             "is-not-empty",
+             "not-in",
+             "in-range",
+             "not-in-range",
+             "is-on-or-before",
+             "is-on-or-after",
+             "is-between",
+             "is-earlier-than",
+             "is-within-the-last",
+             "includes",
+             "does-not-include"
+            ]
            },
            "upper": {
-            "type": "object",
-            "description": "The upper value to match in a range criteria."
+            "description": "The upper value to match in a range criteria. A string or number, depending on the operator."
            },
            "value": {
-            "type": "object",
-            "description": "The single value to match using the operator."
+            "description": "The single value to match using the operator. A string, number or array, depending on the operator."
            },
            "values": {
             "type": "array",
             "description": "An array of values to match using the operator.",
-            "items": {
-             "type": "object"
-            }
+            "items": {}
            }
           },
           "type": "object"
@@ -16811,35 +17207,107 @@
        "properties": {
         "filters": {
          "type": "array",
-         "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
+         "description": "Filters used to match assets. Call insightvm_search_criteria for the operators each field accepts and the value each operator takes.",
          "items": {
           "properties": {
            "field": {
             "type": "string",
-            "description": "The filter field for the search criteria."
+            "description": "The filter field for the search criteria.",
+            "enum": [
+             "alternate-address-type",
+             "container-image",
+             "container-status",
+             "containers",
+             "criticality-tag",
+             "custom-tag",
+             "cve",
+             "cvss-access-complexity",
+             "cvss-authentication-required",
+             "cvss-access-vector",
+             "cvss-availability-impact",
+             "cvss-confidentiality-impact",
+             "cvss-integrity-impact",
+             "cvss-v3-confidentiality-impact",
+             "cvss-v3-integrity-impact",
+             "cvss-v3-availability-impact",
+             "cvss-v3-attack-vector",
+             "cvss-v3-attack-complexity",
+             "cvss-v3-user-interaction",
+             "cvss-v3-privileges-required",
+             "host-name",
+             "host-type",
+             "ip-address",
+             "ip-address-type",
+             "last-scan-date",
+             "location-tag",
+             "mobile-device-last-sync-time",
+             "open-ports",
+             "operating-system",
+             "owner-tag",
+             "pci-compliance",
+             "risk-score",
+             "service-name",
+             "site-id",
+             "software",
+             "vAsset-cluster",
+             "vAsset-datacenter",
+             "vAsset-host-name",
+             "vAsset-power-state",
+             "vAsset-resource-pool-path",
+             "vulnerability-assessed",
+             "vulnerability-category",
+             "vulnerability-cvss-v3-score",
+             "vulnerability-cvss-score",
+             "vulnerability-exposures",
+             "vulnerability-title",
+             "vulnerability-validated-status"
+            ]
            },
            "lower": {
-            "type": "object",
-            "description": "The lower value to match in a range criteria."
+            "description": "The lower value to match in a range criteria. A string or number, depending on the operator."
            },
            "operator": {
             "type": "string",
-            "description": "The operator on how to match the search criteria."
+            "description": "The operator on how to match the search criteria.",
+            "enum": [
+             "in",
+             "is",
+             "is-not",
+             "starts-with",
+             "ends-with",
+             "contains",
+             "does-not-contain",
+             "is-like",
+             "not-like",
+             "are",
+             "is-greater-than",
+             "is-less-than",
+             "is-applied",
+             "is-not-applied",
+             "is-empty",
+             "is-not-empty",
+             "not-in",
+             "in-range",
+             "not-in-range",
+             "is-on-or-before",
+             "is-on-or-after",
+             "is-between",
+             "is-earlier-than",
+             "is-within-the-last",
+             "includes",
+             "does-not-include"
+            ]
            },
            "upper": {
-            "type": "object",
-            "description": "The upper value to match in a range criteria."
+            "description": "The upper value to match in a range criteria. A string or number, depending on the operator."
            },
            "value": {
-            "type": "object",
-            "description": "The single value to match using the operator."
+            "description": "The single value to match using the operator. A string, number or array, depending on the operator."
            },
            "values": {
             "type": "array",
             "description": "An array of values to match using the operator.",
-            "items": {
-             "type": "object"
-            }
+            "items": {}
            }
           },
           "type": "object"
@@ -17243,7 +17711,7 @@
    "path": "/api/3/tags/{id}/search_criteria",
    "tag": "Tag",
    "summary": "Tag Search Criteria",
-   "description": "Updates the search criteria associated with the tag. The following table outlines the search criteria fields and the available operators: | Field | Operators | | ---------- | ---------------- | | ip-address | is, is-not, in-range, not-in-range, is-like, not-like | | ip-address-type | in, not-in | | alternate-address-type | in | | host-name | is, is-not, starts-with, ends-with, contains, does-not-contain, is-empty, is-not-empty, is-like, not-like | | host-type | in, not-in | | operating-system | contains, does-not-contain, is-empty, is-not-empty | | software | contains, does-not-contain| | ope…",
+   "description": "Updates the search criteria associated with the tag. Call insightvm_search_criteria for the operators each field accepts and the value each operator takes.",
    "readOnly": false,
    "destructive": true,
    "admin": false,
@@ -17268,35 +17736,107 @@
      "properties": {
       "filters": {
        "type": "array",
-       "description": "Filters used to match assets. See Search Criteria for more information on the structure and format.",
+       "description": "Filters used to match assets. Call insightvm_search_criteria for the operators each field accepts and the value each operator takes.",
        "items": {
         "properties": {
          "field": {
           "type": "string",
-          "description": "The filter field for the search criteria."
+          "description": "The filter field for the search criteria.",
+          "enum": [
+           "alternate-address-type",
+           "container-image",
+           "container-status",
+           "containers",
+           "criticality-tag",
+           "custom-tag",
+           "cve",
+           "cvss-access-complexity",
+           "cvss-authentication-required",
+           "cvss-access-vector",
+           "cvss-availability-impact",
+           "cvss-confidentiality-impact",
+           "cvss-integrity-impact",
+           "cvss-v3-confidentiality-impact",
+           "cvss-v3-integrity-impact",
+           "cvss-v3-availability-impact",
+           "cvss-v3-attack-vector",
+           "cvss-v3-attack-complexity",
+           "cvss-v3-user-interaction",
+           "cvss-v3-privileges-required",
+           "host-name",
+           "host-type",
+           "ip-address",
+           "ip-address-type",
+           "last-scan-date",
+           "location-tag",
+           "mobile-device-last-sync-time",
+           "open-ports",
+           "operating-system",
+           "owner-tag",
+           "pci-compliance",
+           "risk-score",
+           "service-name",
+           "site-id",
+           "software",
+           "vAsset-cluster",
+           "vAsset-datacenter",
+           "vAsset-host-name",
+           "vAsset-power-state",
+           "vAsset-resource-pool-path",
+           "vulnerability-assessed",
+           "vulnerability-category",
+           "vulnerability-cvss-v3-score",
+           "vulnerability-cvss-score",
+           "vulnerability-exposures",
+           "vulnerability-title",
+           "vulnerability-validated-status"
+          ]
          },
          "lower": {
-          "type": "object",
-          "description": "The lower value to match in a range criteria."
+          "description": "The lower value to match in a range criteria. A string or number, depending on the operator."
          },
          "operator": {
           "type": "string",
-          "description": "The operator on how to match the search criteria."
+          "description": "The operator on how to match the search criteria.",
+          "enum": [
+           "in",
+           "is",
+           "is-not",
+           "starts-with",
+           "ends-with",
+           "contains",
+           "does-not-contain",
+           "is-like",
+           "not-like",
+           "are",
+           "is-greater-than",
+           "is-less-than",
+           "is-applied",
+           "is-not-applied",
+           "is-empty",
+           "is-not-empty",
+           "not-in",
+           "in-range",
+           "not-in-range",
+           "is-on-or-before",
+           "is-on-or-after",
+           "is-between",
+           "is-earlier-than",
+           "is-within-the-last",
+           "includes",
+           "does-not-include"
+          ]
          },
          "upper": {
-          "type": "object",
-          "description": "The upper value to match in a range criteria."
+          "description": "The upper value to match in a range criteria. A string or number, depending on the operator."
          },
          "value": {
-          "type": "object",
-          "description": "The single value to match using the operator."
+          "description": "The single value to match using the operator. A string, number or array, depending on the operator."
          },
          "values": {
           "type": "array",
           "description": "An array of values to match using the operator.",
-          "items": {
-           "type": "object"
-          }
+          "items": {}
          }
         },
         "type": "object"

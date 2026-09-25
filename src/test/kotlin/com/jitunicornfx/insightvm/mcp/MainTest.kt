@@ -305,7 +305,8 @@ class MainTest {
         val init = lines.first { it["id"]?.jsonPrimitive?.content == "1" }
         assertEquals(SERVER_NAME, init["result"]!!.jsonObject["serverInfo"]!!.jsonObject["name"]!!.jsonPrimitive.content)
         val tools = lines.first { it["id"]?.jsonPrimitive?.content == "2" }["result"]!!.jsonObject["tools"]!!.jsonArray
-        assertEquals(1 + 3, tools.size) // Root tag has one op + two meta tools + the export tool
+        // Root tag has one (console) op + two meta tools + the search-criteria reference + the export tool.
+        assertEquals(1 + 4, tools.size)
         val call = lines.first { it["id"]?.jsonPrimitive?.content == "3" }["result"]!!.jsonObject
         assertContains(call["content"]!!.jsonArray.first().jsonObject["text"]!!.jsonPrimitive.content, "\"ok\": true")
         val err = errBuf.toString("UTF-8")

@@ -1,0 +1,913 @@
+{
+ "meta": {
+  "specSha256": "3a8197c22d71a1655e46a3522b144ba3db006f0dba14b2b3969bd6360ce3d755",
+  "generator": "CatalogGenerator.kt@1",
+  "generatedFrom": "specs/insightvm-console-v3.json"
+ },
+ "operators": {
+  "are": {
+   "value": "string"
+  },
+  "contains": {
+   "value": "string"
+  },
+  "does-not-contain": {
+   "value": "string"
+  },
+  "ends-with": {
+   "value": "string"
+  },
+  "in": {
+   "value": "Array[string]"
+  },
+  "in-range": {
+   "lower": "numeric",
+   "upper": "numeric"
+  },
+  "includes": {
+   "value": "Array[string]"
+  },
+  "is": {
+   "value": "string"
+  },
+  "is-applied": {},
+  "is-between": {
+   "lower": "string (yyyy-MM-dd)",
+   "upper": "numeric (yyyy-MM-dd)"
+  },
+  "is-earlier-than": {
+   "value": "numeric (days)"
+  },
+  "is-empty": {},
+  "is-greater-than": {
+   "value": "numeric"
+  },
+  "is-on-or-after": {
+   "value": "string (yyyy-MM-dd)"
+  },
+  "is-on-or-before": {
+   "value": "string (yyyy-MM-dd)"
+  },
+  "is-not": {
+   "value": "string"
+  },
+  "is-not-applied": {},
+  "is-not-empty": {},
+  "is-within-the-last": {
+   "value": "numeric (days)"
+  },
+  "is-less-than": {
+   "value": "string"
+  },
+  "is-like": {
+   "value": "string"
+  },
+  "not-in": {
+   "value": "Array[string]"
+  },
+  "not-in-range": {
+   "lower": "numeric",
+   "upper": "numeric"
+  },
+  "not-like": {
+   "value": "string"
+  },
+  "starts-with": {
+   "value": "string"
+  }
+ },
+ "asset": [
+  {
+   "name": "alternate-address-type",
+   "operators": [
+    "in"
+   ],
+   "values": [
+    "0=IPv4",
+    "1=IPv6"
+   ]
+  },
+  {
+   "name": "container-image",
+   "operators": [
+    "is",
+    "is-not",
+    "starts-with",
+    "ends-with",
+    "contains",
+    "does-not-contain",
+    "is-like",
+    "not-like"
+   ],
+   "values": []
+  },
+  {
+   "name": "container-status",
+   "operators": [
+    "is",
+    "is-not"
+   ],
+   "values": [
+    "created",
+    "running",
+    "paused",
+    "restarting",
+    "exited",
+    "dead",
+    "unknown"
+   ]
+  },
+  {
+   "name": "containers",
+   "operators": [
+    "are"
+   ],
+   "values": [
+    "0=present",
+    "1=not present"
+   ]
+  },
+  {
+   "name": "criticality-tag",
+   "operators": [
+    "is",
+    "is-not",
+    "is-greater-than",
+    "is-less-than",
+    "is-applied",
+    "is-not-applied"
+   ],
+   "values": []
+  },
+  {
+   "name": "custom-tag",
+   "operators": [
+    "is",
+    "is-not",
+    "starts-with",
+    "ends-with",
+    "contains",
+    "does-not-contain",
+    "is-applied",
+    "is-not-applied"
+   ],
+   "values": []
+  },
+  {
+   "name": "cve",
+   "operators": [
+    "is",
+    "is-not",
+    "contains",
+    "does-not-contain"
+   ],
+   "values": []
+  },
+  {
+   "name": "cvss-access-complexity",
+   "operators": [
+    "is",
+    "is-not"
+   ],
+   "values": [
+    "L=Low",
+    "M=Medium",
+    "H=High"
+   ]
+  },
+  {
+   "name": "cvss-authentication-required",
+   "operators": [
+    "is",
+    "is-not"
+   ],
+   "values": [
+    "N=None",
+    "S=Single",
+    "M=Multiple"
+   ]
+  },
+  {
+   "name": "cvss-access-vector",
+   "operators": [
+    "is",
+    "is-not"
+   ],
+   "values": [
+    "L=Local",
+    "A=Adjacent",
+    "N=Network"
+   ]
+  },
+  {
+   "name": "cvss-availability-impact",
+   "operators": [
+    "is",
+    "is-not"
+   ],
+   "values": [
+    "N=None",
+    "P=Partial",
+    "C=Complete"
+   ]
+  },
+  {
+   "name": "cvss-confidentiality-impact",
+   "operators": [
+    "is",
+    "is-not"
+   ],
+   "values": [
+    "N=None",
+    "P=Partial",
+    "C=Complete"
+   ]
+  },
+  {
+   "name": "cvss-integrity-impact",
+   "operators": [
+    "is",
+    "is-not"
+   ],
+   "values": [
+    "N=None",
+    "P=Partial",
+    "C=Complete"
+   ]
+  },
+  {
+   "name": "cvss-v3-confidentiality-impact",
+   "operators": [
+    "is",
+    "is-not"
+   ],
+   "values": [
+    "L=Local",
+    "L=Low",
+    "N=None",
+    "H=High"
+   ]
+  },
+  {
+   "name": "cvss-v3-integrity-impact",
+   "operators": [
+    "is",
+    "is-not"
+   ],
+   "values": [
+    "L=Local",
+    "L=Low",
+    "N=None",
+    "H=High"
+   ]
+  },
+  {
+   "name": "cvss-v3-availability-impact",
+   "operators": [
+    "is",
+    "is-not"
+   ],
+   "values": [
+    "N=None",
+    "L=Low",
+    "H=High"
+   ]
+  },
+  {
+   "name": "cvss-v3-attack-vector",
+   "operators": [
+    "is",
+    "is-not"
+   ],
+   "values": [
+    "N=Network",
+    "A=Adjacent",
+    "L=Local",
+    "P=Physical"
+   ]
+  },
+  {
+   "name": "cvss-v3-attack-complexity",
+   "operators": [
+    "is",
+    "is-not"
+   ],
+   "values": [
+    "L=Low",
+    "H=High"
+   ]
+  },
+  {
+   "name": "cvss-v3-user-interaction",
+   "operators": [
+    "is",
+    "is-not"
+   ],
+   "values": [
+    "N=None",
+    "R=Required"
+   ]
+  },
+  {
+   "name": "cvss-v3-privileges-required",
+   "operators": [
+    "is",
+    "is-not"
+   ],
+   "values": [
+    "N=None",
+    "L=Low",
+    "H=High"
+   ]
+  },
+  {
+   "name": "host-name",
+   "operators": [
+    "is",
+    "is-not",
+    "starts-with",
+    "ends-with",
+    "contains",
+    "does-not-contain",
+    "is-empty",
+    "is-not-empty",
+    "is-like",
+    "not-like"
+   ],
+   "values": []
+  },
+  {
+   "name": "host-type",
+   "operators": [
+    "in",
+    "not-in"
+   ],
+   "values": [
+    "0=Unknown",
+    "1=Guest",
+    "2=Hypervisor",
+    "3=Physical",
+    "4=Mobile"
+   ]
+  },
+  {
+   "name": "ip-address",
+   "operators": [
+    "is",
+    "is-not",
+    "in-range",
+    "not-in-range",
+    "is-like",
+    "not-like"
+   ],
+   "values": []
+  },
+  {
+   "name": "ip-address-type",
+   "operators": [
+    "in",
+    "not-in"
+   ],
+   "values": [
+    "0=IPv4",
+    "1=IPv6"
+   ]
+  },
+  {
+   "name": "last-scan-date",
+   "operators": [
+    "is-on-or-before",
+    "is-on-or-after",
+    "is-between",
+    "is-earlier-than",
+    "is-within-the-last"
+   ],
+   "values": []
+  },
+  {
+   "name": "location-tag",
+   "operators": [
+    "is",
+    "is-not",
+    "starts-with",
+    "ends-with",
+    "contains",
+    "does-not-contain",
+    "is-applied",
+    "is-not-applied"
+   ],
+   "values": []
+  },
+  {
+   "name": "mobile-device-last-sync-time",
+   "operators": [
+    "is-within-the-last",
+    "is-earlier-than"
+   ],
+   "values": []
+  },
+  {
+   "name": "open-ports",
+   "operators": [
+    "is",
+    "is-not",
+    "in-range"
+   ],
+   "values": []
+  },
+  {
+   "name": "operating-system",
+   "operators": [
+    "contains",
+    "does-not-contain",
+    "is-empty",
+    "is-not-empty"
+   ],
+   "values": []
+  },
+  {
+   "name": "owner-tag",
+   "operators": [
+    "is",
+    "is-not",
+    "starts-with",
+    "ends-with",
+    "contains",
+    "does-not-contain",
+    "is-applied",
+    "is-not-applied"
+   ],
+   "values": []
+  },
+  {
+   "name": "pci-compliance",
+   "operators": [
+    "is"
+   ],
+   "values": [
+    "0=fail",
+    "1=pass"
+   ]
+  },
+  {
+   "name": "risk-score",
+   "operators": [
+    "is",
+    "is-not",
+    "is-greater-than",
+    "is-less-than",
+    "in-range"
+   ],
+   "values": []
+  },
+  {
+   "name": "service-name",
+   "operators": [
+    "contains",
+    "does-not-contain"
+   ],
+   "values": []
+  },
+  {
+   "name": "site-id",
+   "operators": [
+    "in",
+    "not-in"
+   ],
+   "values": []
+  },
+  {
+   "name": "software",
+   "operators": [
+    "contains",
+    "does-not-contain"
+   ],
+   "values": []
+  },
+  {
+   "name": "vAsset-cluster",
+   "operators": [
+    "is",
+    "is-not",
+    "contains",
+    "does-not-contain",
+    "starts-with"
+   ],
+   "values": []
+  },
+  {
+   "name": "vAsset-datacenter",
+   "operators": [
+    "is",
+    "is-not"
+   ],
+   "values": []
+  },
+  {
+   "name": "vAsset-host-name",
+   "operators": [
+    "is",
+    "is-not",
+    "contains",
+    "does-not-contain",
+    "starts-with"
+   ],
+   "values": []
+  },
+  {
+   "name": "vAsset-power-state",
+   "operators": [
+    "in",
+    "not-in"
+   ],
+   "values": []
+  },
+  {
+   "name": "vAsset-resource-pool-path",
+   "operators": [
+    "contains",
+    "does-not-contain"
+   ],
+   "values": []
+  },
+  {
+   "name": "vulnerability-assessed",
+   "operators": [
+    "is-on-or-before",
+    "is-on-or-after",
+    "is-between",
+    "is-earlier-than",
+    "is-within-the-last"
+   ],
+   "values": []
+  },
+  {
+   "name": "vulnerability-category",
+   "operators": [
+    "is",
+    "is-not",
+    "starts-with",
+    "ends-with",
+    "contains",
+    "does-not-contain"
+   ],
+   "values": []
+  },
+  {
+   "name": "vulnerability-cvss-v3-score",
+   "operators": [
+    "is",
+    "is-not"
+   ],
+   "values": []
+  },
+  {
+   "name": "vulnerability-cvss-score",
+   "operators": [
+    "is",
+    "is-not",
+    "in-range",
+    "is-greater-than",
+    "is-less-than"
+   ],
+   "values": []
+  },
+  {
+   "name": "vulnerability-exposures",
+   "operators": [
+    "includes",
+    "does-not-include"
+   ],
+   "values": []
+  },
+  {
+   "name": "vulnerability-title",
+   "operators": [
+    "contains",
+    "does-not-contain",
+    "is",
+    "is-not",
+    "starts-with",
+    "ends-with"
+   ],
+   "values": []
+  },
+  {
+   "name": "vulnerability-validated-status",
+   "operators": [
+    "are"
+   ],
+   "values": [
+    "0=present",
+    "1=not present"
+   ]
+  }
+ ],
+ "discovery": [
+  {
+   "name": "ActiveSync",
+   "connectionTypes": [
+    "activesync-ldap",
+    "activesync-office365",
+    "activesync-powershell"
+   ],
+   "fields": [
+    {
+     "name": "last-sync-time",
+     "operators": [
+      "is-within-the-last",
+      "is-earlier-than"
+     ],
+     "values": []
+    },
+    {
+     "name": "operating-system",
+     "operators": [
+      "contains",
+      "does-not-contain"
+     ],
+     "values": []
+    },
+    {
+     "name": "user",
+     "operators": [
+      "is",
+      "is-not",
+      "contains",
+      "does-not-contain",
+      "starts-with"
+     ],
+     "values": []
+    }
+   ]
+  },
+  {
+   "name": "AWS",
+   "connectionTypes": [
+    "aws"
+   ],
+   "fields": [
+    {
+     "name": "availability-zone",
+     "operators": [
+      "contains",
+      "does-not-contain"
+     ],
+     "values": []
+    },
+    {
+     "name": "guest-os-family",
+     "operators": [
+      "contains",
+      "does-not-contain"
+     ],
+     "values": []
+    },
+    {
+     "name": "instance-id",
+     "operators": [
+      "contains",
+      "does-not-contain"
+     ],
+     "values": []
+    },
+    {
+     "name": "instance-name",
+     "operators": [
+      "is",
+      "is-not",
+      "contains",
+      "does-not-contain",
+      "starts-with"
+     ],
+     "values": []
+    },
+    {
+     "name": "instance-state",
+     "operators": [
+      "in",
+      "not-in"
+     ],
+     "values": []
+    },
+    {
+     "name": "instance-type",
+     "operators": [
+      "in",
+      "not-in"
+     ],
+     "values": []
+    },
+    {
+     "name": "ip-address",
+     "operators": [
+      "in-range",
+      "not-in-range",
+      "is",
+      "is-not"
+     ],
+     "values": []
+    },
+    {
+     "name": "region",
+     "operators": [
+      "in",
+      "not-in"
+     ],
+     "values": []
+    },
+    {
+     "name": "vpc-id",
+     "operators": [
+      "is",
+      "is-not",
+      "contains",
+      "does-not-contain",
+      "starts-with"
+     ],
+     "values": []
+    }
+   ]
+  },
+  {
+   "name": "DHCP",
+   "connectionTypes": [
+    "dhcp"
+   ],
+   "fields": [
+    {
+     "name": "host-name",
+     "operators": [
+      "is",
+      "is-not",
+      "contains",
+      "does-not-contain",
+      "starts-with"
+     ],
+     "values": []
+    },
+    {
+     "name": "ip-address",
+     "operators": [
+      "in-range",
+      "not-in-range",
+      "is",
+      "is-not"
+     ],
+     "values": []
+    },
+    {
+     "name": "mac-address",
+     "operators": [
+      "is",
+      "is-not",
+      "contains",
+      "does-not-contain",
+      "starts-with"
+     ],
+     "values": []
+    }
+   ]
+  },
+  {
+   "name": "Sonar",
+   "connectionTypes": [
+    "sonar"
+   ],
+   "fields": [
+    {
+     "name": "search-domain",
+     "operators": [
+      "contains",
+      "is"
+     ],
+     "values": []
+    },
+    {
+     "name": "ip-address",
+     "operators": [
+      "in-range",
+      "is"
+     ],
+     "values": []
+    },
+    {
+     "name": "sonar-scan-date",
+     "operators": [
+      "is-within-the-last"
+     ],
+     "values": []
+    }
+   ]
+  },
+  {
+   "name": "vSphere",
+   "connectionTypes": [
+    "vsphere"
+   ],
+   "fields": [
+    {
+     "name": "cluster",
+     "operators": [
+      "is",
+      "is-not",
+      "contains",
+      "does-not-contain",
+      "starts-with"
+     ],
+     "values": []
+    },
+    {
+     "name": "data-center",
+     "operators": [
+      "is",
+      "is-not"
+     ],
+     "values": []
+    },
+    {
+     "name": "discovered-time",
+     "operators": [
+      "is-on-or-before",
+      "is-on-or-after",
+      "is-between",
+      "is-earlier-than",
+      "is-within-the-last"
+     ],
+     "values": []
+    },
+    {
+     "name": "guest-os-family",
+     "operators": [
+      "contains",
+      "does-not-contain"
+     ],
+     "values": []
+    },
+    {
+     "name": "host-name",
+     "operators": [
+      "is",
+      "is-not",
+      "contains",
+      "does-not-contain",
+      "starts-with"
+     ],
+     "values": []
+    },
+    {
+     "name": "ip-address",
+     "operators": [
+      "in-range",
+      "not-in-range",
+      "is",
+      "is-not"
+     ],
+     "values": []
+    },
+    {
+     "name": "power-state",
+     "operators": [
+      "in",
+      "not-in"
+     ],
+     "values": [
+      "poweredOn",
+      "poweredOff",
+      "suspended"
+     ]
+    },
+    {
+     "name": "resource-pool-path",
+     "operators": [
+      "contains",
+      "does-not-contain"
+     ],
+     "values": []
+    },
+    {
+     "name": "last-time-seen",
+     "operators": [
+      "is-on-or-before",
+      "is-on-or-after",
+      "is-between",
+      "is-earlier-than",
+      "is-within-the-last"
+     ],
+     "values": []
+    },
+    {
+     "name": "vm",
+     "operators": [
+      "is",
+      "is-not",
+      "contains",
+      "does-not-contain",
+      "starts-with"
+     ],
+     "values": []
+    }
+   ]
+  }
+ ]
+}

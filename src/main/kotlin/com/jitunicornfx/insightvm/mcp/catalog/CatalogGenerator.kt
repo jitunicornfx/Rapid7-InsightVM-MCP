@@ -18,9 +18,10 @@ import java.security.MessageDigest
 import kotlin.system.exitProcess
 
 /**
- * Generates the tool catalog (`src/main/resources/catalog/{v3,v4}.json`) from the bundled OpenAPI
- * documents in `specs/`. The runtime registers one tool per catalog entry and never parses the raw
- * specifications; output is deterministic so `--check` can detect drift.
+ * Generates the tool catalog (`src/main/resources/catalog/{v3,v4}.json`) and the console's
+ * search-criteria reference (`search-criteria.json`) from the bundled OpenAPI documents in `specs/`.
+ * The runtime registers one tool per catalog entry and never parses the raw specifications; output
+ * is deterministic so `--check` can detect drift.
  *
  * Run through Gradle: `./gradlew generateCatalog` (regenerate) / `./gradlew verifyCatalog` (drift
  * check, part of `check`). The rules below are documented in `docs/CATALOG.md`.
@@ -30,6 +31,19 @@ object CatalogGenerator {
     const val GENERATOR_VERSION = "CatalogGenerator.kt@1"
     const val MAX_DESCRIPTION = 600
     const val MAX_PROPERTY_DESCRIPTION = 400
+
+    /**
+     * The characters an operation description may lose to [MAX_DESCRIPTION] before generation fails.
+     * A cut that large drops content, not a tail: updateTagSearchCriteria's copy of the search-criteria
+     * tables lost 5,300 characters mid-row, and nothing said so.
+     */
+    const val MAX_DESCRIPTION_CUT = 1_000
+
+    /** The v4 search-criteria note appended to the search bodies; it runs to about 1,000 characters. */
+    const val MAX_SEARCH_NOTE = 1_500
+
+    /** The third generated file: the console's search-criteria tables. */
+    const val SEARCH_CRITERIA_FILE = "search-criteria.json"
 
     /** A field merged in from a discriminator subtype is one of many on the same object, so its text is kept shorter. */
     const val MAX_MERGED_DESCRIPTION = 200
@@ -96,6 +110,44 @@ object CatalogGenerator {
      */
     private val BODYLESS_OPS = setOf("POST" to "/api/3/administration/license")
 
+    /** The v3 filter components the search-criteria reference applies to: asset criteria, then discovery criteria. */
+    private const val ASSET_FILTER = "SwaggerSearchCriteriaFilter"
+    private const val DISCOVERY_FILTER = "SwaggerDiscoverySearchCriteriaFilter"
+
+    /**
+     * What replaces the specifications' links to their own search-criteria reference. The link points
+     * into `info.description`, which no tool carries, so the model was told to "See Search Criteria"
+     * and had nowhere to look.
+     */
+    const val ASSET_CRITERIA_POINTER =
+        "Call ${CatalogTools.SEARCH_CRITERIA_TOOL} for the operators each field accepts and the value each operator takes."
+    const val DISCOVERY_CRITERIA_POINTER =
+        "Call ${CatalogTools.SEARCH_CRITERIA_TOOL} with kind \"discovery\" for the fields each connection type supports, " +
+            "the operators each accepts and the value each operator takes."
+
+    /** `See <a href="#section/Responses/SearchCriteria">Search Criteria</a> for more information …` and its discovery twin. */
+    private val CRITERIA_LINK =
+        Regex("See (?:the )?<a href=\"#section/Responses/(Discovery)?SearchCriteria\">[^<]*</a> for more information[^.]*\\.")
+
+    /**
+     * Operations whose description is a copy of the search-criteria tables, which the cap cut
+     * mid-row. Each keeps its first sentence and points at the tool that serves the whole reference.
+     */
+    private val CRITERIA_TABLE_OPS = setOf("PUT" to "/api/3/tags/{id}/search_criteria")
+
+    /**
+     * Operations whose description may lose more than [MAX_DESCRIPTION_CUT] characters. Empty: an
+     * entry is a decision that the text past the cap does not matter, and none has been made.
+     */
+    private val LONG_DESCRIPTION_OPS = emptySet<Pair<String, String>>()
+
+    /**
+     * The v4 searches whose body gains the introduction's "Search Criteria" section. It is the only
+     * place v4 says that a `vulnerability` chunk alone does not narrow the assets returned, and it
+     * holds the query-language examples.
+     */
+    private val SEARCH_NOTE_OPS = setOf("POST" to "/v4/integration/assets", "POST" to "/v4/integration/vulnerabilities")
+
     /** One spec → one catalog file. */
     data class Source(val family: ApiFamily, val specFile: String, val outputFile: String)
 
@@ -132,6 +184,7 @@ object CatalogGenerator {
     /** v4 text that is only unrendered template keys, such as `${scanid.id.description}, ${scan.id.id.description}`. */
     private val UNRENDERED = Regex("\\\$\\{[^}]+}(, \\\$\\{[^}]+})*")
     private val WS = Regex("\\s+")
+    private val FIRST_SENTENCE = Regex("^.*?[.!?](?=\\s|$)")
     private val CONTROL = Regex("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]")
     private val ENTITY = Regex("&(#x[0-9a-fA-F]{1,6}|#[0-9]{1,7}|[a-zA-Z][a-zA-Z0-9]{0,31});")
 
@@ -155,14 +208,16 @@ object CatalogGenerator {
     }
 
     /**
-     * Strip layout HTML, decode entities, drop control chars, collapse whitespace, neutralise anything
-     * that could open markup, cap length. Text that is only unrendered template keys is no text.
-     * Tags are stripped before entities are decoded, so an encoded `&lt;script&gt;` is neutralised,
-     * never stripped or passed through.
+     * Point a link to the search-criteria reference at the tool that serves it, strip layout HTML,
+     * decode entities, drop control chars, collapse whitespace, neutralise anything that could open
+     * markup, cap length. Text that is only unrendered template keys is no text. Tags are stripped
+     * before entities are decoded, so an encoded `&lt;script&gt;` is neutralised, never stripped or
+     * passed through.
      */
     internal fun cleanText(text: String?, limit: Int = MAX_DESCRIPTION): String {
         if (text.isNullOrEmpty()) return ""
-        var s = TAG.replace(text, " ")
+        var s = CRITERIA_LINK.replace(text) { if (it.groupValues[1].isEmpty()) ASSET_CRITERIA_POINTER else DISCOVERY_CRITERIA_POINTER }
+        s = TAG.replace(s, " ")
         s = unescapeEntities(s)
         s = CONTROL.replace(s, "")
         s = WS.replace(s, " ").trim()
@@ -190,8 +245,9 @@ object CatalogGenerator {
 
     // ------------------------------------------------------------------ schema inlining
 
-    private class Inliner(components: JsonObject?) {
-        private val schemas: JsonObject = withOverrides(components?.get("schemas")?.jsonObject ?: JsonObject(emptyMap()))
+    /** Inlines against [components], with [overrides] (component → property → schema) applied first. */
+    private class Inliner(components: JsonObject?, overrides: Map<String, Map<String, JsonObject>>) {
+        private val schemas: JsonObject = withOverrides(components?.get("schemas")?.jsonObject ?: JsonObject(emptyMap()), overrides)
 
         private fun resolve(ref: String): Pair<String, JsonObject> {
             val prefix = "#/components/schemas/"
@@ -333,14 +389,51 @@ object CatalogGenerator {
         }
     }
 
-    /** [schemas] with [PROPERTY_OVERRIDES] applied to the components they name. */
-    private fun withOverrides(schemas: JsonObject): JsonObject = JsonObject(
+    /** [schemas] with [overrides] applied to the components they name. */
+    private fun withOverrides(schemas: JsonObject, overrides: Map<String, Map<String, JsonObject>>): JsonObject = JsonObject(
         schemas.mapValues { (name, schema) ->
-            val fixes = PROPERTY_OVERRIDES[name]
+            val fixes = overrides[name]
             val props = (schema as? JsonObject)?.get("properties") as? JsonObject
             if (fixes == null || props == null) schema else JsonObject(schema.jsonObject + ("properties" to JsonObject(props.mapValues { (p, s) -> fixes[p] ?: s })))
         },
     )
+
+    /**
+     * The search-criteria filter components with [reference] applied. `field` and `operator` gain an
+     * `enum` of the names the tables list: for discovery, the union over every connection type. The
+     * value properties lose the `object` type the spec gives them, which no operator takes: a value is
+     * a string, a number or an array, and a bound a string or a number. Once the reference exists, a
+     * filter component or property it cannot find fails generation rather than going unconstrained.
+     */
+    private fun criteriaOverrides(components: JsonObject?, reference: SearchCriteriaReference?): Map<String, Map<String, JsonObject>> {
+        if (reference == null) return emptyMap()
+        val schemas = components?.get("schemas") as? JsonObject
+        fun filter(component: String, fields: List<CriteriaField>): Map<String, JsonObject> {
+            val props = (schemas?.get(component) as? JsonObject)?.get("properties") as? JsonObject
+                ?: throw CatalogGenerationException("the search-criteria reference applies to $component, which has no properties")
+            fun prop(name: String) = props[name] as? JsonObject
+                ?: throw CatalogGenerationException("$component has no '$name' property for the search-criteria reference")
+            fun enumOf(names: List<String>) = JsonArray(names.distinct().map(::JsonPrimitive))
+            fun untyped(name: String, kinds: String): JsonObject {
+                val schema = prop(name)
+                val text = listOfNotNull((schema["description"] as? JsonPrimitive)?.contentOrNull, "A $kinds, depending on the operator.")
+                return JsonObject(schema - "type" + ("description" to JsonPrimitive(text.joinToString(" "))))
+            }
+            val values = prop("values")
+            return mapOf(
+                "field" to JsonObject(prop("field") + ("enum" to enumOf(fields.map { it.name }))),
+                "operator" to JsonObject(prop("operator") + ("enum" to enumOf(fields.flatMap { it.operators }))),
+                "value" to untyped("value", "string, number or array"),
+                "lower" to untyped("lower", "string or number"),
+                "upper" to untyped("upper", "string or number"),
+                "values" to JsonObject(values + ("items" to JsonObject(((values["items"] as? JsonObject) ?: JsonObject(emptyMap())) - "type"))),
+            )
+        }
+        return mapOf(
+            ASSET_FILTER to filter(ASSET_FILTER, reference.asset),
+            DISCOVERY_FILTER to filter(DISCOVERY_FILTER, reference.discovery.flatMap { it.fields }),
+        )
+    }
 
     /** The type a nested schema node plainly has but does not declare, or null when nothing says. */
     private fun inferType(schema: Map<String, JsonElement>): String? {
@@ -506,8 +599,54 @@ object CatalogGenerator {
 
     // ------------------------------------------------------------------ catalog
 
-    fun buildCatalog(family: ApiFamily, spec: JsonObject, specSha256: String, source: String): Catalog {
-        val inliner = Inliner(spec["components"] as? JsonObject)
+    /** The search-criteria reference in [spec]'s introduction, or null when it has none (v4). */
+    fun searchCriteria(spec: JsonObject, specSha256: String, source: String): SearchCriteriaReference? =
+        SearchCriteriaTables.parse(introduction(spec), SearchCriteriaMeta(specSha256, GENERATOR_VERSION, source))
+
+    private fun introduction(spec: JsonObject): String? = ((spec["info"] as? JsonObject)?.get("description") as? JsonPrimitive)?.contentOrNull
+
+    /**
+     * An operation's cleaned description, capped. One that is a copy of the search-criteria tables
+     * ([CRITERIA_TABLE_OPS]) keeps its first sentence and points at the reference tool instead. Any
+     * other that the cap would cut by more than [MAX_DESCRIPTION_CUT] fails generation unless it is
+     * in [LONG_DESCRIPTION_OPS].
+     */
+    private fun describe(op: JsonObject, method: String, path: String): String {
+        val full = cleanText(op["description"]?.jsonPrimitive?.contentOrNull, Int.MAX_VALUE)
+        if ((method to path) in CRITERIA_TABLE_OPS) return "${FIRST_SENTENCE.find(full)?.value ?: full} $ASSET_CRITERIA_POINTER".trim()
+        // cap keeps MAX_DESCRIPTION - 1 characters and an ellipsis.
+        val lost = full.length - (MAX_DESCRIPTION - 1)
+        if (lost > MAX_DESCRIPTION_CUT && (method to path) !in LONG_DESCRIPTION_OPS) {
+            throw CatalogGenerationException(
+                "the description of ${op["operationId"]} is ${full.length} characters, and the $MAX_DESCRIPTION-character cap would drop " +
+                    "$lost of them; shorten it in the generator or allow-list it in LONG_DESCRIPTION_OPS",
+            )
+        }
+        return cap(full, MAX_DESCRIPTION)
+    }
+
+    /** [body] with [note] after its own description. */
+    private fun withNote(body: CatalogBody, note: String): CatalogBody {
+        val own = (body.schema["description"] as? JsonPrimitive)?.contentOrNull
+        return body.copy(schema = JsonObject(body.schema + ("description" to JsonPrimitive(listOfNotNull(own, note).joinToString(" ")))))
+    }
+
+    /**
+     * Build the catalog for [spec]. [criteria] defaults to the reference in the spec's own
+     * introduction; [generate] passes the one it has already parsed, so it is read once.
+     */
+    fun buildCatalog(
+        family: ApiFamily,
+        spec: JsonObject,
+        specSha256: String,
+        source: String,
+        criteria: SearchCriteriaReference? = searchCriteria(spec, specSha256, source),
+    ): Catalog {
+        val components = spec["components"] as? JsonObject
+        val inliner = Inliner(components, PROPERTY_OVERRIDES + criteriaOverrides(components, criteria))
+        val searchNote = SearchCriteriaTables.section(introduction(spec), "Search Criteria", level = 2)
+            ?.let { cleanText(it, MAX_SEARCH_NOTE) }
+            ?.takeIf { it.isNotEmpty() }
         val ops = mutableListOf<CatalogOp>()
         for ((path, item) in spec["paths"]!!.jsonObject) {
             val pathItem = item.jsonObject
@@ -526,13 +665,15 @@ object CatalogGenerator {
                     path = path,
                     tag = (op["tags"] as? JsonArray)?.firstOrNull()?.jsonPrimitive?.content ?: "Untagged",
                     summary = cleanText(op["summary"]?.jsonPrimitive?.contentOrNull, MAX_SUMMARY),
-                    description = cleanText(op["description"]?.jsonPrimitive?.contentOrNull),
+                    description = describe(op, upper, path),
                     readOnly = readOnly,
                     // A DELETE and the console command are destructive whatever their id says.
                     destructive = !readOnly && (upper == "DELETE" || admin || !ADDITIVE_OPID.containsMatchIn(opId)),
                     admin = admin,
                     params = buildParams(op, inliner, family),
-                    body = buildBody(op, upper, path, inliner),
+                    body = buildBody(op, upper, path, inliner)?.let { body ->
+                        if (searchNote != null && (upper to path) in SEARCH_NOTE_OPS) withNote(body, searchNote) else body
+                    },
                     responses = successContentType(op, inliner),
                 )
             }
@@ -551,21 +692,35 @@ object CatalogGenerator {
         return Catalog(meta, ops)
     }
 
-    /** Generate every catalog from [specDir]; validates with the runtime loader's own invariants. */
+    /** Every file [generate] writes: one catalog per source, then the search-criteria reference. */
+    val OUTPUTS: List<String> get() = SOURCES.map { it.outputFile } + SEARCH_CRITERIA_FILE
+
+    /**
+     * Generate every catalog, and the console's search-criteria reference, from [specDir]; validates
+     * with the runtime loaders' own invariants. The console specification must carry the reference:
+     * the tool that serves it is registered whenever console tools are.
+     */
     fun generate(specDir: Path): Map<String, String> {
         val result = LinkedHashMap<String, String>()
         val allNames = HashMap<String, String>()
+        var reference: SearchCriteriaReference? = null
         for (src in SOURCES) {
             val raw = Files.readAllBytes(specDir.resolve(src.specFile))
             val sha = MessageDigest.getInstance("SHA-256").digest(raw).joinToString("") { "%02x".format(it) }
             val spec = Json.parseToJsonElement(raw.toString(Charsets.UTF_8)).jsonObject
-            val catalog = buildCatalog(src.family, spec, sha, "specs/${src.specFile}")
+            val source = "specs/${src.specFile}"
+            val criteria = searchCriteria(spec, sha, source)
+            if (src.family == ApiFamily.CONSOLE) reference = criteria
+            val catalog = buildCatalog(src.family, spec, sha, source, criteria)
             CatalogLoader.validate(catalog, src.family)
             for (op in catalog.ops) {
                 allNames.put(op.name, src.family.id)?.let { throw CatalogGenerationException("duplicate tool name ${op.name} ($it and ${src.family.id})") }
             }
             result[src.outputFile] = output.encodeToString(Catalog.serializer(), catalog) + "\n"
         }
+        val console = SOURCES.first { it.family == ApiFamily.CONSOLE }.specFile
+        val found = reference ?: throw CatalogGenerationException("specs/$console has no search-criteria reference ('Fields' table) in its introduction")
+        result[SEARCH_CRITERIA_FILE] = output.encodeToString(SearchCriteriaReference.serializer(), found) + "\n"
         return result
     }
 
@@ -612,7 +767,7 @@ object CatalogGenerator {
                     System.err.println("catalog out of date: ${stale.joinToString(", ")} - run: ./gradlew generateCatalog")
                     exitProcess(1)
                 }
-                println("catalog up to date (${SOURCES.joinToString(", ") { it.outputFile }})")
+                println("catalog up to date (${OUTPUTS.joinToString(", ")})")
             } else {
                 write(specs, out).forEach { println("wrote $it (${Files.size(it)} bytes)") }
             }

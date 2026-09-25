@@ -131,8 +131,12 @@ writes that purely add (`create_*`, `add_*`, `start_*`, `tag_*`, …) are marked
 | Console v3 | Asset Discovery, Policy Override, Administration, Vulnerability Result/Exception, Credential, Scan Template, Scan, Vulnerability Check, Root, Remediation | 61 | `get_sonar_queries`, `get_info`, `get_scans`, `get_asset_vulnerability_solutions` |
 | Cloud v4 | Scan / Asset / Site / Vulnerability / Health | 13 | `cloud_search_integration_assets`, `cloud_start_scan`, `cloud_health` |
 
-Three tools are the server's own rather than the API's: `insightvm_server_info` (configuration, filters, counts),
-`insightvm_list_tool_groups` (tools grouped by tag) and `insightvm_export_to_file` (see below).
+Four tools are the server's own rather than the API's: `insightvm_server_info` (configuration, filters, counts),
+`insightvm_list_tool_groups` (tools grouped by tag), `insightvm_search_criteria` and `insightvm_export_to_file` (see below).
+`insightvm_search_criteria` serves the console's search-criteria reference: the fields a filter can name, the operators
+each accepts and the value each operator takes. The Security Console documents this only in its specification's
+introduction. The filter schemas of `find_assets`, asset groups, tags and dynamic sites point to the tool, and list
+the valid `field` and `operator` values. It is registered whenever a console tool is.
 
 ## Large results
 
@@ -208,7 +212,7 @@ flowchart LR
         direction TB
         T1[stdio] --> F
         T2["Streamable HTTP /mcp<br/>legacy SSE /sse"] --> G["Transport guard<br/>bearer · Host/Origin · CORS · size · throttle"] --> F
-        F["CatalogFilter<br/>--read-only · --tags · --api · --tools"] --> R["CatalogTools<br/>~343 generated tools + 3 server tools"]
+        F["CatalogFilter<br/>--read-only · --tags · --api · --tools"] --> R["CatalogTools<br/>~343 generated tools + 4 server tools"]
         R --> B["ArgumentBinder<br/>schema coercion · path encoding · caps"]
         B --> K["Rapid7Client (OkHttp)<br/>no redirects · wire cap"]
         K --> S["ResponseSanitizer<br/>HTML→text · markup neutralised · fenced"]

@@ -10,6 +10,7 @@ import com.jitunicornfx.insightvm.mcp.tools.ExportTools
 import com.jitunicornfx.insightvm.mcp.SERVER_VERSION
 import com.jitunicornfx.insightvm.mcp.apiTool
 import com.jitunicornfx.insightvm.mcp.booleanOrNull
+import com.jitunicornfx.insightvm.mcp.errorResult
 import com.jitunicornfx.insightvm.mcp.stringOrNull
 import com.jitunicornfx.insightvm.mcp.textResult
 import io.ktor.http.ContentType
@@ -26,13 +27,14 @@ import kotlinx.serialization.json.putJsonObject
 import com.jitunicornfx.insightvm.mcp.JsonCodec
 
 /**
- * Registers one MCP tool per selected catalog operation, plus two meta tools that help clients
- * navigate a large tool set.
+ * Registers one MCP tool per selected catalog operation, plus meta tools that help clients navigate a
+ * large tool set: two always, and the search-criteria reference whenever a console tool is selected.
  */
 object CatalogTools {
 
     const val SERVER_INFO_TOOL = "insightvm_server_info"
     const val TOOL_GROUPS_TOOL = "insightvm_list_tool_groups"
+    const val SEARCH_CRITERIA_TOOL = "insightvm_search_criteria"
 
     private val IDEMPOTENT_METHODS = setOf("PUT", "DELETE")
 
@@ -54,7 +56,10 @@ object CatalogTools {
         // The export tool writes to the local filesystem, so it is gated twice: an operator can turn
         // it off outright, and --read-only removes it because that flag promises no tool changes anything.
         val exportEnabled = !config.filter.readOnly && !config.exportDisabled
-        server.registerMetaTools(config, catalogs, selected, if (exportEnabled) 3 else 2)
+        // The reference serves console tools only: v4 filters are expressions, not field/operator pairs.
+        val criteriaEnabled = selected.any { it.family == ApiFamily.CONSOLE }
+        server.registerMetaTools(config, catalogs, selected, 2 + listOf(exportEnabled, criteriaEnabled).count { it })
+        if (criteriaEnabled) server.registerSearchCriteriaTool(SearchCriteria.bundled)
         if (exportEnabled) {
             with(ExportTools) { server.registerExportTool(client, config, selected, spool) }
         }
@@ -150,6 +155,41 @@ object CatalogTools {
         ) { args ->
             val tag = args.stringOrNull("tag")?.trim()?.lowercase()
             textResult(pretty(toolGroups(selected, tag)))
+        }
+    }
+
+    /**
+     * The console's search-criteria reference, which the filter schemas of find_assets, asset groups,
+     * tags and dynamic sites point at. Its text comes from the bundled reference, never from the API.
+     */
+    internal fun Server.registerSearchCriteriaTool(reference: SearchCriteriaReference) {
+        apiTool(
+            name = SEARCH_CRITERIA_TOOL,
+            description = "The Security Console's search-criteria reference: the fields a filter can name, the operators each " +
+                "field accepts, the values of enumerated fields, and the value, lower or upper property each operator reads. " +
+                "Use it to build the filters of find_assets and of asset group and tag search criteria (kind \"asset\", the " +
+                "default), or of a dynamic site's discovery search criteria (kind \"discovery\"). Pass field to look up one field.",
+            inputSchema = ToolSchema(
+                properties = buildJsonObject {
+                    putJsonObject("kind") {
+                        put("type", "string")
+                        putJsonArray("enum") { SearchCriteria.Kind.entries.forEach { add(it.id) } }
+                        put("description", "Which criteria: \"asset\" (default) or \"discovery\".")
+                    }
+                    putJsonObject("field") {
+                        put("type", "string")
+                        put("description", "Only this field (case-insensitive), with the properties each of its operators reads.")
+                    }
+                },
+            ),
+            readOnly = true,
+        ) { args ->
+            val kind = args.stringOrNull("kind")?.let { SearchCriteria.Kind.fromId(it) } ?: SearchCriteria.Kind.ASSET
+            SearchCriteria.render(reference, kind, args.stringOrNull("field"))?.let { textResult(it) }
+                ?: errorResult(
+                    "No ${kind.id} search-criteria field has that name. Call $SEARCH_CRITERIA_TOOL without 'field' to list them" +
+                        if (kind == SearchCriteria.Kind.ASSET) ", or with kind \"discovery\" for a dynamic site's discovery fields." else ".",
+                )
         }
     }
 

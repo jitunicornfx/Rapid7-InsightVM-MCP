@@ -150,7 +150,8 @@
        "description": "Example {\"asset\": \"last_assessed_for_vulnerabilities >= '2025-09-13T00:02:01Z'\", \"vulnerability\": \"cvss_score >= 9\"} Filter the results to include assets which have vulnerabilities matching the asset criteria and subsequently filter for individual vulnerabilities that meet the vulnerability criteria."
       }
      },
-     "type": "object"
+     "type": "object",
+     "description": "Use search criteria to filter the asset set and the vulnerability findings returned for each asset. Search criteria supports two independent chunks: - `asset` filters which assets are eligible to be returned. - `vulnerability` filters which vulnerabilities are returned within each returned asset. Important behavior: - A `vulnerability` chunk by itself does not change the number of assets returned; it only filters vulnerabilities within those assets. - If you want to filter assets using vulnerability characteristics, include those conditions in the `asset` chunk (using `asset.vulnerability.*` mapped fields), not only in the `vulnerability` chunk. Examples: - Filter assets by asset and vulnerability attributes: `{\"asset\": \"os.arch = 'x86_64' && vulnerability.risk > 0.0\"}` - Filter vulnerabilities within assets already selected by asset criteria: `{\"asset\": \"last_assessed_for_vulnerabilities >= '2025-09-13T00:02:01Z'\", \"vulnerability\": \"cvss_score >= 9\"}` - Vulnerability-only filtering: `{\"vulnerability\": \"cvss_score >= 9\"}`"
     }
    },
    "responses": {
@@ -720,7 +721,7 @@
        "description": "Search expression with criteria for searching on vulnerabilities."
       }
      },
-     "description": "Criteria for searching vulnerabilities.",
+     "description": "Criteria for searching vulnerabilities. Use search criteria to filter the asset set and the vulnerability findings returned for each asset. Search criteria supports two independent chunks: - `asset` filters which assets are eligible to be returned. - `vulnerability` filters which vulnerabilities are returned within each returned asset. Important behavior: - A `vulnerability` chunk by itself does not change the number of assets returned; it only filters vulnerabilities within those assets. - If you want to filter assets using vulnerability characteristics, include those conditions in the `asset` chunk (using `asset.vulnerability.*` mapped fields), not only in the `vulnerability` chunk. Examples: - Filter assets by asset and vulnerability attributes: `{\"asset\": \"os.arch = 'x86_64' && vulnerability.risk > 0.0\"}` - Filter vulnerabilities within assets already selected by asset criteria: `{\"asset\": \"last_assessed_for_vulnerabilities >= '2025-09-13T00:02:01Z'\", \"vulnerability\": \"cvss_score >= 9\"}` - Vulnerability-only filtering: `{\"vulnerability\": \"cvss_score >= 9\"}`",
      "type": "object"
     }
    },

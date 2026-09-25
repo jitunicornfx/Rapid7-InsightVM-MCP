@@ -30,7 +30,10 @@ Out of scope: a compromised operator machine, a malicious bundled specification,
   ends up as `‹script›`. A bare `<` or `>` cannot start a tag and is left alone, because the v4 query language is
   written with it (`cvss_score >= 9`). The loader re-validates that no markup opener survived in a tool's summary or
   description (`CatalogLoader.validate`). Nothing the API returns at runtime ever becomes part of a tool definition.
-* The two meta tools only emit server-authored JSON built from the catalog.
+* The meta tools only emit server-authored text built from the bundled catalog and the bundled search-criteria
+  reference (`catalog/search-criteria.json`, generated from the v3 specification's introduction and cleaned like
+  every description). The loader refuses a reference with an invalid name or a markup opener, and an unknown `field`
+  argument is refused without being echoed back.
 
 ### XSS / markup (data → client UI)
 

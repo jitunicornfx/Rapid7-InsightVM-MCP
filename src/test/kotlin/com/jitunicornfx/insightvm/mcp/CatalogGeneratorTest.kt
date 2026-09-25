@@ -6,6 +6,11 @@ import com.jitunicornfx.insightvm.mcp.catalog.CatalogGenerator
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogLoader
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogOp
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogResponses
+import com.jitunicornfx.insightvm.mcp.catalog.CriteriaField
+import com.jitunicornfx.insightvm.mcp.catalog.DiscoveryConnection
+import com.jitunicornfx.insightvm.mcp.catalog.SearchCriteria
+import com.jitunicornfx.insightvm.mcp.catalog.SearchCriteriaMeta
+import com.jitunicornfx.insightvm.mcp.catalog.SearchCriteriaTables
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -58,6 +63,8 @@ class CatalogGeneratorTest {
         }
         assertEquals(330, CatalogLoader.parse(generated.getValue("v3.json"), ApiFamily.CONSOLE).ops.size)
         assertEquals(13, CatalogLoader.parse(generated.getValue("v4.json"), ApiFamily.CLOUD).ops.size)
+        assertEquals(SearchCriteria.load(), SearchCriteria.parse(generated.getValue(CatalogGenerator.SEARCH_CRITERIA_FILE)))
+        assertEquals("specs/insightvm-console-v3.json", SearchCriteria.load().meta.generatedFrom)
     }
 
     @Test
@@ -65,13 +72,15 @@ class CatalogGeneratorTest {
         requireSpecs()
         val dir = createTempDirectory("catalog-out")
         try {
-            assertEquals(listOf("v3.json", "v4.json"), CatalogGenerator.drift(specs, dir))
+            assertEquals(listOf("v3.json", "v4.json", "search-criteria.json"), CatalogGenerator.drift(specs, dir))
+            assertEquals(CatalogGenerator.OUTPUTS, CatalogGenerator.drift(specs, dir))
             val written = CatalogGenerator.write(specs, dir)
-            assertEquals(2, written.size)
+            assertEquals(3, written.size)
             assertTrue(written.all { Files.size(it) > 1000 })
             assertEquals(emptyList(), CatalogGenerator.drift(specs, dir))
             Files.writeString(dir.resolve("v4.json"), "{}")
-            assertEquals(listOf("v4.json"), CatalogGenerator.drift(specs, dir))
+            Files.writeString(dir.resolve("search-criteria.json"), "{}")
+            assertEquals(listOf("v4.json", "search-criteria.json"), CatalogGenerator.drift(specs, dir))
         } finally {
             dir.toFile().deleteRecursively()
         }
@@ -105,6 +114,32 @@ class CatalogGeneratorTest {
         assertEquals("Uses \${x} inline.", CatalogGenerator.cleanText("Uses \${x} inline."))
     }
 
+    /**
+     * Regression: the specs link their search-criteria reference, which lives in info.description
+     * where no tool can carry it. Stripped of its tag the link read "See Search Criteria for more
+     * information", and the model had nowhere to look.
+     */
+    @Test
+    fun `text cleaning points the specs' search-criteria links at the reference tool`() {
+        val pointer = "Call insightvm_search_criteria for the operators each field accepts and the value each operator takes."
+        assertEquals(pointer, CatalogGenerator.ASSET_CRITERIA_POINTER)
+        assertEquals(
+            "Filters used to match assets. $pointer",
+            CatalogGenerator.cleanText("Filters used to match assets. See <a href=\"#section/Responses/SearchCriteria\">Search Criteria</a> for more information on the structure and format."),
+        )
+        assertEquals(
+            "Static groups do not. $pointer",
+            CatalogGenerator.cleanText("Static groups do not. \nSee the <a href=\"#section/Responses/SearchCriteria\">Search Criteria</a> for more information on using dynamic criteria."),
+        )
+        assertEquals(
+            "From a connection. ${CatalogGenerator.DISCOVERY_CRITERIA_POINTER}",
+            CatalogGenerator.cleanText("From a connection. See <a href=\"#section/Responses/DiscoverySearchCriteria\">Discovery Connection Search Criteria</a> for more information on the structure and format."),
+        )
+        assertContains(CatalogGenerator.DISCOVERY_CRITERIA_POINTER, "kind \"discovery\"")
+        // Any other in-page link is only a tag, and is stripped as before.
+        assertEquals("See Asset Search resource.", CatalogGenerator.cleanText("See <a href=\"#operation/findAssets\">Asset Search</a> resource."))
+    }
+
     @Test
     fun `snake case`() {
         assertEquals("get_site_scan_schedules", CatalogGenerator.snakeCase("getSiteScanSchedules"))
@@ -113,10 +148,303 @@ class CatalogGeneratorTest {
         assertEquals("a_b", CatalogGenerator.snakeCase("__a--b__"))
     }
 
-    private fun spec(paths: JsonObject, schemas: JsonObject = JsonObject(emptyMap())): JsonObject = buildJsonObject {
-        putJsonObject("info") { put("title", "T"); put("version", "9") }
+    private fun spec(paths: JsonObject, schemas: JsonObject = JsonObject(emptyMap()), info: String? = null): JsonObject = buildJsonObject {
+        putJsonObject("info") { put("title", "T"); put("version", "9"); info?.let { put("description", it) } }
         put("paths", paths)
         putJsonObject("components") { put("schemas", schemas) }
+    }
+
+    // ---------------------------------------------------------------- search criteria
+
+    /**
+     * A small introduction laid out as the v3 one is: an anchor after some headings, a fenced block
+     * holding a `#` line, stray spaces inside backticks, three ways of writing enumerated values,
+     * operator names that differ between the tables, and discovery tables per connection type.
+     */
+    private val criteriaIntro = """
+        # Overview
+        Intro.
+        #### Search Criteria <a section="section/Responses/SearchCriteria"></a>
+        ```json
+        { "field": "<field-name>" }
+        # not a heading inside a fence
+        ```
+        ##### Fields
+        | Field          | Operators                              |
+        | -------------- | -------------------------------------- |
+        | `risk-score`   | `is` ` in-range` `is-less-than`        |
+        | `host-type`    | `in` `does-not-include`                |
+        ##### Enumerated Properties
+        | Field        | Acceptable Values                                                            |
+        | ------------ | ---------------------------------------------------------------------------- |
+        | `host-type`  | 0=Unknown, 1=Guest                                                           |
+        | `risk-score` | <ul><li><code>L</code> = Low</li><li><code>H</code> = High</li></ul>         |
+        ##### Operator Properties <a section="section/Responses/SearchCriteria/OperatorProperties"></a>
+        | Operator     | `value`            | `lower`    | `upper`    |
+        | -------------|--------------------|------------|------------|
+        | `is`         | `string`           |            |            |
+        | `in`         | `Array[ string ]`  |            |            |
+        | `in-range`   |                    | `numeric`  | `numeric`  |
+        | `less-than`  | `numeric` (days)   |            |            |
+        #### Discovery Connection Search Criteria <a section="section/Responses/DiscoverySearchCriteria"></a>
+        ##### Fields (AWS)
+        Connections of the type `"aws"`.
+        | Field       | Operators |
+        | ----------- | --------- |
+        | `region`    | `in`      |
+        | `vm-state`  | `is`      |
+        ##### Fields (Sonar)
+        Connections of the type `"sonar"`.
+        | Field           | Operators |
+        | --------------- | --------- |
+        | `search-domain` | `is`      |
+        ##### Enumerated Properties (AWS)
+        | Field      | Acceptable Values |
+        | ---------- | ----------------- |
+        | `vm-state` | `on` `off`        |
+        ## HATEOAS
+        Links.
+    """.trimIndent()
+
+    private fun parseCriteria(intro: String) = CatalogGenerator.searchCriteria(spec(JsonObject(emptyMap()), info = intro), "sha", "specs/x.json")
+
+    /** [criteriaIntro] with [from] replaced; fails if [from] is not there, so no case passes vacuously. */
+    private fun criteriaIntro(from: String, to: String): String {
+        assertContains(criteriaIntro, from)
+        return criteriaIntro.replace(from, to)
+    }
+
+    @Test
+    fun `search criteria - the introduction's tables are read into the reference`() {
+        val ref = assertNotNull(parseCriteria(criteriaIntro))
+        assertEquals(SearchCriteriaMeta("sha", CatalogGenerator.GENERATOR_VERSION, "specs/x.json"), ref.meta)
+        assertEquals(
+            listOf(
+                CriteriaField("risk-score", listOf("is", "in-range", "is-less-than"), listOf("L=Low", "H=High")),
+                CriteriaField("host-type", listOf("in", "does-not-include"), listOf("0=Unknown", "1=Guest")),
+            ),
+            ref.asset,
+        )
+        // Names are aliased to the field tables' spelling; types are kept as written, brackets tidied.
+        assertEquals(
+            mapOf(
+                "is" to mapOf("value" to "string"),
+                "in" to mapOf("value" to "Array[string]"),
+                "in-range" to mapOf("lower" to "numeric", "upper" to "numeric"),
+                "is-less-than" to mapOf("value" to "numeric (days)"),
+            ),
+            ref.operators,
+        )
+        assertEquals(
+            listOf(
+                DiscoveryConnection("AWS", listOf("aws"), listOf(CriteriaField("region", listOf("in")), CriteriaField("vm-state", listOf("is"), listOf("on", "off")))),
+                DiscoveryConnection("Sonar", listOf("sonar"), listOf(CriteriaField("search-domain", listOf("is")))),
+            ),
+            ref.discovery,
+        )
+        // A heading's trailing anchor is not part of its title, and a '#' line inside a fence is no heading.
+        assertEquals(
+            listOf(
+                "Overview", "Search Criteria", "Fields", "Enumerated Properties", "Operator Properties",
+                "Discovery Connection Search Criteria", "Fields (AWS)", "Fields (Sonar)", "Enumerated Properties (AWS)", "HATEOAS",
+            ),
+            SearchCriteriaTables.sections(criteriaIntro).map { it.title },
+        )
+        assertEquals(listOf(1, 4, 5, 5, 5, 4, 5, 5, 5, 2), SearchCriteriaTables.sections(criteriaIntro).map { it.level })
+        // No asset fields table, no reference: the v4 introduction, and every other test's spec.
+        assertNull(parseCriteria("# Overview\n## Search Criteria\nUse expressions."))
+        assertNull(CatalogGenerator.searchCriteria(spec(JsonObject(emptyMap())), "s", "f"))
+    }
+
+    /** Regression guard: an operator the tables name that no alias maps must stop the build, not vanish. */
+    @Test
+    fun `search criteria - an unexpected table fails generation rather than being half-read`() {
+        fun fails(intro: String, message: String) {
+            val e = assertFailsWith<CatalogGenerator.CatalogGenerationException> { parseCriteria(intro) }
+            assertContains(e.message!!, message)
+        }
+        fails(criteriaIntro("| `less-than`", "| `lesser-than`"), "'lesser-than', which no field table uses and no alias maps")
+        fails(criteriaIntro("| Operator     |", "| Name         |"), "has columns")
+        fails(criteriaIntro("| `risk-score`   | `is`", "| `risk-score` x | `is`"), "text outside backticks")
+        fails(criteriaIntro("| `host-type`    | `in`", "| `risk-score`   | `in`"), "lists risk-score twice")
+        fails(criteriaIntro("| `host-type`    | `in` `does-not-include`", "| `host-type`    | `in` `in`"), "repeats a name")
+        fails(criteriaIntro("| `host-type`    | `in` `does-not-include`", "| `host type`    | `in`"), "invalid name 'host type'")
+        fails(criteriaIntro("| `host-type`  | 0=Unknown", "| `host-kind`  | 0=Unknown"), "lists values for 'host-kind'")
+        fails(criteriaIntro("| `host-type`  | 0=Unknown, 1=Guest", "| `host-type`  | 0=Unknown, ,1=Guest"), "empty value")
+        fails(criteriaIntro("##### Operator Properties", "##### Operators"), "no 'Operator Properties' section")
+        fails(criteriaIntro("##### Enumerated Properties\n", "##### Values\n"), "no 'Enumerated Properties' section")
+        fails(criteriaIntro("##### Fields (AWS)", "##### AWS").replace("##### Fields (Sonar)", "##### Sonar"), "no discovery")
+        fails(criteriaIntro("##### Enumerated Properties (AWS)", "##### Enumerated Properties (Azure)"), "names no discovery connection")
+        fails(criteriaIntro("Connections of the type `\"sonar\"`.", "Sonar connections."), "'Fields (Sonar)' names no connection type")
+        fails(criteriaIntro("| `in-range`   |                    | `numeric`  | `numeric`  |", "| `in-range`   | `x` |"), "row of 2 cells")
+        fails(criteriaIntro("| ----------- | --------- |", "| nothing |"), "no markdown table")
+        fails(criteriaIntro("##### Fields (Sonar)", "##### Fields"), "2 sections are titled 'Fields'")
+        // An alias may land on a name the table also lists, but only with the same properties.
+        fails(criteriaIntro("| `is`         | `string`           |", "| `is`         | `string`           |            |            |\n| `not-contains` | `string` |"), "no field table uses")
+        val merged = criteriaIntro("`is` ` in-range`", "`is` `does-not-contain` ` in-range`")
+        assertEquals(
+            mapOf("value" to "string"),
+            parseCriteria(merged.replace("| `is`         | `string`           |            |            |", "| `does-not-contain` | `string` | | |\n| `not-contains` | `string` | | |"))!!.operators["does-not-contain"],
+        )
+        fails(
+            merged.replace("| `is`         | `string`           |            |            |", "| `does-not-contain` | `string` | | |\n| `not-contains` | `numeric` | | |"),
+            "gives does-not-contain two different sets of properties",
+        )
+        assertEquals(mapOf("ends with" to "ends-with", "less-than" to "is-less-than", "like" to "is-like", "not-contains" to "does-not-contain"), SearchCriteriaTables.OPERATOR_ALIASES)
+    }
+
+    private fun criteriaSchemas(withDiscovery: Boolean = true) = buildJsonObject {
+        fun link(discovery: Boolean) = if (discovery) {
+            "Filters from a connection. See <a href=\"#section/Responses/DiscoverySearchCriteria\">Discovery Connection Search Criteria</a> for more information on the structure and format."
+        } else {
+            "Filters used to match assets. See <a href=\"#section/Responses/SearchCriteria\">Search Criteria</a> for more information on the structure and format."
+        }
+        for ((holder, filter) in listOf("SearchCriteria" to "SwaggerSearchCriteriaFilter", "DiscoverySearchCriteria" to "SwaggerDiscoverySearchCriteriaFilter")) {
+            val discovery = holder.startsWith("Discovery")
+            putJsonObject(holder) {
+                putJsonObject("properties") {
+                    putJsonObject("filters") { put("type", "array"); put("description", link(discovery)); putJsonObject("items") { put("\$ref", "#/components/schemas/$filter") } }
+                    putJsonObject("match") { put("type", "string"); putJsonArray("enum") { add(JsonPrimitive("all")); add(JsonPrimitive("any")) } }
+                }
+            }
+            if (discovery && !withDiscovery) continue
+            putJsonObject(filter) {
+                put("description", link(discovery))
+                putJsonObject("properties") {
+                    putJsonObject("field") { put("type", "string"); put("description", "The filter field for the search criteria.") }
+                    putJsonObject("lower") { put("type", "object"); put("description", "The lower value to match in a range criteria.") }
+                    putJsonObject("operator") { put("type", "string"); put("description", "The operator on how to match the search criteria.") }
+                    putJsonObject("upper") { put("type", "object") }
+                    putJsonObject("value") { put("type", "object"); put("description", "The single value to match using the operator.") }
+                    putJsonObject("values") {
+                        put("type", "array"); put("description", "An array of values to match using the operator.")
+                        putJsonObject("items") { put("type", "object"); put("description", "An array of values to match using the operator.") }
+                    }
+                }
+            }
+        }
+    }
+
+    private val criteriaPaths = buildJsonObject {
+        for ((path, opId, schema) in listOf(
+            Triple("/api/3/assets/search", "findAssets", "SearchCriteria"),
+            Triple("/api/3/sites/discovery", "setSiteDiscoverySearchCriteria", "DiscoverySearchCriteria"),
+        )) {
+            putJsonObject(path) {
+                putJsonObject("post") {
+                    put("operationId", opId)
+                    putJsonObject("requestBody") { putJsonObject("content") { putJsonObject("application/json") { putJsonObject("schema") { put("\$ref", "#/components/schemas/$schema") } } } }
+                }
+            }
+        }
+    }
+
+    /**
+     * Regression: the eight search-criteria bodies offered `field` and `operator` as free text and
+     * typed `value`, `lower` and `upper` as `object`, which no operator takes.
+     */
+    @Test
+    fun `build rules - the search-criteria reference constrains the filter schemas`() {
+        val bodies = CatalogGenerator.buildCatalog(ApiFamily.CONSOLE, spec(criteriaPaths, criteriaSchemas(), criteriaIntro), "s", "f")
+            .ops.associate { it.opId to it.body!!.schema }
+        fun enumOf(filter: JsonObject, property: String) = filter.at("properties", property)["enum"]!!.jsonArray.map { it.jsonPrimitive.content }
+
+        val filters = bodies.getValue("findAssets").at("properties", "filters")
+        assertEquals("Filters used to match assets. ${CatalogGenerator.ASSET_CRITERIA_POINTER}", filters.str("description"))
+        val asset = filters.at("items")
+        assertEquals(listOf("risk-score", "host-type"), enumOf(asset, "field"))
+        assertEquals(listOf("is", "in-range", "is-less-than", "in", "does-not-include"), enumOf(asset, "operator"))
+        assertEquals("string", asset.at("properties", "field").str("type"))
+        assertEquals(
+            buildJsonObject { put("description", "The single value to match using the operator. A string, number or array, depending on the operator.") },
+            asset.at("properties", "value"),
+        )
+        assertEquals(buildJsonObject { put("description", "The lower value to match in a range criteria. A string or number, depending on the operator.") }, asset.at("properties", "lower"))
+        assertEquals(buildJsonObject { put("description", "A string or number, depending on the operator.") }, asset.at("properties", "upper"))
+        assertEquals(JsonObject(emptyMap()), asset.at("properties", "values", "items"), "an untyped item whose text repeats its array's")
+        assertEquals("array", asset.at("properties", "values").str("type"))
+
+        val discovery = bodies.getValue("setSiteDiscoverySearchCriteria").at("properties", "filters")
+        assertEquals("Filters from a connection. ${CatalogGenerator.DISCOVERY_CRITERIA_POINTER}", discovery.str("description"))
+        assertEquals(listOf("region", "vm-state", "search-domain"), enumOf(discovery.at("items"), "field"))
+        assertEquals(listOf("in", "is"), enumOf(discovery.at("items"), "operator"))
+
+        // Without the reference the same components pass through as declared.
+        val plain = CatalogGenerator.buildCatalog(ApiFamily.CONSOLE, spec(criteriaPaths, criteriaSchemas()), "s", "f").ops.first { it.opId == "findAssets" }
+        val bare = plain.body!!.schema.at("properties", "filters", "items", "properties")
+        assertNull(bare.at("field")["enum"])
+        assertEquals("object", bare.at("value").str("type"))
+
+        // With the reference, a filter component it cannot apply to fails the build.
+        val e = assertFailsWith<CatalogGenerator.CatalogGenerationException> {
+            CatalogGenerator.buildCatalog(ApiFamily.CONSOLE, spec(criteriaPaths, criteriaSchemas(withDiscovery = false), criteriaIntro), "s", "f")
+        }
+        assertContains(e.message!!, "SwaggerDiscoverySearchCriteriaFilter")
+        val noValues = buildJsonObject {
+            criteriaSchemas().forEach { (name, schema) ->
+                if (name != "SwaggerSearchCriteriaFilter") put(name, schema)
+                else put(name, JsonObject(schema.jsonObject + ("properties" to JsonObject(schema.jsonObject.at("properties") - "values"))))
+            }
+        }
+        val missing = assertFailsWith<CatalogGenerator.CatalogGenerationException> {
+            CatalogGenerator.buildCatalog(ApiFamily.CONSOLE, spec(criteriaPaths, noValues, criteriaIntro), "s", "f")
+        }
+        assertContains(missing.message!!, "SwaggerSearchCriteriaFilter has no 'values' property")
+    }
+
+    /**
+     * Regression: updateTagSearchCriteria's description is a 5,900-character copy of the criteria
+     * tables, which the 600-character cap cut mid-row with nothing to say so.
+     */
+    @Test
+    fun `build rules - a description the cap would gut fails, and a copy of the criteria tables is replaced`() {
+        fun op(method: String, path: String, opId: String, description: String) = buildJsonObject {
+            putJsonObject(path) { putJsonObject(method) { put("operationId", opId); put("description", description) } }
+        }
+        val tables = "Updates the search criteria associated with the tag. \n\nThe following table: \n| Field | Operators |\n" + "| ip-address | is |\n".repeat(400)
+        val tag = CatalogGenerator.buildCatalog(ApiFamily.CONSOLE, spec(op("put", "/api/3/tags/{id}/search_criteria", "updateTagSearchCriteria", tables)), "s", "f").ops.single()
+        assertEquals("Updates the search criteria associated with the tag. ${CatalogGenerator.ASSET_CRITERIA_POINTER}", tag.description)
+
+        // The cap keeps 599 characters and an ellipsis; losing up to MAX_DESCRIPTION_CUT beyond that is a tail.
+        val limit = CatalogGenerator.MAX_DESCRIPTION - 1 + CatalogGenerator.MAX_DESCRIPTION_CUT
+        val tail = CatalogGenerator.buildCatalog(ApiFamily.CONSOLE, spec(op("get", "/api/3/x", "getX", "y".repeat(limit))), "s", "f").ops.single()
+        assertEquals(CatalogGenerator.MAX_DESCRIPTION, tail.description.length)
+        assertTrue(tail.description.endsWith("…"))
+        val e = assertFailsWith<CatalogGenerator.CatalogGenerationException> {
+            CatalogGenerator.buildCatalog(ApiFamily.CONSOLE, spec(op("get", "/api/3/x", "getX", "y".repeat(limit + 1))), "s", "f")
+        }
+        assertContains(e.message!!, "the description of \"getX\" is ${limit + 1} characters")
+        assertContains(e.message!!, "drop ${CatalogGenerator.MAX_DESCRIPTION_CUT + 1} of them")
+    }
+
+    /** Regression: v4's "Search Criteria" section, the only place it explains the two chunks, never reached a tool. */
+    @Test
+    fun `build rules - the v4 search-criteria section is added to the two search bodies`() {
+        val intro = "# Overview\nx\n## Sorting\ns\n## Search Criteria\n\nUse search criteria.\n" +
+            "- A `vulnerability` chunk by itself does not change the number of assets returned.\n" +
+            "- `{\"asset\": \"risk > 0.0\", \"vulnerability\": \"cvss_score >= 9\"}`\n\n## Responses\nr\n"
+        val note = "Use search criteria. - A `vulnerability` chunk by itself does not change the number of assets returned. " +
+            "- `{\"asset\": \"risk > 0.0\", \"vulnerability\": \"cvss_score >= 9\"}`"
+        val paths = buildJsonObject {
+            for ((path, description) in listOf("/v4/integration/assets" to null, "/v4/integration/vulnerabilities" to "Criteria for searching vulnerabilities.", "/v4/integration/sites" to "Site criteria.")) {
+                putJsonObject(path) {
+                    putJsonObject("post") {
+                        put("operationId", "search${path.substringAfterLast('/')}")
+                        putJsonObject("requestBody") {
+                            putJsonObject("content") {
+                                putJsonObject("application/json") { putJsonObject("schema") { put("type", "object"); description?.let { put("description", it) } } }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val bodies = CatalogGenerator.buildCatalog(ApiFamily.CLOUD, spec(paths, info = intro), "s", "f").ops.associate { it.path to it.body!!.schema.str("description") }
+        assertEquals(note, bodies["/v4/integration/assets"])
+        assertEquals("Criteria for searching vulnerabilities. $note", bodies["/v4/integration/vulnerabilities"])
+        assertEquals("Site criteria.", bodies["/v4/integration/sites"], "only the asset and vulnerability searches")
+        // Without the section, nothing is added.
+        assertNull(CatalogGenerator.buildCatalog(ApiFamily.CLOUD, spec(paths), "s", "f").ops.first { it.path == "/v4/integration/assets" }.body!!.schema.str("description"))
     }
 
     @Test
@@ -586,7 +914,35 @@ class CatalogGeneratorTest {
             for (src in CatalogGenerator.SOURCES) Files.writeString(dir.resolve(src.specFile), same)
             // v4 names are prefixed, so no collision here; force one by naming the cloud op "cloud_get_x" in v3.
             Files.writeString(dir.resolve("insightvm-console-v3.json"), Json.encodeToString(JsonObject.serializer(), spec(buildJsonObject { putJsonObject("/x") { putJsonObject("get") { put("operationId", "cloudGetX") } } })))
-            assertFailsWith<CatalogGenerator.CatalogGenerationException> { CatalogGenerator.generate(dir) }
+            val e = assertFailsWith<CatalogGenerator.CatalogGenerationException> { CatalogGenerator.generate(dir) }
+            assertContains(e.message!!, "duplicate tool name cloud_get_x")
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `generate writes the console's search-criteria reference and requires one`() {
+        val dir = createTempDirectory("criteria-specs")
+        try {
+            fun write(console: JsonObject) {
+                Files.writeString(dir.resolve("insightvm-console-v3.json"), Json.encodeToString(JsonObject.serializer(), console))
+                Files.writeString(dir.resolve("insightvm-cloud-v4.json"), Json.encodeToString(JsonObject.serializer(), spec(buildJsonObject { putJsonObject("/y") { putJsonObject("get") { put("operationId", "getY") } } })))
+            }
+            write(spec(criteriaPaths, criteriaSchemas()))
+            val e = assertFailsWith<CatalogGenerator.CatalogGenerationException> { CatalogGenerator.generate(dir) }
+            assertContains(e.message!!, "specs/insightvm-console-v3.json has no search-criteria reference")
+
+            write(spec(criteriaPaths, criteriaSchemas(), criteriaIntro))
+            val generated = CatalogGenerator.generate(dir)
+            assertEquals(CatalogGenerator.OUTPUTS, generated.keys.toList())
+            val reference = SearchCriteria.parse(generated.getValue(CatalogGenerator.SEARCH_CRITERIA_FILE))
+            assertEquals(listOf("risk-score", "host-type"), reference.asset.map { it.name })
+            assertEquals("specs/insightvm-console-v3.json", reference.meta.generatedFrom)
+            assertEquals(64, reference.meta.specSha256.length)
+            // The catalog was built against the same reference: its filter lists the same fields.
+            val find = CatalogLoader.parse(generated.getValue("v3.json"), ApiFamily.CONSOLE).ops.single { it.opId == "findAssets" }
+            assertEquals(2, find.body!!.schema.at("properties", "filters", "items", "properties", "field")["enum"]!!.jsonArray.size)
         } finally {
             dir.toFile().deleteRecursively()
         }
@@ -713,6 +1069,100 @@ class CatalogGeneratorTest {
             reads.map { it.name }.sorted(),
         )
         assertTrue(reads.all { it.method == "POST" && !it.destructive && !it.admin })
+    }
+
+    /**
+     * Regression: find_assets and the seven other search-criteria bodies offered `field` and
+     * `operator` as free text, typed the values `object`, and pointed at "Search Criteria", which no
+     * tool carries. v4's own search-criteria section never reached a tool either.
+     */
+    @Test
+    fun `catalog - search-criteria filters carry the reference's fields and operators`() {
+        fun filter(op: String, vararg path: String) = v3.op(op).body!!.schema.at(*path, "filters", "items")
+        fun enumOf(filter: JsonObject, property: String) = filter.at("properties", property)["enum"]!!.jsonArray.map { it.jsonPrimitive.content }
+
+        val find = filter("find_assets", "properties")
+        val fields = enumOf(find, "field")
+        assertEquals(47, fields.size)
+        assertTrue("vulnerability-cvss-v3-score" in fields && "risk-score" in fields && "vAsset-cluster" in fields, fields.toString())
+        val operators = enumOf(find, "operator")
+        assertEquals(26, operators.size)
+        assertTrue("is-greater-than" in operators && "in-range" in operators && "does-not-include" in operators, operators.toString())
+        for (property in listOf("value", "lower", "upper")) {
+            assertNull(find.at("properties", property)["type"], "$property is typed although an operator may take a string, number or array")
+        }
+        assertEquals(JsonObject(emptyMap()), find.at("properties", "values", "items"))
+
+        val assetBodies = mapOf(
+            "create_asset_group" to listOf("properties", "searchCriteria", "properties"),
+            "update_asset_group" to listOf("properties", "searchCriteria", "properties"),
+            "set_asset_group_search_criteria" to listOf("properties"),
+            "create_tag" to listOf("properties", "searchCriteria", "properties"),
+            "update_tag" to listOf("properties", "searchCriteria", "properties"),
+            "update_tag_search_criteria" to listOf("properties"),
+        )
+        for ((op, path) in assetBodies) assertEquals(find, filter(op, *path.toTypedArray()), op)
+
+        val discovery = filter("set_site_discovery_search_criteria", "properties")
+        val connectionTypes = v3.op("set_site_discovery_search_criteria").body!!.schema.at("properties", "connectionType")["enum"]!!.jsonArray.map { it.jsonPrimitive.content }
+        assertEquals(23, enumOf(discovery, "field").size)
+        assertTrue("power-state" in enumOf(discovery, "field"))
+        assertEquals(14, enumOf(discovery, "operator").size)
+        val reference = SearchCriteria.load()
+        assertEquals(connectionTypes.toSet(), reference.discovery.flatMap { it.connectionTypes }.toSet(), "every connectionType has a fields table")
+        assertEquals(reference.asset.map { it.name }, fields)
+
+        for (file in listOf("v3.json", "v4.json")) {
+            val text = Files.readString(committed.resolve(file))
+            assertFalse(text.contains("See Search Criteria") || text.contains("Search Criteria for more information"), "$file still points at the unreachable section")
+        }
+        assertEquals(
+            "Updates the search criteria associated with the tag. ${CatalogGenerator.ASSET_CRITERIA_POINTER}",
+            v3.op("update_tag_search_criteria").description,
+        )
+        assertContains(v3.op("find_assets").body!!.schema.at("properties", "filters").str("description")!!, CatalogGenerator.ASSET_CRITERIA_POINTER)
+        assertContains(v3.op("create_asset_group").description, CatalogGenerator.ASSET_CRITERIA_POINTER)
+        assertContains(v3.op("set_site_discovery_search_criteria").body!!.schema.at("properties", "filters").str("description")!!, CatalogGenerator.DISCOVERY_CRITERIA_POINTER)
+
+        for (op in listOf("cloud_search_integration_assets", "cloud_search_integration_vulnerabilities")) {
+            val note = v4.op(op).body!!.schema.str("description")!!
+            assertContains(note, "A `vulnerability` chunk by itself does not change the number of assets returned", message = op)
+            assertContains(note, "\"vulnerability\": \"cvss_score >= 9\"", message = op)
+            assertFalse(note.endsWith("…"), "$op: the note was cut")
+        }
+        assertTrue(v4.op("cloud_search_integration_vulnerabilities").body!!.schema.str("description")!!.startsWith("Criteria for searching vulnerabilities. Use search criteria"))
+        assertEquals(
+            listOf("cloud_search_integration_assets", "cloud_search_integration_vulnerabilities"),
+            v4.ops.filter { it.body?.schema?.str("description")?.contains("two independent chunks") == true }.map { it.name },
+        )
+    }
+
+    @Test
+    fun `catalog - the search-criteria reference holds every table of the introduction`() {
+        val reference = SearchCriteria.load()
+        assertEquals(47, reference.asset.size)
+        assertEquals(20, reference.asset.count { it.values.isNotEmpty() })
+        assertEquals(listOf("0=IPv4", "1=IPv6"), reference.asset.single { it.name == "alternate-address-type" }.values)
+        assertEquals(listOf("L=Low", "M=Medium", "H=High"), reference.asset.single { it.name == "cvss-access-complexity" }.values)
+        assertEquals(listOf("created", "running", "paused", "restarting", "exited", "dead", "unknown"), reference.asset.single { it.name == "container-status" }.values)
+        // The table's stray spaces (` in-range`, ` is-not-applied`) are not part of the names.
+        assertEquals(listOf("is", "is-not", "in-range"), reference.asset.single { it.name == "open-ports" }.operators)
+        // 26 rows, one of them (not-contains) an alias of a name the table also lists.
+        assertEquals(25, reference.operators.size)
+        assertEquals(mapOf("lower" to "numeric", "upper" to "numeric"), reference.operators["in-range"])
+        assertEquals(mapOf("value" to "numeric (days)"), reference.operators["is-within-the-last"])
+        assertEquals(mapOf("value" to "Array[string]"), reference.operators["in"])
+        assertEquals(emptyMap(), reference.operators["is-applied"])
+        for ((alias, name) in SearchCriteriaTables.OPERATOR_ALIASES) {
+            assertNotNull(reference.operators[name], "$alias → $name")
+            assertNull(reference.operators[alias])
+        }
+        assertNull(reference.operators["does-not-include"], "the spec documents no properties for it")
+        assertEquals(listOf("ActiveSync", "AWS", "DHCP", "Sonar", "vSphere"), reference.discovery.map { it.name })
+        assertEquals(listOf("activesync-ldap", "activesync-office365", "activesync-powershell"), reference.discovery.first().connectionTypes)
+        val vsphere = reference.discovery.single { it.name == "vSphere" }
+        assertEquals(listOf("poweredOn", "poweredOff", "suspended"), vsphere.fields.single { it.name == "power-state" }.values)
+        assertEquals(CatalogLoader.load(ApiFamily.CONSOLE).meta.specSha256, reference.meta.specSha256)
     }
 
     @Test

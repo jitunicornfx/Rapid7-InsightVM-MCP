@@ -8,7 +8,12 @@ import com.jitunicornfx.insightvm.mcp.catalog.CatalogLoader
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogMeta
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogOp
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogParam
+import com.jitunicornfx.insightvm.mcp.catalog.CriteriaField
+import com.jitunicornfx.insightvm.mcp.catalog.DiscoveryConnection
 import com.jitunicornfx.insightvm.mcp.catalog.InputSchemaBuilder
+import com.jitunicornfx.insightvm.mcp.catalog.SearchCriteria
+import com.jitunicornfx.insightvm.mcp.catalog.SearchCriteriaMeta
+import com.jitunicornfx.insightvm.mcp.catalog.SearchCriteriaReference
 import com.jitunicornfx.insightvm.mcp.testutil.TEST_CATALOGS
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -22,6 +27,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class CatalogTest {
@@ -104,6 +110,32 @@ class CatalogTest {
         val count = assertFailsWith<IllegalStateException> { CatalogLoader.validate(Catalog(CatalogMeta("console", opCount = 3), listOf(op("a"))), ApiFamily.CONSOLE) }
         assertTrue(count.message!!.contains("opCount"))
         assertFailsWith<IllegalStateException> { CatalogLoader.load(ApiFamily.CONSOLE).let { CatalogLoader.validate(it, ApiFamily.CLOUD) } }
+    }
+
+    @Test
+    fun `search-criteria reference loader invariants`() {
+        val good = SearchCriteriaReference(
+            meta = SearchCriteriaMeta(),
+            operators = mapOf("is" to mapOf("value" to "string"), "is-applied" to emptyMap()),
+            asset = listOf(CriteriaField("risk-score", listOf("is"), listOf("L=Low"))),
+            discovery = listOf(DiscoveryConnection("AWS", listOf("aws"), listOf(CriteriaField("region", listOf("is-applied"))))),
+        )
+        SearchCriteria.validate(good)
+        assertEquals(good, SearchCriteria.parse(kotlinx.serialization.json.Json.encodeToString(SearchCriteriaReference.serializer(), good)))
+        assertSame(SearchCriteria.bundled, SearchCriteria.bundled, "parsed once per process")
+
+        fun bad(reference: SearchCriteriaReference): String =
+            assertFailsWith<IllegalStateException> { SearchCriteria.validate(reference) }.message!!
+        assertTrue(bad(good.copy(asset = emptyList())).contains("no asset field"))
+        assertTrue(bad(good.copy(discovery = emptyList())).contains("discovery connection"))
+        assertTrue(bad(good.copy(discovery = listOf(good.discovery[0].copy(connectionTypes = emptyList())))).contains("discovery connection"))
+        assertTrue(bad(good.copy(asset = listOf(CriteriaField("risk score", listOf("is"))))).contains("invalid name 'risk score'"))
+        assertTrue(bad(good.copy(asset = listOf(CriteriaField("risk-score", listOf("is<b>"))))).contains("invalid name"))
+        assertTrue(bad(good.copy(asset = listOf(CriteriaField("risk-score", emptyList())))).contains("no operator"))
+        assertTrue(bad(good.copy(operators = mapOf("is" to mapOf("values" to "string")))).contains("operator property"))
+        assertTrue(bad(good.copy(asset = listOf(CriteriaField("risk-score", listOf("is"), listOf("<script>"))))).contains("markup"))
+        assertTrue(bad(good.copy(operators = mapOf("is" to mapOf("value" to "<b>string</b>")))).contains("markup"))
+        assertFailsWith<IllegalStateException> { SearchCriteria.parse("{not json") }
     }
 
     // ---------------------------------------------------------------- filter
