@@ -1,9 +1,11 @@
 package com.jitunicornfx.insightvm.mcp
 
+import com.jitunicornfx.insightvm.mcp.catalog.ApiFamily
 import com.jitunicornfx.insightvm.mcp.catalog.ArgumentBinder
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogBody
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogOp
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogParam
+import com.jitunicornfx.insightvm.mcp.testutil.TEST_CATALOGS
 import io.ktor.http.HttpMethod
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
@@ -142,6 +144,28 @@ class ArgumentBinderTest {
         assertFailsWith<IllegalArgumentException> { ArgumentBinder.bind(op, args("id" to 1, "tagId" to "")) }
         assertEquals("/a/x%3Fy%23z%25", ArgumentBinder.substitutePath("/a/{v}", mapOf("v" to "x?y#z%")))
         assertFailsWith<IllegalArgumentException> { ArgumentBinder.substitutePath("/a/{v}", emptyMap()) }
+    }
+
+    /**
+     * Regression: `encodeURLPathPart` leaves `;` alone, so `instance="..;"` reached the wire as
+     * `/api/3/reports/5/history/..;`. A Tomcat-style front end strips `;...` path parameters before
+     * normalising, which leaves `..` and retargets the DELETE at `/api/3/reports/5` itself.
+     */
+    @Test
+    fun `path segments encode the path-parameter delimiter and refuse dot segments ahead of it`() {
+        val deleteInstance = TEST_CATALOGS.getValue(ApiFamily.CONSOLE).ops.single { it.name == "delete_report_instance" }
+        fun bind(instance: String) = ArgumentBinder.bind(deleteInstance, args("id" to 5, "instance" to instance))
+
+        for (dotted in listOf("..;", ".;", "..;x", ".;jsessionid=1", "..;/")) {
+            val e = assertFailsWith<IllegalArgumentException>("'$dotted' must be refused") { bind(dotted) }
+            assertTrue(e.message!!.contains("'.' or '..'"), e.message)
+        }
+        assertEquals("/api/3/reports/5/history/a%3Bb=c", bind("a;b=c").path)
+        assertEquals("/api/3/reports/5/history/latest", bind("latest").path)
+        // Only the part before the first ';' can collapse a level; a dot run after it is inert text.
+        assertEquals("/api/3/reports/5/history/x%3B..", bind("x;..").path)
+        assertEquals("/api/3/reports/5/history/...%3B", bind("...;").path)
+        assertEquals("/a/%3B", ArgumentBinder.substitutePath("/a/{v}", mapOf("v" to ";")))
     }
 
     @Test

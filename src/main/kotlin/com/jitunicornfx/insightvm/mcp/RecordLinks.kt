@@ -1,5 +1,6 @@
 package com.jitunicornfx.insightvm.mcp
 
+import com.jitunicornfx.insightvm.mcp.catalog.CatalogLoader
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -92,9 +93,18 @@ private fun stripLinks(element: JsonElement, remainingDepth: Int, count: IntArra
     }
 }
 
-/** Server-authored, emitted outside the fence, and only when something was actually removed. */
+/**
+ * Server-authored, emitted outside the fence, and only when something was actually removed.
+ *
+ * The way back it offers first is the one the model can take itself: `include_links=true` on the
+ * call. registerOperation reads and removes that argument for EVERY operation, including the
+ * unpaged collection tools that are pruned here but do not list it in their schema (advertising it
+ * on those would add about 14K characters to tools/list). The environment variable is only for the
+ * operator.
+ */
 internal fun strippedLinksNotice(removed: Int): String =
     "$NOTICE_TAG Removed the per-record 'links' object from $removed record(s) to save context " +
         "(measured ~93% smaller on large pages). Each record's self URL is derivable from its id, and " +
-        "the top-level 'links' (rel=next/last) and the page/metadata object are intact. Set " +
-        "${Config.ENV_KEEP_RECORD_LINKS}=1 to keep them."
+        "the top-level 'links' (rel=next/last) and the page/metadata object are intact. Pass " +
+        "${CatalogLoader.INCLUDE_LINKS_PROPERTY}=true on this call (or set " +
+        "${Config.ENV_KEEP_RECORD_LINKS}=1 on the server) to keep them."

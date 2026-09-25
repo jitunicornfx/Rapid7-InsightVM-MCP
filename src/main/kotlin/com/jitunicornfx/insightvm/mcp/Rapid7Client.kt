@@ -14,7 +14,6 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
-import io.ktor.http.Url
 import io.ktor.http.contentType
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readAvailable
@@ -94,29 +93,9 @@ class Rapid7Client(
         ApiFamily.CLOUD -> cloudHttp
     } ?: throw IllegalStateException("${family.displayName} is not configured.")
 
-    /** Normalize a URL to a `scheme://host:port` origin (lowercased), or null if it can't be parsed. */
-    private fun originOf(url: String): String? =
-        runCatching { Url(url) }.getOrNull()?.takeIf { it.host.isNotEmpty() }?.let {
-            "${it.protocol.name}://${it.host.lowercase()}:${it.port}"
-        }
-
     /**
-     * Whether an API-provided URL (a HATEOAS `links[].href` or a paging cursor link) may be
-     * requested with credentials attached. Validation is on the parsed origin — never a string
-     * prefix — and the origin must exactly equal the configured base for that [family].
-     */
-    internal fun isAllowedFollowUrl(family: ApiFamily, url: String): Boolean {
-        val base = when (family) {
-            ApiFamily.CONSOLE -> config.console?.baseUrl
-            ApiFamily.CLOUD -> config.cloud?.baseUrl
-        } ?: return false
-        if (url.contains('@')) return false
-        val origin = originOf(url) ?: return false
-        return origin == originOf(base)
-    }
-
-    /**
-     * Perform a request against [family].
+     * Perform a request against [family]. This is the only way a request is made: the target is
+     * always the configured base URL plus a catalog path, never a URL taken from a response.
      *
      * @param path path beginning with `/`, already percent-encoded (see [seg]).
      * @param query query parameters; repeated keys are sent as repeated parameters.
@@ -152,16 +131,6 @@ class Rapid7Client(
                     setBody(rawBody)
                 }
             }
-        }.execute { it.toApiResponse() }
-    }
-
-    /** GET an absolute URL returned by the API itself, refused unless it targets the configured origin. */
-    suspend fun requestAbsolute(family: ApiFamily, url: String, accept: ContentType = ContentType.Application.Json): ApiResponse {
-        require(isAllowedFollowUrl(family, url)) { "Refusing to follow a URL outside the configured ${family.displayName} origin." }
-        return httpFor(family).prepareRequest(url) {
-            method = HttpMethod.Get
-            applyAuth(family)
-            header(HttpHeaders.Accept, accept.toString())
         }.execute { it.toApiResponse() }
     }
 

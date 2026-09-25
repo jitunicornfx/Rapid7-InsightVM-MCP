@@ -104,7 +104,7 @@ open class SpoolStore(val directory: Path) {
         .lowercase()
         .map { if (it in 'a'..'z' || it in '0'..'9') it else '-' }
         .joinToString("")
-        .replace(Regex("-{2,}"), "-")
+        .replace(DASH_RUN, "-")
         .trim('-')
         .take(40)
         .ifBlank { "export" }
@@ -151,6 +151,8 @@ open class SpoolStore(val directory: Path) {
 
         private val STAMP_FORMAT: DateTimeFormatter =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC)
+
+        private val DASH_RUN = Regex("-{2,}")
 
         private val README_TEXT = """
             Rapid7 InsightVM MCP server — exported results

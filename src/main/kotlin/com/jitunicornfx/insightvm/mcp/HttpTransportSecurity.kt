@@ -219,8 +219,11 @@ internal fun normalizeOrigin(origin: String): String? {
 internal fun hostPart(host: String): String =
     if (host.startsWith("[")) host.substringBefore("]") + "]" else host.substringBefore(':')
 
+/** Compiled once: [bearerToken] runs on every HTTP request. */
+private val WHITESPACE_RUN = Regex("\\s+")
+
 internal fun bearerToken(header: String): String? {
-    val parts = header.trim().split(Regex("\\s+"), limit = 2)
+    val parts = header.trim().split(WHITESPACE_RUN, limit = 2)
     if (parts.size != 2 || !parts[0].equals("Bearer", ignoreCase = true)) return null
     return parts[1].takeIf { it.isNotEmpty() }
 }

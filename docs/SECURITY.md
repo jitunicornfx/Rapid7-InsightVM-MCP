@@ -44,13 +44,16 @@ Out of scope: a compromised operator machine, a malicious bundled specification,
 
 ### Request integrity (model → API)
 
-* URLs are built from the catalog's path template only. Path values go through `seg()`, which percent-encodes and
-  refuses `.`/`..`; the model cannot redirect a call to a sibling endpoint.
+* URLs are built from the catalog's path template only. Path values go through `seg()`, which percent-encodes them,
+  including the path-parameter delimiter `;` (sent as `%3B`), and refuses `.`/`..` whether alone or ahead of a `;`
+  (`..;` is `..` to a Tomcat-style container, which strips `;...` before it normalises the path); the model cannot
+  redirect a call to a sibling or parent endpoint.
 * Unknown argument names are rejected, so nothing can be smuggled into the query string or body.
 * Scalars are coerced against the declared schema (integer/boolean/number/enum); strings are capped at 4096 characters
   and may not contain CR, LF or NUL; arrays at 500 items; JSON bodies at 1 MiB and 32 levels (measured iteratively).
-* Hypermedia links (`links[].href`, cursors) may only be followed when their parsed origin equals the configured base
-  exactly — prefix tricks (`console.example.evil`) and userinfo tricks (`console.example@evil`) are rejected.
+* The server never requests a URL taken from an API response. Hypermedia links (`links[].href`) are data it passes
+  on, never follows; paging uses a page index or the API's opaque cursor token, which goes back through the argument
+  binder like any other value. Every request targets the configured base URL plus a catalog path.
 
 ### Dangerous operations
 
@@ -66,6 +69,7 @@ Out of scope: a compromised operator machine, a malicious bundled specification,
 ### Credential egress
 
 * Redirects are never followed (`followRedirects = false`): a 3xx cannot bounce `Authorization`/`X-Api-Key` elsewhere.
+  The tool result says why the call stopped and which setting to check, and never quotes the `Location` it was sent.
 * Console and cloud URLs must be `https` unless `INSIGHTVM_ALLOW_HTTP=1` is set deliberately.
 * The console URL must be a bare origin (no path, query, fragment or embedded credentials).
 * Secrets are redacted from every `toString()`; startup logs print hosts and regions only. stdout is reserved for the

@@ -1,5 +1,9 @@
 package com.jitunicornfx.insightvm.mcp
 
+import com.jitunicornfx.insightvm.mcp.catalog.ApiFamily
+import com.jitunicornfx.insightvm.mcp.testutil.TEST_CATALOGS
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import java.security.MessageDigest
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -19,6 +23,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+/** See `a pruned oversized body is trimmed exactly as before compact-first`. */
+private const val GOLDEN_PRUNED_STRUCTURAL_SHA256 = "12eb72c5956b33d850c2721c3af59c7f48358f48e6c56b2331be0f534955652d"
+
 class ResultBudgetTest {
 
     /** A v3-shaped paged document with [n] records of roughly [width] characters each. */
@@ -29,6 +36,26 @@ class ResultBudgetTest {
             repeat(n) { i -> add(buildJsonObject { put("id", i); put("hostName", "h".repeat(width) + i) }) }
         }
     }.toString()
+
+    /** [pagedBody] as the v3 API really sends it: every record carries its own HATEOAS self link. */
+    private fun linkedPagedBody(n: Int): String = buildJsonObject {
+        putJsonArray("links") { add(buildJsonObject { put("href", "https://c:3780/api/3/assets?page=1"); put("rel", "next") }) }
+        putJsonObject("page") { put("number", 0); put("size", n); put("totalPages", 1); put("totalResources", n) }
+        putJsonArray("resources") {
+            repeat(n) { i ->
+                add(
+                    buildJsonObject {
+                        put("id", i)
+                        put("hostName", "h".repeat(60) + i)
+                        putJsonArray("links") { add(buildJsonObject { put("href", "https://c:3780/api/3/assets/$i"); put("rel", "self") }) }
+                    },
+                )
+            }
+        }
+    }.toString()
+
+    private fun sha256(text: String): String =
+        MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
 
     private fun render(raw: String, maxChars: Int = 200_000, ok: Boolean = true, json: Boolean = true) =
         renderWithinBudget(raw, ResultBudget(maxChars = maxChars), ok, json)
@@ -105,6 +132,40 @@ class ResultBudgetTest {
         val d4 = JsonCodec.compact.parseToJsonElement(r4.text).jsonObject
         assertEquals("abc", d4["metadata"]!!.jsonObject["cursor"]!!.jsonPrimitive.content)
         assertTrue(d4["data"]!!.jsonArray.size < 200)
+    }
+
+    /**
+     * Golden for the compact-first ladder. Pruning used to force a pretty encode of a multi-megabyte
+     * page (about 1.5x the body) that was then thrown away. Compact is now encoded first and pretty
+     * is skipped whenever compact cannot fit; pretty is never shorter than compact, so the output has
+     * to be byte-for-byte what the pretty-first ladder produced. [GOLDEN_PRUNED_STRUCTURAL_SHA256] was
+     * captured from that ladder (3656fb7); re-capture it only for a deliberate change to the trim.
+     */
+    @Test
+    fun `a pruned oversized body is trimmed exactly as before compact-first`() {
+        val body = linkedPagedBody(200)
+        val r = render(body, maxChars = 4_000)
+        assertEquals(BudgetStrategy.STRUCTURAL, r.strategy)
+        assertContains(r.notice!!, "Removed the per-record 'links' object from 200 record(s)")
+        // The same tree arriving already pruned takes the structural rung with no pretty attempt.
+        val prePruned = pruneRecordLinks(JsonCodec.compact.parseToJsonElement(body)).element.toString()
+        assertEquals(renderWithinBudget(prePruned, ResultBudget(maxChars = 4_000), true, true).text, r.text)
+        assertEquals(GOLDEN_PRUNED_STRUCTURAL_SHA256, sha256(r.text))
+    }
+
+    @Test
+    fun `a pruned body over the limit whose compact form fits is compacted`() {
+        val body = linkedPagedBody(40)
+        val prunedCompact = pruneRecordLinks(JsonCodec.compact.parseToJsonElement(body)).element.toString()
+        // Raw (with links) is over; pruned compact fits; pruned pretty (40 indented records) does not.
+        val limit = prunedCompact.length + 100
+        assertTrue(body.length > limit, "premise")
+        val r = render(body, maxChars = limit)
+        assertEquals(BudgetStrategy.COMPACT, r.strategy)
+        assertEquals(prunedCompact, r.text)
+        val notice = assertNotNull(r.notice)
+        assertContains(notice, "Removed the per-record 'links'")
+        assertContains(notice, "COMPACT JSON")
     }
 
     @Test
@@ -197,7 +258,70 @@ class ResultBudgetTest {
         val r = renderWithinBudget(body, budget, true, true)
         // No tree means no structural rung: it degrades straight to a cut.
         assertTrue(r.strategy == BudgetStrategy.HARD_CUT || r.strategy == BudgetStrategy.LINE_CUT)
-        assertContains(r.notice!!, "not JSON")
+        assertContains(r.notice!!, "too large to parse")
+    }
+
+    /**
+     * Regression: valid JSON over the parse ceiling went down the not-JSON branch and its notice said
+     * "The response was not JSON", which sends the model hunting for a format problem that is not
+     * there. The ceiling stays (it is the memory guard); only the reason given changes.
+     */
+    @Test
+    fun `valid json just over the parse ceiling is called too large, not 'not JSON'`() {
+        val body = buildJsonArray { repeat(300) { i -> add(buildJsonObject { put("id", i); put("x", "y".repeat(40)) }) } }.toString()
+        val r = renderWithinBudget(body, ResultBudget(maxChars = 2_000, parseCeilingChars = body.length - 1), true, true)
+        val notice = assertNotNull(r.notice)
+        assertFalse(notice.contains("not JSON"), notice)
+        assertContains(notice, "too large to parse")
+        assertContains(notice, "${body.length - 1}")
+        assertContains(notice, "links were not stripped")
+        // At the ceiling rather than one over it, the same body is parsed and trimmed structurally.
+        val parsed = renderWithinBudget(body, ResultBudget(maxChars = 2_000, parseCeilingChars = body.length), true, true)
+        assertEquals(BudgetStrategy.STRUCTURAL, parsed.strategy)
+    }
+
+    /**
+     * Regression: a JSON body cut off by INSIGHTVM_MAX_RESPONSE_BYTES cannot parse, and was then
+     * labelled "not JSON" as well. The notice now says it was cut at the wire.
+     */
+    @Test
+    fun `a json body cut at the wire cap is not called 'not JSON'`() {
+        val op = TEST_CATALOGS.getValue(ApiFamily.CONSOLE).ops.single { it.name == "get_assets" }
+        val cut = pagedBody(400).take(20_000)
+        val response = Rapid7Client.ApiResponse(200, true, "application/json", text = cut, truncated = true, limitBytes = 20_000)
+        val result = ResponseSanitizer.toToolResult(response, op, ApiFamily.CONSOLE, ResultBudget(maxChars = 5_000))
+        val notice = (result.content.single() as TextContent).text.substringAfter(UNTRUSTED_END)
+        assertFalse(notice.contains("not JSON"), notice)
+        assertContains(notice, Config.ENV_MAX_RESPONSE_BYTES)
+        assertContains(notice, "PREFIX")
+
+        // Cut at the wire AND over the ceiling (always both at the defaults): the wire cut is the
+        // reason given, because that body is incomplete and would not parse under any ceiling.
+        val both = renderWithinBudget(cut, ResultBudget(maxChars = 2_000, parseCeilingChars = 100), true, true, truncatedAtWire = true)
+        val bothNotice = assertNotNull(both.notice)
+        assertContains(bothNotice, Config.ENV_MAX_RESPONSE_BYTES)
+        assertFalse(bothNotice.contains("too large to parse"), bothNotice)
+    }
+
+    /**
+     * The parser handles deep objects without recursion; the encoder does not. Such a body used to
+     * reach the cut as "not JSON" and, when it fitted the budget whole, was still reported as CUT to
+     * its own length.
+     */
+    @Test
+    fun `json nested too deeply to re-encode is labelled so, and passed through when it fits`() {
+        val depth = 50_000
+        val deep = "{\"n\":".repeat(depth) + "1" + "}".repeat(depth)
+        val tree = assertNotNull(parseOrNull(deep), "premise: the parser survives what the encoder cannot")
+        assertNull(encodeOrNull(JsonCodec.compact, tree), "premise: the encoder overflows")
+
+        val cutNotice = assertNotNull(render(deep, maxChars = 2_000).notice)
+        assertFalse(cutNotice.contains("not JSON"), cutNotice)
+        assertContains(cutNotice, "too deeply")
+
+        val fits = render(deep, maxChars = deep.length)
+        assertEquals(deep, fits.text)
+        assertNull(fits.notice, "nothing was cut, so no notice may say it was")
     }
 
     @Test

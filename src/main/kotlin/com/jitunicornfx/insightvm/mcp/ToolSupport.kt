@@ -56,15 +56,24 @@ fun JsonObject.longOrNull(key: String): Long? =
 /**
  * URL-encode a value for safe inclusion as a single path segment.
  *
- * [encodeURLPathPart] neutralizes `/`, `?`, `#`, `%`, and CR/LF, but leaves the RFC 3986 dot-segments
- * `.` and `..` intact. Path-parameter values are model-supplied (and may be influenced by untrusted
- * content), so a value of exactly `.`/`..` would be interpolated raw and could collapse a path level
- * once a gateway normalizes it — retargeting the credentialed request to a sibling/parent endpoint.
- * Reject those outright so every tool keeps its intended single-segment invariant.
+ * [encodeURLPathPart] neutralizes `/`, `?`, `#`, `%`, and CR/LF, but leaves two things intact that can
+ * retarget the credentialed request to a sibling or parent endpoint once a gateway normalizes it:
+ *  - the RFC 3986 dot-segments `.` and `..`, which collapse a path level;
+ *  - `;`, the path-parameter delimiter. A Tomcat-style container strips `;...` from each segment
+ *    BEFORE it normalizes, so `..;` becomes `..` there: `delete_report_instance(instance="..;")`
+ *    would reach `DELETE /api/3/reports/{id}` itself.
+ *
+ * Path-parameter values are model-supplied (and may be influenced by untrusted content), so `;` is
+ * always sent as `%3B`, which such a container only decodes after it has split off path parameters,
+ * and a value that is a dot-segment before its first `;` is refused outright, in case something in
+ * front of the console decodes first. No InsightVM identifier contains `;`.
  */
 fun seg(value: String): String {
-    require(value != "." && value != "..") { "Invalid path segment '$value': must not be '.' or '..'." }
-    return value.encodeURLPathPart()
+    val beforeParameters = value.substringBefore(';')
+    require(beforeParameters != "." && beforeParameters != "..") {
+        "Invalid path segment '$value': must not be '.' or '..', alone or before a ';'."
+    }
+    return value.encodeURLPathPart().replace(";", "%3B")
 }
 
 // Prompt-injection shield: API responses carry third-party / attacker-authored text (asset host
@@ -89,8 +98,23 @@ internal fun wrapUntrusted(body: String): String {
     return "$UNTRUSTED_PREAMBLE\n$UNTRUSTED_BEGIN\n$neutralized\n$UNTRUSTED_END"
 }
 
-/** An actionable next step for common HTTP error statuses, appended to error results. */
+/**
+ * An actionable next step for common HTTP error statuses, appended to error results.
+ *
+ * Server-authored: nothing from the response is interpolated. In particular a 3xx hint never quotes
+ * `Location`, which is remote text and would reach the model outside the untrusted-data fence.
+ */
 internal fun statusHint(status: Int, family: ApiFamily): String? = when (status) {
+    // Redirects are never followed (Rapid7Client), so without this every tool fails with a bare
+    // "HTTP 302." when the base URL is subtly wrong or a sign-on proxy intercepts the call.
+    in 300..399 -> when (family) {
+        ApiFamily.CONSOLE -> "The console answered with a redirect, which this server never follows because the " +
+            "credentials would be sent on with it. Check that ${Config.ENV_CONSOLE_URL} is the console's own " +
+            "address (scheme, host and port) and whether a proxy or single sign-on gateway sits in front of it."
+        ApiFamily.CLOUD -> "The Insight Platform answered with a redirect, which this server never follows because " +
+            "the API key would be sent on with it. Check ${Config.ENV_REGION} (and ${Config.ENV_CLOUD_BASE_URL}, " +
+            "if set) and whether a proxy sits in front of the platform."
+    }
     400 -> "The API rejected the request as malformed — re-check the parameter values against this tool's input schema."
     401 -> when (family) {
         ApiFamily.CONSOLE -> "Authentication failed — verify ${Config.ENV_CONSOLE_USERNAME}/${Config.ENV_CONSOLE_PASSWORD}. " +

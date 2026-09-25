@@ -89,6 +89,31 @@ internal data class BudgetedBody(
 )
 
 /**
+ * Why a body reached the line-aware cut rather than a structural trim. The cut notice names the
+ * actual reason: a wrong one sends the model after a problem that is not there, and every one of
+ * these used to be reported as "The response was not JSON".
+ */
+internal enum class CutReason {
+    /** HTML or plain text, or a body that claimed to be JSON and did not parse. */
+    NOT_JSON,
+
+    /** Over [ResultBudget.parseCeilingChars], so it was never parsed: nothing was pruned or trimmed. */
+    TOO_LARGE_TO_PARSE,
+
+    /** Cut off by [Config.maxResponseBytes] before it ended, so it cannot parse. */
+    TRUNCATED_AT_WIRE_CAP,
+
+    /**
+     * Parsed, but nested too deeply for the encoder. The parser handles deep objects without
+     * recursion and the encoder does not, so hostile nesting can pass one and overflow the other.
+     */
+    TOO_DEEP_TO_ENCODE,
+
+    /** Parsed and re-encoded, but with no top-level array to drop entries from. */
+    NO_TRIMMABLE_ARRAY,
+}
+
+/**
  * Render [raw] into at most [ResultBudget.limitFor] characters, degrading through progressively
  * lossier strategies, and never throwing.
  *
@@ -99,6 +124,8 @@ internal data class BudgetedBody(
  *
  * @param json whether the body is expected to be JSON. HTML and plain text are never re-encoded:
  *   a text/plain body that happens to parse as a bare JSON number must not come back as one.
+ * @param truncatedAtWire whether [Config.maxResponseBytes] cut the body short, which is why a JSON
+ *   body would fail to parse; it only changes the reason a cut notice gives.
  */
 internal fun renderWithinBudget(
     raw: String,
@@ -106,33 +133,45 @@ internal fun renderWithinBudget(
     ok: Boolean,
     json: Boolean,
     keepRecordLinks: Boolean = false,
+    truncatedAtWire: Boolean = false,
 ): BudgetedBody {
     if (raw.isBlank()) return BudgetedBody(raw, null, BudgetStrategy.PRETTY)
     val limit = budget.limitFor(ok)
 
-    if (!json) {
-        return if (raw.length <= limit) BudgetedBody(raw, null, BudgetStrategy.PRETTY)
-        else lineAwareCut(raw, limit, budget, wasJson = false)
-    }
+    if (!json) return asReceived(raw, limit, budget, CutReason.NOT_JSON)
 
-    val parsed: JsonElement? =
-        if (raw.length > budget.parseCeilingChars) null else parseOrNull(raw)
+    val tooLargeToParse = raw.length > budget.parseCeilingChars
+    val parsed: JsonElement? = if (tooLargeToParse) null else parseOrNull(raw)
 
-    // Not JSON after all, or too large to hold as a tree.
+    // No tree. The wire cut is named first: that body is incomplete, and would not parse under any
+    // ceiling (at the defaults a 16 MiB cut is always over the 12M-character ceiling as well).
     if (parsed == null) {
-        return if (raw.length <= limit) BudgetedBody(raw, null, BudgetStrategy.PRETTY)
-        else lineAwareCut(raw, limit, budget, wasJson = false)
+        val reason = when {
+            truncatedAtWire -> CutReason.TRUNCATED_AT_WIRE_CAP
+            tooLargeToParse -> CutReason.TOO_LARGE_TO_PARSE
+            else -> CutReason.NOT_JSON
+        }
+        return asReceived(raw, limit, budget, reason)
     }
 
     val pruned = if (keepRecordLinks) Pruned(parsed, 0) else pruneRecordLinks(parsed)
     val element = pruned.element
     val stripNotice = if (pruned.removed > 0) strippedLinksNotice(pruned.removed) else null
 
-    // Rung 1 — pretty. Normally skipped when the raw body already exceeds the limit: pretty >=
-    // compact, and for valid JSON compact <= raw (whitespace only adds), so a pretty render at that
-    // size is near-certainly wasted allocation. Pruning breaks that reasoning — the element is now
-    // smaller than what `raw` measured — so an oversized body that was pruned is still worth trying.
-    if (raw.length <= limit || pruned.removed > 0) {
+    // Over the limit, compact is encoded FIRST. Pretty is never shorter than compact, so it is only
+    // worth trying when compact fits and links were pruned (unpruned, compact <= raw for valid JSON,
+    // since whitespace only adds, so pretty is over too). A multi-megabyte pruned page therefore no
+    // longer pays for a pretty encode (about 1.5x the body, plus a scrub and a neutralise pass) that
+    // was always thrown away. A raw body within the limit, the common case, still tries pretty first
+    // and usually ends the ladder in one encode. Every path returns what the pretty-first ladder did.
+    val early: String? = if (raw.length > limit) {
+        encodeOrNull(JsonCodec.compact, element) ?: return asReceived(raw, limit, budget, CutReason.TOO_DEEP_TO_ENCODE)
+    } else {
+        null
+    }
+
+    // Rung 1 — pretty.
+    if (early == null || (pruned.removed > 0 && early.length <= limit)) {
         val pretty = encodeOrNull(JsonCodec.pretty, element)
         if (pretty != null && pretty.length <= limit) {
             return BudgetedBody(pretty, stripNotice, BudgetStrategy.PRETTY)
@@ -141,8 +180,8 @@ internal fun renderWithinBudget(
 
     // Rung 2 — compact. Recovers the whitespace pretty added, which rescues bodies in the
     // [limit, ~2x limit] band. It does not shrink an already-dense API response.
-    val compact = encodeOrNull(JsonCodec.compact, element)
-        ?: return lineAwareCut(raw, limit, budget, wasJson = false)
+    val compact = early ?: encodeOrNull(JsonCodec.compact, element)
+        ?: return asReceived(raw, limit, budget, CutReason.TOO_DEEP_TO_ENCODE)
     if (compact.length <= limit) {
         return BudgetedBody(compact, join(stripNotice, compactedNotice(limit)), BudgetStrategy.COMPACT)
     }
@@ -154,9 +193,18 @@ internal fun renderWithinBudget(
     }
 
     // Rung 4 — cut. The output is a prefix, not a JSON document; the notice says so.
-    val cut = lineAwareCut(compact, limit, budget, wasJson = true)
+    val cut = lineAwareCut(compact, limit, budget, CutReason.NO_TRIMMABLE_ARRAY)
     return cut.copy(notice = join(stripNotice, cut.notice))
 }
+
+/**
+ * The body exactly as it arrived, for when it could not be rendered from a tree: whole when it
+ * fits, otherwise cut with a notice naming [reason]. Before, a tree the encoder could not render
+ * went to the cut even when it fitted, and was reported as CUT to its own length.
+ */
+private fun asReceived(raw: String, limit: Int, budget: ResultBudget, reason: CutReason): BudgetedBody =
+    if (raw.length <= limit) BudgetedBody(raw, null, BudgetStrategy.PRETTY)
+    else lineAwareCut(raw, limit, budget, reason)
 
 private fun join(vararg parts: String?): String? =
     parts.filterNotNull().ifEmpty { null }?.joinToString("\n\n")
@@ -292,7 +340,7 @@ private fun truncationMarker(arrayKey: String, kept: Int, total: Int): JsonObjec
  * Truncate [text] to the budget, preferring the last line boundary so a line-oriented body ends on
  * a complete record. The result is a PREFIX, not valid JSON; the notice says so.
  */
-private fun lineAwareCut(text: String, limit: Int, budget: ResultBudget, wasJson: Boolean): BudgetedBody {
+private fun lineAwareCut(text: String, limit: Int, budget: ResultBudget, reason: CutReason): BudgetedBody {
     val target = maxOf(limit, budget.sampleFloorChars).coerceAtMost(text.length)
     var slice = text.substring(0, target)
     val lastBreak = slice.lastIndexOf('\n')
@@ -304,7 +352,7 @@ private fun lineAwareCut(text: String, limit: Int, budget: ResultBudget, wasJson
     }
     // Never emit a dangling half of a surrogate pair — substring can split one.
     if (slice.isNotEmpty() && slice.last().isHighSurrogate()) slice = slice.dropLast(1)
-    return BudgetedBody(slice, cutNotice(text.length, slice.length, limit, wasJson), strategy)
+    return BudgetedBody(slice, cutNotice(text.length, slice.length, limit, reason, budget.parseCeilingChars), strategy)
 }
 
 // ---------------------------------------------------------------------------
@@ -355,9 +403,23 @@ private fun droppedNotice(key: String?, kept: Int, total: Int, limit: Int): Stri
         CHEAPER_WAYS
 }
 
-private fun cutNotice(originalLength: Int, keptLength: Int, limit: Int, wasJson: Boolean): String =
+private fun cutNotice(originalLength: Int, keptLength: Int, limit: Int, reason: CutReason, parseCeilingChars: Int): String =
     "$NOTICE_TAG This response was $originalLength characters and was CUT to $keptLength to fit " +
         "the $limit-character response budget (${Config.ENV_MAX_RESULT_CHARS}). The block above is a " +
         "PREFIX of the response and is NOT valid JSON — do not try to parse it as a whole document.\n" +
-        (if (wasJson) "The response had no top-level array to trim.\n" else "The response was not JSON.\n") +
+        cutReasonLine(reason, parseCeilingChars) +
         CHEAPER_WAYS
+
+private fun cutReasonLine(reason: CutReason, parseCeilingChars: Int): String = when (reason) {
+    CutReason.NOT_JSON -> "The response was not JSON.\n"
+    CutReason.TOO_LARGE_TO_PARSE ->
+        "The response was too large to parse (over $parseCeilingChars characters), so per-record links " +
+            "were not stripped and no records were trimmed.\n"
+    CutReason.TRUNCATED_AT_WIRE_CAP ->
+        "The response was cut off at ${Config.ENV_MAX_RESPONSE_BYTES} before it ended, so it is incomplete " +
+            "JSON that cannot be parsed: per-record links were not stripped and no records were trimmed.\n"
+    CutReason.TOO_DEEP_TO_ENCODE ->
+        "The response was JSON nested too deeply to re-encode, so it is shown as received: per-record " +
+            "links were not stripped and no records were trimmed.\n"
+    CutReason.NO_TRIMMABLE_ARRAY -> "The response had no top-level array to trim.\n"
+}

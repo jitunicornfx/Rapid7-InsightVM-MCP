@@ -154,20 +154,6 @@ class Rapid7ClientTest {
     }
 
     @Test
-    fun `requestAbsolute streams under the same cap`() = runBlocking {
-        val body = MeteredBody(totalBytes = 64L * 1024 * 1024)
-        val e = MockEngine { respond(body.channel(), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "text/plain")) }
-        val client = Rapid7Client(testConfig(maxResponseBytes = 1024), consoleEngine = e, cloudEngine = engine())
-
-        val r = client.requestAbsolute(ApiFamily.CONSOLE, "https://console.test:3780/api/3/sites?page=2")
-
-        assertTrue(r.truncated)
-        assertEquals(1024, r.text!!.length)
-        assertTrue(body.wasStreamed(kept = 1024), "${body.produced.get()} of ${body.totalBytes} bytes were pulled to return 1024")
-        client.close()
-    }
-
-    @Test
     fun `readCapped edge cases`() = runBlocking {
         val (empty, t0) = Rapid7Client.readCapped(ByteReadChannel(ByteArray(0)), 10)
         assertEquals(0, empty.size); assertFalse(t0)
@@ -225,40 +211,6 @@ class Rapid7ClientTest {
         assertTrue(Rapid7Client.isTextual(ContentType.parse("application/x-www-form-urlencoded")))
         assertFalse(Rapid7Client.isTextual(ContentType.parse("application/zip")))
         assertFalse(Rapid7Client.isTextual(ContentType.parse("image/png")))
-    }
-
-    @Test
-    fun `follow urls must match the configured origin exactly`() = runBlocking {
-        val client = Rapid7Client(testConfig(), consoleEngine = engine(), cloudEngine = engine())
-        assertTrue(client.isAllowedFollowUrl(ApiFamily.CONSOLE, "https://console.test:3780/api/3/sites?page=1"))
-        assertTrue(client.isAllowedFollowUrl(ApiFamily.CONSOLE, "HTTPS://CONSOLE.TEST:3780/"))
-        assertFalse(client.isAllowedFollowUrl(ApiFamily.CONSOLE, "https://console.test/api/3/sites")) // port 443 != 3780
-        assertFalse(client.isAllowedFollowUrl(ApiFamily.CONSOLE, "http://console.test:3780/"))
-        assertFalse(client.isAllowedFollowUrl(ApiFamily.CONSOLE, "https://console.test.evil.example:3780/"))
-        assertFalse(client.isAllowedFollowUrl(ApiFamily.CONSOLE, "https://console.test:3780@evil.example/"))
-        assertFalse(client.isAllowedFollowUrl(ApiFamily.CONSOLE, "file:///etc/passwd"))
-        assertFalse(client.isAllowedFollowUrl(ApiFamily.CONSOLE, "::not a url::"))
-        assertTrue(client.isAllowedFollowUrl(ApiFamily.CLOUD, "https://us.api.insight.rapid7.com/vm/v4/integration/assets?cursor=abc"))
-        assertFalse(client.isAllowedFollowUrl(ApiFamily.CLOUD, "https://eu.api.insight.rapid7.com/vm/"))
-        assertFalse(client.isAllowedFollowUrl(ApiFamily.CLOUD, "https://console.test:3780/"))
-
-        val noConsole = Rapid7Client(testConfig(console = null), cloudEngine = engine())
-        assertFalse(noConsole.isAllowedFollowUrl(ApiFamily.CONSOLE, "https://console.test:3780/"))
-        noConsole.close()
-        client.close()
-    }
-
-    @Test
-    fun `requestAbsolute refuses foreign origins and follows allowed ones`() = runBlocking {
-        val e = engine()
-        val client = Rapid7Client(testConfig(), consoleEngine = e, cloudEngine = engine())
-        assertFailsWith<IllegalArgumentException> { client.requestAbsolute(ApiFamily.CONSOLE, "https://evil.example/") }
-        assertEquals(0, e.requestHistory.size)
-        val r = client.requestAbsolute(ApiFamily.CONSOLE, "https://console.test:3780/api/3/sites?page=2")
-        assertTrue(r.ok)
-        assertEquals(HttpMethod.Get, e.requestHistory.single().method)
-        assertEquals("Basic YXBpLXVzZXI6czNjcmV0", e.requestHistory.single().headers[HttpHeaders.Authorization])
-        client.close()
     }
 
     @Test

@@ -154,8 +154,8 @@ Four mechanisms follow from that, in the order they apply:
    `cloud_search_integration_assets`, which filter on the console rather than in the conversation.
 2. **Per-record `links` are stripped.** The v3 API attaches a HATEOAS `links` array to every record; its entry is
    the record's own URL, derivable from its `id`. The top-level `links` (`rel=next`) and the `page`/`metadata`
-   object are always kept, so paging and totals still work. Pass `include_links=true`, or set
-   `INSIGHTVM_KEEP_RECORD_LINKS=1`, for the raw shape.
+   object are always kept, so paging and totals still work. Pass `include_links=true` on the call (every API tool
+   accepts it, though only the paged ones list it), or set `INSIGHTVM_KEEP_RECORD_LINKS=1`, for the raw shape.
 3. **Page size is defaulted and clamped** — 100 when omitted (the specification's own default of 10 makes a model
    page thousands of times), 500 maximum (above that a page cannot render inside the budget, so the console builds
    records that are then thrown away).
@@ -239,9 +239,9 @@ Summarised here; details and residual risks in [docs/SECURITY.md](docs/SECURITY.
   fence markers inside the data are neutralised. Tool descriptions come from the bundled spec with markup stripped.
 * **XSS / markup** — HTML responses are reduced to escaped text; `<`/`>` are neutralised in all JSON/text output so nothing
   from the API can render as markup in a client.
-* **Request integrity** — URLs are built only from catalog templates; path values are percent-encoded and `.`/`..` are
-  refused; unknown arguments are rejected; strings, bodies, arrays and nesting are bounded.
-* **Credential egress** — redirects are never followed; HATEOAS links are only followed to the configured origin; `https`
+* **Request integrity** — URLs are built only from catalog templates; path values are percent-encoded (`;` included)
+  and `.`/`..` are refused; unknown arguments are rejected; strings, bodies, arrays and nesting are bounded.
+* **Credential egress** — redirects are never followed; no URL taken from an API response is ever requested; `https`
   is mandatory unless `INSIGHTVM_ALLOW_HTTP=1`; secrets never appear in logs or `toString`.
 * **HTTP transport** — bearer token (required off-loopback, constant-time compare, brute-force throttle), `Host`/`Origin`
   checks against DNS rebinding, default-deny CORS, 4 MiB request cap.

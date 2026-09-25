@@ -40,6 +40,7 @@ object ResponseSanitizer {
     private val CONTROL = Regex("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]")
     private val MULTI_BLANK = Regex("\\n{3,}")
     private val TRAILING_WS = Regex("[ \\t]+\\n")
+    private val INLINE_WS_RUN = Regex("[ \\t]{2,}")
 
     private val NAMED_ENTITIES = mapOf(
         "amp" to "&", "lt" to "<", "gt" to ">", "quot" to "\"", "apos" to "'", "nbsp" to " ",
@@ -56,7 +57,7 @@ object ResponseSanitizer {
         s = TAG.replace(s, " ")
         s = decodeEntities(s)
         s = scrubControlCharacters(s)
-        s = s.lines().joinToString("\n") { it.trim().replace(Regex("[ \\t]{2,}"), " ") }
+        s = s.lines().joinToString("\n") { INLINE_WS_RUN.replace(it.trim(), " ") }
         s = MULTI_BLANK.replace(s, "\n\n").trim()
         return escapeMarkup(s)
     }
@@ -176,7 +177,7 @@ object ResponseSanitizer {
                 isJson = effectiveType.contains("json")
             }
         }
-        val rendered = renderWithinBudget(sanitized, budget, response.ok, isJson, keepRecordLinks)
+        val rendered = renderWithinBudget(sanitized, budget, response.ok, isJson, keepRecordLinks, response.truncated)
         val text = buildString {
             if (!response.ok) {
                 append("${family.displayName} returned HTTP ${response.status}.")

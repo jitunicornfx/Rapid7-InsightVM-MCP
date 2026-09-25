@@ -143,6 +143,10 @@ class RecordLinksTest {
     fun `the notice names the count and the way back`() {
         val notice = strippedLinksNotice(500)
         assertContains(notice, "500 record(s)")
+        // The model cannot set an environment variable; the per-call argument is the way back it can
+        // actually take, so it must come first.
+        assertContains(notice, "include_links=true")
+        assertTrue(notice.indexOf("include_links=true") < notice.indexOf(Config.ENV_KEEP_RECORD_LINKS))
         assertContains(notice, Config.ENV_KEEP_RECORD_LINKS)
         assertContains(notice, NOTICE_TAG)
         assertFalse(notice.contains(UNTRUSTED_BEGIN))

@@ -54,12 +54,13 @@ fun testConfig(
     autoUpdateDisabled = true,
 )
 
-/** Canned response description for the mock engines. */
+/** Canned response description for the mock engines. [headers] are sent alongside `Content-Type`. */
 data class Canned(
     val status: HttpStatusCode = HttpStatusCode.OK,
     val body: String = "{}",
     val contentType: String = "application/json",
     val bytes: ByteArray? = null,
+    val headers: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -117,10 +118,15 @@ suspend fun mcpHarness(
     fun MockRequestHandleScope.answer(request: HttpRequestData): HttpResponseData {
         bodies += (request.body as? TextContent)?.text
         val canned = respond(request)
+        val headers = headersOf(
+            *(mapOf(HttpHeaders.ContentType to canned.contentType) + canned.headers)
+                .map { (name, value) -> name to listOf(value) }
+                .toTypedArray(),
+        )
         return if (canned.bytes != null) {
-            respond(content = canned.bytes, status = canned.status, headers = headersOf(HttpHeaders.ContentType, canned.contentType))
+            respond(content = canned.bytes, status = canned.status, headers = headers)
         } else {
-            respond(content = canned.body, status = canned.status, headers = headersOf(HttpHeaders.ContentType, canned.contentType))
+            respond(content = canned.body, status = canned.status, headers = headers)
         }
     }
     val consoleEngine = MockEngine { answer(it) }
