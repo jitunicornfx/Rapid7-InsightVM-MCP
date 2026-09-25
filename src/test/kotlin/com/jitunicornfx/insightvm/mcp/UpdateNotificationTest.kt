@@ -159,7 +159,7 @@ class UpdateNotificationTest {
         val received = CompletableDeferred<LoggingMessageNotification>()
         val (session, _) = connect(server, received)
 
-        server.notifyUpdateInstalled(session, UpdateInstaller.Outcome.Staged("9.9.9", "/opt/app.jar.new", "a".repeat(64)))
+        server.notifyUpdateInstalled(session, UpdateInstaller.Outcome.Staged("9.9.9", "/opt/app.jar.new", "a".repeat(64), "b".repeat(64)))
 
         val data = assertNotNull(withTimeoutOrNull(2_000) { received.await() }).params.data.jsonObject
         assertTrue("9.9.9" in data["message"]!!.jsonPrimitive.content)

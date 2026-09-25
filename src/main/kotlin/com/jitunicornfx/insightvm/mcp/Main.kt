@@ -256,8 +256,16 @@ internal fun runServer(transport: Transport, host: String, port: Int, config: Co
     }
     // Leftovers from an interrupted self-update (".new" staging files and ".bak") would otherwise
     // accumulate beside the JAR at ~20 MB each; sweep them before anything else. The ".update.lock"
-    // sidecar is deliberately left alone — see UpdateInstaller.withInstallLock.
+    // and ".running" sidecars are deliberately left alone — see UpdateInstaller.withInstallLock.
     UpdateInstaller.runningJar()?.let { jar ->
+        // Declared for this server's whole life, so another server's exit never rewrites the JAR
+        // underneath it; see UpdateInstaller.holdRunningLock.
+        if (!UpdateInstaller.holdRunningLock(jar)) {
+            System.err.println(
+                "[insightvm-mcp] Could not mark ${jar.name} as in use; an update applied by another server " +
+                    "as it exits may break this one.",
+            )
+        }
         val removed = UpdateInstaller.cleanupStaleArtifacts(jar)
         if (removed.isNotEmpty()) System.err.println("[insightvm-mcp] Removed stale update files: ${removed.joinToString(", ")}")
     }
@@ -344,11 +352,27 @@ private suspend fun autoInstall(config: Config, result: UpdateChecker.Result): U
             val staged = File(outcome.stagedPath)
             val target = UpdateInstaller.runningJar()
             if (target != null) {
+                // The stage has to survive until this process exits, which can be days away, while
+                // every sibling started meanwhile sweeps old stages; see keepStagedFresh.
+                val keepAlive = UpdateInstaller.keepStagedFresh(staged) {
+                    System.err.println(
+                        "[insightvm-mcp] Staged ${outcome.version} has been removed from disk and will NOT be " +
+                            "applied as this server exits. It will be downloaded again on the next check.",
+                    )
+                }
                 runCatching {
                     Runtime.getRuntime().addShutdownHook(
-                        Thread { runCatching { UpdateInstaller.installStagedAtShutdown(staged, target, outcome.sha256) } },
+                        Thread {
+                            // First: on Windows the keep-alive holds the stage open, which would block
+                            // the swap's own delete of it.
+                            runCatching { keepAlive.close() }
+                            runCatching {
+                                UpdateInstaller.installStagedAtShutdown(staged, target, outcome.sha256, outcome.targetSha256)
+                            }
+                        },
                     )
                 }.onFailure {
+                    runCatching { keepAlive.close() }
                     System.err.println(
                         "[insightvm-mcp] Shutting down already; ${outcome.version} remains staged at " +
                             "${outcome.stagedPath} and will not be applied automatically.",

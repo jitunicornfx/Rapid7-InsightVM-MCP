@@ -153,12 +153,32 @@ volume must have 256 MiB free before the first API call is spent.
 Ported from the InsightIDR server with its protections intact: exact-match GitHub host allow-list, a strict version-tag
 regex as the only remote text that reaches the model, mandatory SHA-256 verified from disk, entry-point check on the
 downloaded JAR, a cross-process lock, and staged swap-at-shutdown on Windows with rollback.
-Housekeeping: the lock sidecar is deleted by its holder on release, and abandoned `<jar>.*.new` / `<jar>.bak` files
-older than an hour are swept at startup and before each install (only files carrying this JAR's own name prefix).
+
+Windows refuses to move anything over a JAR a JVM is running from, so there the update is written into the JAR in place
+as the server exits. That rewrite is guarded:
+
+* **Other servers.** Stdio deployment runs one server per client from the same JAR, each loading classes from it
+  lazily. Every server holds a shared lock on `<jar>.running` for as long as it runs, and the exiting server rewrites
+  the JAR only if it can take that lock exclusively. While any other server is running from the JAR, the staged
+  update is discarded and fetched again on a later start.
+* **Downgrades.** The installed JAR's SHA-256 is recorded when the update is staged. If the JAR has changed by the time
+  the server exits (another server installed a newer release meanwhile), the stale stage is discarded, not written.
+* **Durability.** The backup and the new bytes are each forced to disk before the backup is deleted, so a power cut
+  cannot leave neither a working JAR nor a backup.
+* **Permissions.** On POSIX, where the new JAR is moved into place, it first gets the old JAR's permissions; a warning
+  is printed when the move also changes the file's owner.
+
+Housekeeping: the `<jar>.update.lock` and `<jar>.running` sidecars are 0-byte lock carriers and are never deleted.
+Abandoned `<jar>.*.new` / `<jar>.bak` files older than 24 hours are swept at startup and before each install (only
+files carrying this JAR's own name prefix). A server with an update pending re-stamps its staged file every four hours
+and holds it open (which on Windows refuses another process's delete), so a sibling's sweep does not remove it.
 
 **Residual risk, stated plainly:** the digest comes from the same GitHub API response as the download URL, so a
 compromise of the GitHub repository or release would not be detected. Set `INSIGHTVM_DISABLE_AUTO_UPDATE=1` (or
 `--no-auto-update`) where that is unacceptable, or `INSIGHTVM_DISABLE_UPDATE_CHECK=1` to make no outbound call at all.
+
+Also residual: a server that starts during the brief in-place rewrite at another server's exit can read a half-written
+JAR and fail to start, or fail on a later class load. Only versioned install paths would close that window.
 
 ## Audit findings (v0.1.0)
 
