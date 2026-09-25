@@ -6,6 +6,7 @@ import com.jitunicornfx.insightvm.mcp.ResponseSanitizer
 import com.jitunicornfx.insightvm.mcp.ResultBudget
 import com.jitunicornfx.insightvm.mcp.SERVER_NAME
 import com.jitunicornfx.insightvm.mcp.SpoolStore
+import com.jitunicornfx.insightvm.mcp.UpdateStatus
 import com.jitunicornfx.insightvm.mcp.tools.ExportTools
 import com.jitunicornfx.insightvm.mcp.SERVER_VERSION
 import com.jitunicornfx.insightvm.mcp.apiTool
@@ -13,8 +14,11 @@ import com.jitunicornfx.insightvm.mcp.booleanOrNull
 import com.jitunicornfx.insightvm.mcp.errorResult
 import com.jitunicornfx.insightvm.mcp.stringOrNull
 import com.jitunicornfx.insightvm.mcp.textResult
+import com.jitunicornfx.insightvm.mcp.toolDefinition
+import com.jitunicornfx.insightvm.mcp.updateInfo
 import io.ktor.http.ContentType
 import io.modelcontextprotocol.kotlin.sdk.server.Server
+import io.modelcontextprotocol.kotlin.sdk.types.Tool
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -31,6 +35,12 @@ import com.jitunicornfx.insightvm.mcp.JsonCodec
 /**
  * Registers one MCP tool per selected catalog operation, plus meta tools that help clients navigate a
  * large tool set: two always, and the search-criteria reference whenever a console tool is selected.
+ *
+ * Split in two because `--http` builds a Server for every session. [prepare] does everything that
+ * depends only on the configuration, once per process: the selection, and each tool's name,
+ * description, input schema and annotations (about 430K characters of `tools/list` for the full
+ * catalog). [register] gives one Server those same immutable definitions with handlers of its own,
+ * so a session costs its handler closures rather than a fresh copy of every definition.
  */
 object CatalogTools {
 
@@ -40,47 +50,88 @@ object CatalogTools {
 
     private val IDEMPOTENT_METHODS = setOf("PUT", "DELETE")
 
-    /** Register the selected operations on [server]; returns the number of API tools registered. */
+    /** One selected operation with its finished tool definition and the budget its results use. */
+    internal class PreparedOperation(
+        val family: ApiFamily,
+        val op: CatalogOp,
+        val tool: Tool,
+        val budget: ResultBudget,
+    )
+
+    /**
+     * What [prepare] settles for the life of the process. Nothing in it refers to a Server, a
+     * session or a client, and nothing in it changes after it is built, so any number of Servers
+     * may register it at once.
+     */
+    class Prepared internal constructor(
+        val config: Config,
+        val catalogs: Map<ApiFamily, Catalog>,
+        val selected: List<CatalogFilter.Selection>,
+        internal val operations: List<PreparedOperation>,
+        internal val serverInfoTool: Tool,
+        internal val toolGroupsTool: Tool,
+        internal val searchCriteriaTool: Tool?,
+        internal val exportTool: Tool?,
+    ) {
+        /** The tools this server adds beside the API's: two always, the reference and the export tool when present. */
+        val metaToolCount: Int get() = 2 + listOfNotNull(searchCriteriaTool, exportTool).size
+
+        /** The export tool resolves its target by name among the registered operations only. */
+        internal val exportTargets: Map<String, CatalogFilter.Selection> = selected.associateBy { it.op.name }
+    }
+
+    /** Select the operations [config] allows from [catalogs] and build every tool definition once. */
+    fun prepare(config: Config, catalogs: Map<ApiFamily, Catalog>): Prepared {
+        val filter = config.filter.copy(families = config.activeFamilies.intersect(config.filter.families))
+        val selected = CatalogFilter.select(catalogs, filter)
+        // Settled before any tool is built: the paged tools' text and the truncation notices
+        // recommend the export tool, and may do so only when it will be registered.
+        val exportEnabled = config.exportEnabled
+        val budget = ResultBudget(maxChars = config.maxResultChars, exportAvailable = exportEnabled)
+        val text = ToolTextContext.of(config)
+        val operations = selected.map { (family, op) ->
+            // Like the description, a notice recommends the export tool only for an operation it
+            // would accept; for a write or a secret it would answer with a refusal.
+            val opBudget = if (ExportTools.exportable(op)) budget else budget.copy(exportAvailable = false)
+            PreparedOperation(family, op, operationDefinition(family, op, text), opBudget)
+        }
+        // The reference serves console tools only: v4 filters are expressions, not field/operator pairs.
+        val criteriaEnabled = selected.any { it.family == ApiFamily.CONSOLE }
+        return Prepared(
+            config = config,
+            catalogs = catalogs,
+            selected = selected,
+            operations = operations,
+            serverInfoTool = SERVER_INFO_DEFINITION,
+            toolGroupsTool = TOOL_GROUPS_DEFINITION,
+            searchCriteriaTool = SEARCH_CRITERIA_DEFINITION.takeIf { criteriaEnabled },
+            exportTool = if (exportEnabled) ExportTools.definition(config) else null,
+        )
+    }
+
+    /** Register [prepared]'s tools on [server], with handlers bound to [client]; returns the selection. */
     fun register(
         server: Server,
         client: Rapid7Client,
-        config: Config,
-        catalogs: Map<ApiFamily, Catalog>,
+        prepared: Prepared,
         spool: SpoolStore = SpoolStore.active,
     ): List<CatalogFilter.Selection> {
-        val filter = config.filter.copy(families = config.activeFamilies.intersect(config.filter.families))
-        val selected = CatalogFilter.select(catalogs, filter)
-        // Settled before any tool is registered: the paged tools' text and the truncation notices
-        // recommend the export tool, and may do so only when it will be registered below.
-        val exportEnabled = config.exportEnabled
-        val budget = ResultBudget(maxChars = config.maxResultChars, exportAvailable = exportEnabled)
+        val config = prepared.config
         // A binary payload spills to the same directory the export tool writes to, so an operator who
         // disabled filesystem writes gets none from this path either.
         val binarySpool = spool.takeUnless { config.exportDisabled }
-        selected.forEach { (family, op) -> server.registerOperation(client, family, op, config, budget, binarySpool) }
-        // The reference serves console tools only: v4 filters are expressions, not field/operator pairs.
-        val criteriaEnabled = selected.any { it.family == ApiFamily.CONSOLE }
-        server.registerMetaTools(config, catalogs, selected, 2 + listOf(exportEnabled, criteriaEnabled).count { it })
-        if (criteriaEnabled) server.registerSearchCriteriaTool(SearchCriteria.bundled)
-        if (exportEnabled) {
-            with(ExportTools) { server.registerExportTool(client, config, selected, spool) }
+        prepared.operations.forEach { server.registerOperation(client, it, config, binarySpool) }
+        server.registerMetaTools(prepared)
+        prepared.searchCriteriaTool?.let { server.registerSearchCriteriaTool(it, SearchCriteria.bundled) }
+        prepared.exportTool?.let { tool ->
+            with(ExportTools) { server.registerExportTool(tool, client, config, prepared.exportTargets, spool) }
         }
-        return selected
+        return prepared.selected
     }
 
-    internal fun Server.registerOperation(
-        client: Rapid7Client,
-        family: ApiFamily,
-        op: CatalogOp,
-        config: Config,
-        budget: ResultBudget = ResultBudget.active,
-        spool: SpoolStore? = null,
-    ) {
-        val text = ToolTextContext.of(config)
-        // Like the description, a notice recommends the export tool only for an operation it would
-        // accept; for a write or a secret it would answer with a refusal.
-        val opBudget = if (ExportTools.exportable(op)) budget else budget.copy(exportAvailable = false)
-        apiTool(
+    /** The definition `tools/list` shows for [op]. */
+    private fun operationDefinition(family: ApiFamily, op: CatalogOp, text: ToolTextContext): Tool =
+        toolDefinition(
             name = op.name,
             description = InputSchemaBuilder.describe(op, family, text),
             inputSchema = InputSchemaBuilder.build(op, text),
@@ -89,7 +140,18 @@ object CatalogTools {
             // By HTTP semantics a repeated PUT or DELETE leaves the state the first one did; a
             // repeated POST may create a second record or start a second scan.
             idempotent = op.method in IDEMPOTENT_METHODS,
-        ) { args ->
+        )
+
+    private fun Server.registerOperation(
+        client: Rapid7Client,
+        prepared: PreparedOperation,
+        config: Config,
+        spool: SpoolStore?,
+    ) {
+        val family = prepared.family
+        val op = prepared.op
+        val opBudget = prepared.budget
+        apiTool(prepared.tool) { args ->
             if (op.admin) {
                 require(args.stringOrNull(CatalogLoader.CONFIRM_PROPERTY) == InputSchemaBuilder.CONFIRM_VALUE) {
                     "This tool executes a command on the Security Console. Set confirm=\"${InputSchemaBuilder.CONFIRM_VALUE}\" to proceed."
@@ -138,35 +200,62 @@ object CatalogTools {
         }
     }
 
-    private fun Server.registerMetaTools(
-        config: Config,
-        catalogs: Map<ApiFamily, Catalog>,
-        selected: List<CatalogFilter.Selection>,
-        metaToolCount: Int,
-    ) {
-        apiTool(
-            name = SERVER_INFO_TOOL,
-            description = "Describe this MCP server: version, which InsightVM APIs are configured, active tool filters and tool counts per API family.",
-            inputSchema = ToolSchema(properties = buildJsonObject {}),
-            readOnly = true,
-        ) {
-            textResult(pretty(serverInfo(config, catalogs, selected, metaToolCount)))
+    /** The meta tools' definitions depend on nothing configurable, so one copy serves the whole process. */
+    private val SERVER_INFO_DEFINITION = toolDefinition(
+        name = SERVER_INFO_TOOL,
+        description = "Describe this MCP server: version and update state (whether a newer release is available, downloaded " +
+            "or installed), which InsightVM APIs are configured, active tool filters and tool counts per API family.",
+        inputSchema = ToolSchema(properties = buildJsonObject {}),
+        readOnly = true,
+    )
+
+    private val TOOL_GROUPS_DEFINITION = toolDefinition(
+        name = TOOL_GROUPS_TOOL,
+        description = "List the available tools grouped by API tag (e.g. Site, Asset, Vulnerability). Optionally restrict to one tag. Use this to discover the right tool when the list is long.",
+        inputSchema = ToolSchema(
+            properties = buildJsonObject {
+                putJsonObject("tag") {
+                    put("type", "string")
+                    put("description", "Only list tools for this tag (case-insensitive).")
+                }
+            },
+        ),
+        readOnly = true,
+    )
+
+    private val SEARCH_CRITERIA_DEFINITION = toolDefinition(
+        name = SEARCH_CRITERIA_TOOL,
+        description = "The Security Console's search-criteria reference: the fields a filter can name, the operators each " +
+            "field accepts, the values of enumerated fields, and the value, lower or upper property each operator reads. " +
+            "Use it to build the filters of find_assets and of asset group and tag search criteria (kind \"asset\", the " +
+            "default), or of a dynamic site's discovery search criteria (kind \"discovery\"). Pass field to look up one field.",
+        inputSchema = ToolSchema(
+            properties = buildJsonObject {
+                putJsonObject("kind") {
+                    put("type", "string")
+                    putJsonArray("enum") { SearchCriteria.Kind.entries.forEach { add(it.id) } }
+                    put("description", "Which criteria: \"asset\" (default) or \"discovery\".")
+                }
+                putJsonObject("field") {
+                    put("type", "string")
+                    put("description", "Only this field (case-insensitive), with the properties each of its operators reads.")
+                }
+            },
+        ),
+        readOnly = true,
+    )
+
+    private fun Server.registerMetaTools(prepared: Prepared) {
+        apiTool(prepared.serverInfoTool) {
+            // The update state is read per call, never captured: the startup check and any install
+            // finish after this Server is built, and the answer must be the current one.
+            textResult(
+                pretty(serverInfo(prepared.config, prepared.catalogs, prepared.selected, prepared.metaToolCount, UpdateStatus.active)),
+            )
         }
-        apiTool(
-            name = TOOL_GROUPS_TOOL,
-            description = "List the available tools grouped by API tag (e.g. Site, Asset, Vulnerability). Optionally restrict to one tag. Use this to discover the right tool when the list is long.",
-            inputSchema = ToolSchema(
-                properties = buildJsonObject {
-                    putJsonObject("tag") {
-                        put("type", "string")
-                        put("description", "Only list tools for this tag (case-insensitive).")
-                    }
-                },
-            ),
-            readOnly = true,
-        ) { args ->
+        apiTool(prepared.toolGroupsTool) { args ->
             val tag = args.stringOrNull("tag")?.trim()?.lowercase()
-            textResult(pretty(toolGroups(selected, tag)))
+            textResult(pretty(toolGroups(prepared.selected, tag)))
         }
     }
 
@@ -174,28 +263,8 @@ object CatalogTools {
      * The console's search-criteria reference, which the filter schemas of find_assets, asset groups,
      * tags and dynamic sites point at. Its text comes from the bundled reference, never from the API.
      */
-    internal fun Server.registerSearchCriteriaTool(reference: SearchCriteriaReference) {
-        apiTool(
-            name = SEARCH_CRITERIA_TOOL,
-            description = "The Security Console's search-criteria reference: the fields a filter can name, the operators each " +
-                "field accepts, the values of enumerated fields, and the value, lower or upper property each operator reads. " +
-                "Use it to build the filters of find_assets and of asset group and tag search criteria (kind \"asset\", the " +
-                "default), or of a dynamic site's discovery search criteria (kind \"discovery\"). Pass field to look up one field.",
-            inputSchema = ToolSchema(
-                properties = buildJsonObject {
-                    putJsonObject("kind") {
-                        put("type", "string")
-                        putJsonArray("enum") { SearchCriteria.Kind.entries.forEach { add(it.id) } }
-                        put("description", "Which criteria: \"asset\" (default) or \"discovery\".")
-                    }
-                    putJsonObject("field") {
-                        put("type", "string")
-                        put("description", "Only this field (case-insensitive), with the properties each of its operators reads.")
-                    }
-                },
-            ),
-            readOnly = true,
-        ) { args ->
+    private fun Server.registerSearchCriteriaTool(tool: Tool, reference: SearchCriteriaReference) {
+        apiTool(tool) { args ->
             val kind = args.stringOrNull("kind")?.let { SearchCriteria.Kind.fromId(it) } ?: SearchCriteria.Kind.ASSET
             SearchCriteria.render(reference, kind, args.stringOrNull("field"))?.let { textResult(it) }
                 ?: errorResult(
@@ -210,9 +279,11 @@ object CatalogTools {
         catalogs: Map<ApiFamily, Catalog>,
         selected: List<CatalogFilter.Selection>,
         metaToolCount: Int = 2,
+        update: UpdateStatus.Snapshot = UpdateStatus.active,
     ): JsonElement = buildJsonObject {
         put("server", SERVER_NAME)
         put("version", SERVER_VERSION)
+        put("update", updateInfo(update))
         putJsonObject("apis") {
             for (family in ApiFamily.entries) {
                 putJsonObject(family.id) {

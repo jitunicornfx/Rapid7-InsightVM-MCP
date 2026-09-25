@@ -134,7 +134,7 @@ writes that purely add (`create_*`, `add_*`, `start_*`, `tag_*`, …) are marked
 | Console v3 | Asset Discovery, Policy Override, Administration, Vulnerability Result/Exception, Credential, Scan Template, Scan, Vulnerability Check, Root, Remediation | 61 | `get_sonar_queries`, `get_info`, `get_scans`, `get_asset_vulnerability_solutions` |
 | Cloud v4 | Scan / Asset / Site / Vulnerability / Health | 13 | `cloud_search_integration_assets`, `cloud_start_scan`, `cloud_health` |
 
-Four tools are the server's own rather than the API's: `insightvm_server_info` (configuration, filters, counts),
+Four tools are the server's own rather than the API's: `insightvm_server_info` (version and update state, configuration, filters, counts),
 `insightvm_list_tool_groups` (tools grouped by tag), `insightvm_search_criteria` and `insightvm_export_to_file` (see below).
 `insightvm_search_criteria` serves the console's search-criteria reference: the fields a filter can name, the operators
 each accepts and the value each operator takes. The Security Console documents this only in its specification's
@@ -260,7 +260,8 @@ Summarised here; details and residual risks in [docs/SECURITY.md](docs/SECURITY.
 * **Credential egress** — redirects are never followed; no URL taken from an API response is ever requested; `https`
   is mandatory unless `INSIGHTVM_ALLOW_HTTP=1`; secrets never appear in logs or `toString`.
 * **HTTP transport** — bearer token (required off-loopback, constant-time compare, brute-force throttle), `Host`/`Origin`
-  checks against DNS rebinding, default-deny CORS, 4 MiB request cap.
+  checks against DNS rebinding, default-deny CORS, 4 MiB request cap. At most 32 sessions are kept: beyond that the
+  oldest is closed, and its client gets `404` (or sees its SSE stream end) and initializes again.
 * **Dangerous operations** — `execute_command` is unregistered unless `--allow-admin-commands` *and* then requires
   `confirm="EXECUTE"`; every mutation that is not purely additive is flagged `destructiveHint`, including list
   replacements, status changes and credential resets; `--read-only` removes every mutation.
@@ -292,7 +293,11 @@ log, so that is the first place to look:
 
 On start the server checks GitHub for a newer release (set `INSIGHTVM_DISABLE_UPDATE_CHECK=1` in air-gapped environments)
 and, unless `INSIGHTVM_DISABLE_AUTO_UPDATE=1` / `--no-auto-update`, downloads and verifies (SHA-256, size, entry point)
-the new JAR and swaps it in at shutdown. Clients receive an MCP logging notification either way.
+the new JAR and swaps it in at shutdown. Clients are sent an MCP logging notification either way, but only on a
+best-effort basis: over HTTP it goes out two seconds after the client initializes, and a client with no event stream
+open by then never receives it. `insightvm_server_info` is the authoritative answer, whatever the transport: it
+reports the running version, the latest release, and whether an update is available, downloaded and waiting for the
+server to exit, or installed.
 
 ## Development
 

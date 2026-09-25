@@ -125,7 +125,8 @@ Out of scope: a compromised operator machine, a malicious bundled specification,
 | Browser origins | Any request carrying `Origin` must match `INSIGHTVM_HTTP_ALLOWED_ORIGINS` exactly (scheme+host+port, default ports normalised) → else `403`. `*` is ignored. |
 | CORS | Default-deny; only allow-listed origins receive CORS headers. Preflights skip the bearer check but not the origin check. |
 | Request size | Declared `Content-Length` above 4 MiB → `413`. |
-| SDK guard | The SDK's built-in DNS-rebinding plugin is disabled because it only understands localhost binds; the guard above runs before both the Streamable HTTP (`/mcp`) and legacy SSE (`/sse`) routes. |
+| Sessions | Each session has its own MCP server; the tool definitions they register are built once per process and shared. At most 32 are kept: beyond that the oldest is closed, and its client gets `404` (Streamable HTTP) or sees its event stream end (legacy SSE) and initializes again. A limit that refused new sessions was rejected, because clients that exit without `DELETE` would lock the rest out for good. Any client that passes the guard can therefore close other clients' sessions by opening new ones. |
+| SDK guard | The SDK's built-in DNS-rebinding plugin is disabled because it only understands localhost binds, and it would answer `403` to an origin in `INSIGHTVM_HTTP_ALLOWED_ORIGINS`; the guard above runs before both the Streamable HTTP (`/mcp`) and legacy SSE (`/sse`) routes. A test through the real routes shows an allow-listed origin reaching a session on both, and an unlisted one refused. |
 
 ### Resource limits
 
@@ -213,6 +214,11 @@ continuation cursor only as an allow-listed token.
 Ported from the InsightIDR server with its protections intact: exact-match GitHub host allow-list, a strict version-tag
 regex as the only remote text that reaches the model, mandatory SHA-256 verified from disk, entry-point check on the
 downloaded JAR, a cross-process lock, and staged swap-at-shutdown on Windows with rollback.
+
+The update state reaches the model two ways, both carrying only server-authored text and versions that passed the tag
+regex, and never a path: a logging notification, which is best-effort (over HTTP a notification sent while the client
+has no event stream open is dropped, so it waits two seconds after `initialized`), and the `update` object of
+`insightvm_server_info`, answered from state the process keeps.
 
 Windows refuses to move anything over a JAR a JVM is running from, so there the update is written into the JAR in place
 as the server exits. That rewrite is guarded:

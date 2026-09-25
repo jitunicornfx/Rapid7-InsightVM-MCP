@@ -29,6 +29,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -724,6 +725,36 @@ class CatalogToolsBehaviourTest {
         val filters = info["filters"]!!.jsonObject
         assertEquals("Site", filters["tags"]!!.jsonArray.single().jsonPrimitive.content)
         assertEquals("get_*", filters["tools"]!!.jsonArray.single().jsonPrimitive.content)
+    }
+
+    /**
+     * Regression: the update notice is a push, and over Streamable HTTP a push with no open stream
+     * is dropped, so the notice was the only place the update state could be read. The server info
+     * tool is a request the client makes, so it has to carry the authoritative answer.
+     */
+    @Test
+    fun `server info reports the update state`() = runBlocking {
+        val h = mcpHarness()
+        suspend fun update() = assertNotNull(
+            JsonCodec.compact.parseToJsonElement(h.text(h.call(CatalogTools.SERVER_INFO_TOOL))).jsonObject["update"],
+            "server info has no update state",
+        ).jsonObject
+        UpdateStatus.reset()
+        try {
+            assertEquals(SERVER_VERSION, update()["currentVersion"]!!.jsonPrimitive.content)
+            assertEquals("pending", update()["check"]!!.jsonPrimitive.content)
+
+            // Recorded after the server was built: the tool reads the state per call.
+            UpdateStatus.recordCheck(UpdateChecker.Result(updateAvailable = true, currentVersion = SERVER_VERSION, latestVersion = "9.9.9"))
+            UpdateStatus.recordInstall(UpdateInstaller.Outcome.Installed("9.9.9", "/opt/insightvm/app.jar"))
+            val now = update()
+            assertEquals("9.9.9", now["latestRelease"]!!.jsonPrimitive.content)
+            assertEquals("installed", now["install"]!!.jsonPrimitive.content)
+            assertEquals("true", now["restartRequired"]!!.jsonPrimitive.content)
+            assertEquals(0, h.requests.size, "answered from local state, with no API call")
+        } finally {
+            UpdateStatus.reset()
+        }
     }
 
     @Test

@@ -38,10 +38,18 @@ Coverage is measured with JaCoCo and **enforced**: `./gradlew check` fails below
 * **`CatalogToolsBehaviourTest`** — sanitisation (HTML, binary, text), error hints per status, truncation, fence
   neutralisation, argument rejection, the admin-command gate, filters and the meta tools. It also checks that tool
   text and notices follow the configuration (page size, export tool, links), and pins the size of `tools/list`.
+  `McpServerFactoryTest` checks that Servers built from one `CatalogTools.prepare` share every tool definition.
 * **`HttpTransportSecurityTest`** — Ktor `testApplication` against the guard: bearer, throttle, Host/Origin, CORS
   preflight, size cap, helper functions.
 * **`MainTest`** — Clikt option parsing through the `test()` helper, plus real transports: a stdio session over pipes
   and a Streamable HTTP session on an ephemeral port behind the guard.
+* **`HttpRuntimeTest`** — the `--http` runtime on a real socket, driving the protocol by hand where the SDK client
+  would hide the behaviour: the session cap (oldest closed and answered `404`, `DELETE` releasing at once, an evicted
+  legacy stream ending), an update notice dropped when the client's stream opens late and delivered within the grace
+  period, `insightvm_server_info` answering either way, and an allow-listed browser origin reaching a session on both
+  transports through the real routes.
+* **`UpdateStatusTest`** — every check and install state as `insightvm_server_info` reports it, including "could not
+  tell" kept apart from "up to date", and no path in the payload.
 * **`Rapid7ClientTest`, `TlsSupportTest`, `ConfigTest`, `ResponseSanitizerTest`, `ArgumentBinderTest`, `CatalogTest`,
   `McpServerFactoryTest`** — focused unit tests for each component; HTTP is stubbed with Ktor `MockEngine` through the
   `Rapid7Client(consoleEngine, cloudEngine)` seam.

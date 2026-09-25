@@ -12,6 +12,7 @@ import io.ktor.http.headersOf
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class McpServerFactoryTest {
@@ -71,6 +72,27 @@ class McpServerFactoryTest {
         assertContains(groups, "\"count\":8")
         assertContains(groups, "cloud_stop_scan")
         assertEquals("[]", CatalogTools.toolGroups(built.selected, "nope").toString())
+    }
+
+    /**
+     * Regression: --http builds a Server for every session, and each one built its own copy of every
+     * tool's name, description, schema and annotations (about 430K characters of tools/list text).
+     */
+    @Test
+    fun `servers built from one preparation share their tool definitions`() {
+        val config = testConfig()
+        val prepared = CatalogTools.prepare(config, TEST_CATALOGS)
+        val a = buildInsightVmServer(client(config), prepared)
+        val b = buildInsightVmServer(client(config), prepared)
+        assertEquals(a.server.tools.keys, b.server.tools.keys)
+        assertEquals(336 + prepared.metaToolCount, a.server.tools.size)
+        for ((name, registered) in a.server.tools) {
+            assertSame(registered.tool, b.server.tools.getValue(name).tool, name)
+        }
+        // Only the handlers are per Server: each is bound to its own session's calls.
+        val handler = a.server.tools.getValue("get_assets").handler
+        assertTrue(handler !== b.server.tools.getValue("get_assets").handler)
+        assertEquals(a.summary, b.summary)
     }
 
     @Test

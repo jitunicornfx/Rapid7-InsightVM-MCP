@@ -15,6 +15,7 @@ import com.github.ajalt.clikt.parameters.types.int
 import com.jitunicornfx.insightvm.mcp.catalog.ApiFamily
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogFilter
 import com.jitunicornfx.insightvm.mcp.catalog.CatalogLoader
+import com.jitunicornfx.insightvm.mcp.catalog.CatalogTools
 import com.jitunicornfx.insightvm.mcp.catalog.PagingDefaults
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
@@ -31,6 +32,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.io.asSink
@@ -45,6 +47,25 @@ const val DEFAULT_HTTP_HOST = "127.0.0.1"
 const val DEFAULT_HTTP_PORT = 3072
 const val STREAMABLE_HTTP_PATH = "/mcp"
 const val LEGACY_SSE_PATH = "/sse"
+
+/**
+ * How long to wait, after a client says `initialized`, before pushing it the update notice over HTTP.
+ *
+ * Over Streamable HTTP a server-initiated message travels on an event stream the CLIENT opens with a
+ * GET, and clients open it just after `initialized`, not before. SDK 0.15.0 drops a message that has
+ * no open stream to travel on rather than queueing it, so a notice sent the instant `initialized`
+ * arrived was lost for any client slower than the SDK's own. The notice remains best-effort — a
+ * client that never opens a stream never gets it — which is why `insightvm_server_info`, a request
+ * the client makes, reports the same state.
+ */
+internal const val HTTP_NOTIFY_GRACE_MILLIS = 2_000L
+
+/**
+ * Most MCP Servers (one per session) the `--http` transport keeps at once; the oldest is closed
+ * beyond it. See [ServerGovernor]. Well above what one operator's clients open, and a Server now
+ * costs its handler closures, not a copy of every tool definition.
+ */
+internal const val HTTP_MAX_LIVE_SESSIONS = 32
 
 /** Guards [autoInstall] so a release is downloaded and installed at most once per process. */
 private val installAttempted = AtomicBoolean(false)
@@ -394,11 +415,11 @@ private fun describeConfig(config: Config): String = buildString {
     config.cloud?.let { if (isNotEmpty()) append(", "); append("cloud=${it.region.code} (${it.baseUrl})") }
 }
 
-private fun logRegistration(built: BuiltServer) {
-    System.err.println("[insightvm-mcp] ${built.summary}")
-    if (built.selected.size > LARGE_TOOL_SET_THRESHOLD) {
+private fun logRegistration(summary: String, selectedCount: Int) {
+    System.err.println("[insightvm-mcp] $summary")
+    if (selectedCount > LARGE_TOOL_SET_THRESHOLD) {
         System.err.println(
-            "[insightvm-mcp] ${built.selected.size} tools is a large set for some MCP clients; consider " +
+            "[insightvm-mcp] $selectedCount tools is a large set for some MCP clients; consider " +
                 "--read-only, --tags, --api or --tools to trim it.",
         )
     }
@@ -408,10 +429,28 @@ private fun logRegistration(built: BuiltServer) {
 private fun CoroutineScope.startUpdateCheck(config: Config): Deferred<UpdateChecker.Result>? =
     if (config.updateCheckDisabled) {
         System.err.println("[insightvm-mcp] Update check disabled via ${Config.ENV_DISABLE_UPDATE_CHECK}.")
+        UpdateStatus.markCheckDisabled()
         null
     } else {
+        UpdateStatus.markCheckStarted()
         async(Dispatchers.IO) { UpdateChecker.check() }
     }
+
+/**
+ * Record [check]'s result in [UpdateStatus] as soon as it finishes, not where a session awaits it:
+ * the status must be right even when no session ever does (an `--http` server nobody has connected
+ * to, or a client that never finishes initializing). A configuration that rules out installing is
+ * recorded at once for the same reason; [autoInstall] only runs once a session is initialized.
+ */
+private fun CoroutineScope.trackUpdateStatus(config: Config, check: Deferred<UpdateChecker.Result>?) {
+    if (config.autoUpdateDisabled) UpdateStatus.markAutoInstallDisabled()
+    if (check == null) return
+    launch {
+        runCatching { check.await() }
+            .onSuccess(UpdateStatus::recordCheck)
+            .onFailure { UpdateStatus.markCheckFailed() }
+    }
+}
 
 /** Attach the deferred update result to a session, notifying the client once it is initialized. */
 private fun CoroutineScope.notifyWhenInitialized(
@@ -444,9 +483,11 @@ private suspend fun autoInstall(config: Config, result: UpdateChecker.Result): U
         System.err.println(
             "[insightvm-mcp] Automatic installation is disabled (${Config.ENV_DISABLE_AUTO_UPDATE} / --no-auto-update); update it manually.",
         )
+        UpdateStatus.markAutoInstallDisabled()
         return null
     }
     val outcome = UpdateInstaller.install(result)
+    UpdateStatus.recordInstall(outcome)
     when (outcome) {
         is UpdateInstaller.Outcome.Installed ->
             System.err.println("[insightvm-mcp] Installed ${outcome.version}; restart to run it.")
@@ -459,6 +500,7 @@ private suspend fun autoInstall(config: Config, result: UpdateChecker.Result): U
                 // The stage has to survive until this process exits, which can be days away, while
                 // every sibling started meanwhile sweeps old stages; see keepStagedFresh.
                 val keepAlive = UpdateInstaller.keepStagedFresh(staged) {
+                    UpdateStatus.markStagedLost()
                     System.err.println(
                         "[insightvm-mcp] Staged ${outcome.version} has been removed from disk and will NOT be " +
                             "applied as this server exits. It will be downloaded again on the next check.",
@@ -475,6 +517,8 @@ private suspend fun autoInstall(config: Config, result: UpdateChecker.Result): U
                             }
                         },
                     )
+                }.onSuccess {
+                    UpdateStatus.markStagedAppliesOnExit()
                 }.onFailure {
                     runCatching { keepAlive.close() }
                     System.err.println(
@@ -505,9 +549,9 @@ internal fun runStdio(
 ) = runBlocking {
     System.err.println("[insightvm-mcp] Starting over stdio - ${describeConfig(config)}")
     val built = buildInsightVmServer(client, config)
-    logRegistration(built)
+    logRegistration(built.summary, built.selected.size)
     val checkScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    val updateCheck = checkScope.startUpdateCheck(config)
+    val updateCheck = checkScope.startUpdateCheck(config).also { checkScope.trackUpdateStatus(config, it) }
     val transport = StdioServerTransport(
         input = input.asSource().buffered(),
         output = protocolOut.asSink().buffered(),
@@ -531,6 +575,10 @@ internal fun runStdio(
 /** Everything [runHttp] needs to start and later tear down; returned unstarted so tests can drive it. */
 internal class HttpRuntime(
     val engine: EmbeddedServer<*, *>,
+    /** The live per-session Servers, capped; see [HTTP_MAX_LIVE_SESSIONS]. */
+    val sessions: ServerGovernor,
+    /** The wait before an update notice; see [HTTP_NOTIFY_GRACE_MILLIS]. */
+    val notifyGraceMillis: Long,
     private val checkScope: CoroutineScope,
     private val updateCheck: Deferred<UpdateChecker.Result>?,
     private val client: Rapid7Client,
@@ -543,19 +591,29 @@ internal class HttpRuntime(
 }
 
 /** Build the HTTP transport (security guard + MCP routes) without starting it. */
-internal fun buildHttpRuntime(client: Rapid7Client, config: Config, host: String, port: Int): HttpRuntime {
+internal fun buildHttpRuntime(
+    client: Rapid7Client,
+    config: Config,
+    host: String,
+    port: Int,
+    /** Starts the one update check for the process. A parameter so tests need not call GitHub. */
+    startCheck: CoroutineScope.(Config) -> Deferred<UpdateChecker.Result>? = { startUpdateCheck(it) },
+    notifyGraceMillis: Long = HTTP_NOTIFY_GRACE_MILLIS,
+    maxLiveSessions: Int = HTTP_MAX_LIVE_SESSIONS,
+): HttpRuntime {
     System.err.println("[insightvm-mcp] Starting over HTTP on $host:$port - ${describeConfig(config)}")
     if (config.httpAuthToken == null) {
         System.err.println(
             "[insightvm-mcp] WARNING: no ${Config.ENV_MCP_AUTH_TOKEN} set; any local process can call this server on $host:$port.",
         )
     }
-    val catalogs = CatalogLoader.loadAll(config.activeFamilies)
-    // Build once for logging; mcp { } builds a server per connection from the same catalogs.
-    logRegistration(buildInsightVmServer(client, config, catalogs))
+    // Every tool definition is built here, once; each session's Server registers these same objects.
+    val prepared = CatalogTools.prepare(config, CatalogLoader.loadAll(config.activeFamilies))
+    logRegistration(registrationSummary(prepared), prepared.selected.size)
 
     val checkScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    val updateCheck = checkScope.startUpdateCheck(config)
+    val updateCheck = checkScope.startCheck(config).also { checkScope.trackUpdateStatus(config, it) }
+    val governor = ServerGovernor(maxLiveSessions, checkScope)
     val engine = embeddedServer(CIO, host = host, port = port) {
         installTransportSecurity(
             HttpSecurity(
@@ -565,14 +623,15 @@ internal fun buildHttpRuntime(client: Rapid7Client, config: Config, host: String
                 allowedOrigins = config.httpAllowedOrigins,
             ),
         )
-        // One server per connection (both SDK transports build on demand); the update notifier is
-        // attached to each so every session gets the notice exactly once.
+        // One server per session (both transports build on demand), counted against the cap; the
+        // update notifier is attached to each so every session gets the notice exactly once.
         val newServer: () -> Server = {
-            buildInsightVmServer(client, config, catalogs).server.also { server ->
+            governor.admit(buildInsightVmServer(client, prepared).server).also { server ->
                 if (updateCheck != null) {
                     server.attachUpdateNotifier(checkScope) { session ->
                         val result = runCatching { updateCheck.await() }.getOrNull()
                         if (result != null) {
+                            delay(notifyGraceMillis) // see HTTP_NOTIFY_GRACE_MILLIS
                             server.notifyUpdateAvailable(session, result)
                             if (result.updateAvailable) {
                                 val outcome = autoInstall(config, result)
@@ -584,13 +643,14 @@ internal fun buildHttpRuntime(client: Rapid7Client, config: Config, host: String
             }
         }
         // Host/Origin validation is done by installTransportSecurity (it also understands non-loopback
-        // binds); the SDK's own DNS-rebinding guard is localhost-only, so it is switched off here.
+        // binds and INSIGHTVM_HTTP_ALLOWED_ORIGINS); the SDK's own DNS-rebinding guard is
+        // localhost-only and would answer 403 to an allow-listed origin, so it is switched off here.
         // Streamable HTTP (current spec) on /mcp — this also installs the SSE plugin ...
         mcpStreamableHttp(path = STREAMABLE_HTTP_PATH, enableDnsRebindingProtection = false) { newServer() }
         // ... which the legacy HTTP+SSE transport (GET /sse stream, POST /sse messages) relies on.
         routing { legacySseTransport(LEGACY_SSE_PATH, newServer = newServer) }
     }
-    return HttpRuntime(engine, checkScope, updateCheck, client)
+    return HttpRuntime(engine, governor, notifyGraceMillis, checkScope, updateCheck, client)
 }
 
 private fun runHttp(client: Rapid7Client, config: Config, host: String, port: Int) {

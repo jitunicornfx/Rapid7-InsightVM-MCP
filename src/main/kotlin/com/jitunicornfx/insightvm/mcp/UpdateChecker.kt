@@ -129,6 +129,12 @@ object UpdateChecker {
         val releaseUrl: String = RELEASES_PAGE_URL,
         /** The verified-downloadable binary for [latestVersion], when the release publishes one. */
         val asset: ReleaseAsset? = null,
+        /**
+         * The newest release GitHub named, whether or not it is newer, having passed the same
+         * allow-list as [latestVersion]. Null when the check got no usable answer (offline, rate
+         * limited, a malformed payload), which is how "up to date" is told apart from "unknown".
+         */
+        val latestRelease: String? = latestVersion,
     ) {
         /** The message surfaced to the MCP client. */
         fun message(): String =
@@ -190,11 +196,13 @@ object UpdateChecker {
         val latest = body?.let { parseLatestTag(it) }
             ?: return Result(updateAvailable = false, currentVersion = currentVersion)
         val newer = compareVersions(latest, currentVersion) > 0
+        val display = latest.removePrefix("v").removePrefix("V")
         return Result(
             updateAvailable = newer,
             currentVersion = currentVersion,
-            latestVersion = if (newer) latest.removePrefix("v").removePrefix("V") else null,
+            latestVersion = if (newer) display else null,
             asset = if (newer) parseAsset(body) else null,
+            latestRelease = display,
         )
     }
 

@@ -18,6 +18,7 @@ import com.jitunicornfx.insightvm.mcp.pruneRecordLinks
 import com.jitunicornfx.insightvm.mcp.statusHint
 import com.jitunicornfx.insightvm.mcp.stringOrNull
 import com.jitunicornfx.insightvm.mcp.textResult
+import com.jitunicornfx.insightvm.mcp.toolDefinition
 import com.jitunicornfx.insightvm.mcp.withheldFailureMessage
 import com.jitunicornfx.insightvm.mcp.wrapUntrusted
 import com.jitunicornfx.insightvm.mcp.catalog.ApiFamily
@@ -30,6 +31,7 @@ import com.jitunicornfx.insightvm.mcp.catalog.PagingDefaults
 import io.ktor.http.ContentType
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
+import io.modelcontextprotocol.kotlin.sdk.types.Tool
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -177,22 +179,26 @@ object ExportTools {
         else -> ExportMode.SINGLE_SHOT
     }
 
+    /** The export tool's definition; built once per process by `CatalogTools.prepare`. */
+    fun definition(config: Config): Tool = toolDefinition(
+        name = EXPORT_TOOL,
+        description = DESCRIPTION,
+        inputSchema = schema(config),
+        // It reads the API but writes to the local filesystem, so readOnlyHint would be a lie
+        // and would suppress the confirmation a client shows for a tool that can write 512 MiB.
+        readOnly = false,
+        destructive = false,
+    )
+
+    /** Register [tool] (from [definition]); it can export only the operations in [byName], the registered ones. */
     fun Server.registerExportTool(
+        tool: Tool,
         client: Rapid7Client,
         config: Config,
-        selected: List<CatalogFilter.Selection>,
+        byName: Map<String, CatalogFilter.Selection>,
         spool: SpoolStore,
     ) {
-        val byName = selected.associateBy { it.op.name }
-        apiTool(
-            name = EXPORT_TOOL,
-            description = DESCRIPTION,
-            inputSchema = schema(config),
-            // It reads the API but writes to the local filesystem, so readOnlyHint would be a lie
-            // and would suppress the confirmation a client shows for a tool that can write 512 MiB.
-            readOnly = false,
-            destructive = false,
-        ) { args ->
+        apiTool(tool) { args ->
             runExport(client, config, byName, spool, args)
         }
     }

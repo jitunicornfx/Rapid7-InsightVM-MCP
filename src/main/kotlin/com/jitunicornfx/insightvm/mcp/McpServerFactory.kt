@@ -36,6 +36,16 @@ fun buildInsightVmServer(
     config: Config,
     catalogs: Map<ApiFamily, Catalog> = CatalogLoader.loadAll(config.activeFamilies),
     spool: SpoolStore = SpoolStore.active,
+): BuiltServer = buildInsightVmServer(client, CatalogTools.prepare(config, catalogs), spool)
+
+/**
+ * Build a Server from tool definitions [CatalogTools.prepare] already built. `--http` builds one
+ * Server per session, and they all share [prepared]'s definitions.
+ */
+fun buildInsightVmServer(
+    client: Rapid7Client,
+    prepared: CatalogTools.Prepared,
+    spool: SpoolStore = SpoolStore.active,
 ): BuiltServer {
     val server = Server(
         Implementation(name = SERVER_NAME, version = SERVER_VERSION),
@@ -47,10 +57,14 @@ fun buildInsightVmServer(
             ),
         ),
     )
-    val selected = CatalogTools.register(server, client, config, catalogs, spool)
-    val filter = config.filter.copy(families = config.activeFamilies)
-    val summary = CatalogFilter.summarize(selected, catalogs, filter)
-    return BuiltServer(server, selected, summary)
+    val selected = CatalogTools.register(server, client, prepared, spool)
+    return BuiltServer(server, selected, registrationSummary(prepared))
+}
+
+/** The one-line account of what [prepared] registers, as the startup log prints it. */
+internal fun registrationSummary(prepared: CatalogTools.Prepared): String {
+    val config = prepared.config
+    return CatalogFilter.summarize(prepared.selected, prepared.catalogs, config.filter.copy(families = config.activeFamilies))
 }
 
 /** Logger name carried on the update notification, so clients can attribute/filter it. */
@@ -79,7 +93,12 @@ fun Server.attachUpdateNotifier(
 
 /**
  * Send [result] to [session] as an MCP `notifications/message` once the client has finished
- * initializing, when — and only when — an update is available. Delivery is best-effort.
+ * initializing, when — and only when — an update is available.
+ *
+ * Delivery is best-effort. Over Streamable HTTP a server-initiated message travels on an event
+ * stream the client opens, and one sent while no stream is open is dropped, not queued (the HTTP
+ * runtime waits [HTTP_NOTIFY_GRACE_MILLIS] first for that reason). A client may also never show it.
+ * `insightvm_server_info` reports the same state ([UpdateStatus]) on request.
  */
 suspend fun Server.notifyUpdateAvailable(session: ServerSession, result: UpdateChecker.Result) {
     if (!result.updateAvailable) return

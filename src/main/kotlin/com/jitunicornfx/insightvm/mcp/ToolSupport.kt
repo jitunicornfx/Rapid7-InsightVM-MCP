@@ -7,6 +7,7 @@ import io.ktor.http.encodeURLPathPart
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.Tool
 import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.coroutines.CancellationException
@@ -171,32 +172,39 @@ fun textResult(message: String): CallToolResult =
     CallToolResult(content = listOf(TextContent(message)))
 
 /**
- * Register a tool with centralized error handling. Thrown exceptions are converted into error
- * results so a single failing call never tears down the session.
+ * The MCP definition of a tool: what `tools/list` shows for it. It depends only on the configuration,
+ * never on a session, so `--http` builds each one once per process and every per-session Server
+ * registers that same immutable object (see `CatalogTools.prepare`).
  *
  * MCP gives [destructive] and [idempotent] meaning only on a tool that is not read-only, so a
  * read-only tool carries neither hint rather than a value a client might misread.
  */
-fun Server.apiTool(
+fun toolDefinition(
     name: String,
     description: String,
     inputSchema: ToolSchema = emptySchema(),
     readOnly: Boolean = false,
     destructive: Boolean = false,
     idempotent: Boolean = false,
-    handler: suspend (args: JsonObject) -> CallToolResult,
-) {
-    addTool(
-        name = name,
-        description = description,
-        inputSchema = inputSchema,
-        toolAnnotations = ToolAnnotations(
-            readOnlyHint = readOnly,
-            destructiveHint = if (readOnly) null else destructive,
-            idempotentHint = if (readOnly) null else idempotent,
-            openWorldHint = true,
-        ),
-    ) { request ->
+): Tool = Tool(
+    name = name,
+    inputSchema = inputSchema,
+    description = description,
+    annotations = ToolAnnotations(
+        readOnlyHint = readOnly,
+        destructiveHint = if (readOnly) null else destructive,
+        idempotentHint = if (readOnly) null else idempotent,
+        openWorldHint = true,
+    ),
+)
+
+/**
+ * Register [tool] (from [toolDefinition]) with centralized error handling. Thrown exceptions are
+ * converted into error results so a single failing call never tears down the session.
+ */
+fun Server.apiTool(tool: Tool, handler: suspend (args: JsonObject) -> CallToolResult) {
+    val name = tool.name
+    addTool(tool) { request ->
         try {
             handler(request.arguments ?: JsonObject(emptyMap()))
         } catch (e: CancellationException) {
