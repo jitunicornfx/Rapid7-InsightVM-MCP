@@ -45,7 +45,8 @@ class UnsafeSpoolDirectoryException(message: String) : IOException(message)
  *
  * Exported files hold tenant vulnerability data. A spool directory this store creates is born
  * private: `rwx------` on POSIX, and on Windows an access list naming only the account that created
- * it, which the files inside inherit. Files are `rw-------` wherever POSIX permissions exist. A
+ * it, which the files inside inherit — except when that account is a group, as it is for an elevated
+ * process, which gets its parent's ACL instead (see [createOwnerOnly]). Files are `rw-------` wherever POSIX permissions exist. A
  * directory that already existed is the operator's and is never changed: on POSIX it is refused
  * unless this account owns it and no other account can write to it, and on Windows it keeps its own
  * ACL.
@@ -193,15 +194,6 @@ open class SpoolStore(val directory: Path) {
      * once. Asking the filesystem is right for a numeric UID with no account name, an elevated Windows
      * token and a localised Windows alike.
      */
-    /** [probeOwner] in the spool itself, turning "cannot create a file here" into a refusal that names it. */
-    private fun probeOrRefuse(): UserPrincipal = try {
-        probeOwner(directory)
-    } catch (e: IOException) {
-        throw UnsafeSpoolDirectoryException(
-            "this account cannot create files in the spool directory $directory (${e::class.simpleName})",
-        )
-    }
-
     internal open fun probeOwner(dir: Path): UserPrincipal {
         val probe = Files.createTempFile(dir, PROBE_PREFIX, PROBE_SUFFIX)
         try {
@@ -209,6 +201,15 @@ open class SpoolStore(val directory: Path) {
         } finally {
             runCatching { Files.deleteIfExists(probe) }
         }
+    }
+
+    /** [probeOwner] in the spool itself, turning "cannot create a file here" into a refusal that names it. */
+    private fun probeOrRefuse(): UserPrincipal = try {
+        probeOwner(directory)
+    } catch (e: IOException) {
+        throw UnsafeSpoolDirectoryException(
+            "this account cannot create files in the spool directory $directory (${e::class.simpleName})",
+        )
     }
 
     private fun ownerOnlyAcl(owner: UserPrincipal): FileAttribute<List<AclEntry>> {
@@ -390,9 +391,10 @@ open class SpoolStore(val directory: Path) {
             They also contain sensitive vulnerability data about your estate. When the server creates
             this directory it makes it private to the account running it: rwx------ on POSIX systems,
             and on Windows an access list naming only that account, which the files inherit. Files are
-            rw------- on POSIX. A directory that already existed keeps the permissions it had (on
-            POSIX the server refuses one that other accounts can write to), so if you pointed the
-            server at such a directory, check who can read it. Files older than the configured retention
+            rw------- on POSIX. There are two exceptions, so check who can read this directory if
+            either applies: on Windows, a server run elevated (as administrator) creates it with the
+            access list of its parent directory, and a directory that already existed keeps the
+            permissions it had (on POSIX the server refuses one that other accounts can write to). Files older than the configured retention
             (${Config.ENV_SPOOL_RETENTION_HOURS}, default ${Config.DEFAULT_SPOOL_RETENTION_HOURS}h)
             are deleted at startup — copy anything you need to keep somewhere else.
         """.trimIndent()

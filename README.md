@@ -190,9 +190,10 @@ insightvm_export_to_file({
 })
 ```
 
-It never takes a path: files are named by the server inside `INSIGHTVM_SPOOL_DIR`, created user-readable only, and
-swept after `INSIGHTVM_SPOOL_RETENTION_HOURS`. A spool directory the server creates is private to its account (on
-Windows, an access list naming only that account); one that already existed is never changed. Each run is bounded by
+It never takes a path: files are named by the server inside `INSIGHTVM_SPOOL_DIR` and swept after
+`INSIGHTVM_SPOOL_RETENTION_HOURS`. A spool directory the server creates is private to its account (on Windows, an
+access list naming only that account), except that a server run elevated on Windows gives it its parent's ACL, and
+says so on stderr; one that already existed is never changed. Each run is bounded by
 pages, records, bytes and wall-clock: a page that would overrun the time budget is abandoned rather than waited for,
 and the byte cap is lowered so a run stops at the 256 MiB the volume keeps free. A run stopped by a cap returns a
 resume token plus the partial file. Pages are written whole (so `max_records` stops at
@@ -282,7 +283,8 @@ Summarised here; details and residual risks in [docs/SECURITY.md](docs/SECURITY.
   degradation ladder that keeps trimmed JSON valid and always says what it dropped, outside the fence.
 * **Spooled files** — `insightvm_export_to_file` is the only tool that writes to disk. It takes no path, names files
   itself inside the spool directory, refuses state-changing and secret-returning operations, and cannot reach a tool
-  the filters hid. A spool directory the server creates is born private to its account; one that already exists is
+  the filters hid. A spool directory the server creates is born private to its account (on Windows, unless the
+  server runs elevated — then it inherits its parent's ACL); one that already exists is
   used only if this account can write to it and, on POSIX, owns it and no other account can write to it. Its mode is
   never changed.
 

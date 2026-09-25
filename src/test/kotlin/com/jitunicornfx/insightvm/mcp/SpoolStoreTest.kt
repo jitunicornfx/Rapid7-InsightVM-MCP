@@ -1,5 +1,6 @@
 package com.jitunicornfx.insightvm.mcp
 
+import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.condition.EnabledOnOs
 import org.junit.jupiter.api.condition.OS
@@ -12,6 +13,7 @@ import java.nio.file.attribute.AclEntryFlag
 import java.nio.file.attribute.AclEntryPermission
 import java.nio.file.attribute.AclEntryType
 import java.nio.file.attribute.AclFileAttributeView
+import java.nio.file.attribute.GroupPrincipal
 import java.nio.file.attribute.PosixFilePermissions
 import java.nio.file.attribute.UserPrincipal
 import java.util.EnumSet
@@ -238,6 +240,13 @@ class SpoolStoreTest {
     @Test
     @EnabledOnOs(OS.WINDOWS)
     fun `on Windows a directory this store creates is private to its owner, and so are its files`() {
+        // Run elevated (an admin shell, a CI runner with a full admin token), a new file's owner is the
+        // Administrators group, and the store deliberately inherits the parent's ACL instead — covered by
+        // the elevated-first-run test below. This test is about the ordinary, non-elevated case.
+        val probe = Files.createTempFile(dir, "owner", ".probe")
+        val elevated = Files.getOwner(probe) is GroupPrincipal
+        Files.delete(probe)
+        assumeFalse(elevated, "running elevated: a created spool inherits its parent's ACL by design")
         val created = dir.resolve("a").resolve("b")
         val s = SpoolStore(created)
         val file = s.newSpoolFile("get_assets")
