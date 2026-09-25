@@ -353,7 +353,7 @@ internal fun runServer(transport: Transport, host: String, port: Int, config: Co
     // Install before anything can serve a tool call. There is exactly one Config per process — the
     // --http path builds a fresh Server per connection but never a fresh Config — so one budget per
     // process is the right granularity.
-    ResultBudget.install(ResultBudget(maxChars = config.maxResultChars))
+    ResultBudget.install(ResultBudget(maxChars = config.maxResultChars, exportAvailable = config.exportEnabled))
     SpoolStore.install(SpoolStore.resolve(config.spoolDirectory))
     if (config.spoolRetentionHours > 0) {
         SpoolStore.active.sweepStale(config.spoolRetentionHours * 3_600_000L)

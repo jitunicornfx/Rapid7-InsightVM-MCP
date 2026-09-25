@@ -159,6 +159,15 @@ data class Config(
             if (cloud != null && ApiFamily.CLOUD in filter.families) add(ApiFamily.CLOUD)
         }
 
+    /**
+     * Whether insightvm_export_to_file is registered. It writes to the local filesystem, so it is
+     * gated twice: [exportDisabled] turns it off outright, and [ToolFilter.readOnly] removes it
+     * because that flag promises no tool changes anything. Tool descriptions and result notices
+     * point at the export tool only when this is true, so they never name a tool that is not there.
+     */
+    val exportEnabled: Boolean
+        get() = !exportDisabled && !filter.readOnly
+
     override fun toString(): String =
         "Config(console=$console, cloud=$cloud, requestTimeoutMillis=$requestTimeoutMillis, " +
             "maxResponseBytes=$maxResponseBytes, maxResultChars=$maxResultChars, keepRecordLinks=$keepRecordLinks, defaultPageSize=$defaultPageSize, spoolDirectory=$spoolDirectory, exportDisabled=$exportDisabled, " +

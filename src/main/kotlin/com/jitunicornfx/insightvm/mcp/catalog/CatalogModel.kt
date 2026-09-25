@@ -3,10 +3,16 @@ package com.jitunicornfx.insightvm.mcp.catalog
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
-/** The two InsightVM API families this server can front. */
-enum class ApiFamily(val id: String, val toolPrefix: String, val resource: String, val displayName: String) {
-    CONSOLE("console", "", "/catalog/v3.json", "Security Console API v3"),
-    CLOUD("cloud", "cloud_", "/catalog/v4.json", "Cloud Integrations API v4");
+/**
+ * The two InsightVM API families this server can front.
+ *
+ * [apiVersion] is the short label each tool description's route carries (`[v3 GET /api/3/assets]`).
+ * The route is repeated on all 343 tools, so it does not spell out [displayName], which the result
+ * and error text still use.
+ */
+enum class ApiFamily(val id: String, val toolPrefix: String, val resource: String, val displayName: String, val apiVersion: String) {
+    CONSOLE("console", "", "/catalog/v3.json", "Security Console API v3", "v3"),
+    CLOUD("cloud", "cloud_", "/catalog/v4.json", "Cloud Integrations API v4", "v4");
 
     companion object {
         fun fromId(value: String): ApiFamily =

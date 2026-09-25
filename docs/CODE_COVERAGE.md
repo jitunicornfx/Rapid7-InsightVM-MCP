@@ -36,7 +36,8 @@ Coverage is measured with JaCoCo and **enforced**: `./gradlew check` fails below
   API family, `Accept` header, plus annotations and the untrusted-data fence on the result. Adding an operation to the
   spec automatically adds a test.
 * **`CatalogToolsBehaviourTest`** — sanitisation (HTML, binary, text), error hints per status, truncation, fence
-  neutralisation, argument rejection, the admin-command gate, filters and the meta tools.
+  neutralisation, argument rejection, the admin-command gate, filters and the meta tools. It also checks that tool
+  text and notices follow the configuration (page size, export tool, links), and pins the size of `tools/list`.
 * **`HttpTransportSecurityTest`** — Ktor `testApplication` against the guard: bearer, throttle, Host/Origin, CORS
   preflight, size cap, helper functions.
 * **`MainTest`** — Clikt option parsing through the `test()` helper, plus real transports: a stdio session over pipes

@@ -48,14 +48,14 @@ object CatalogTools {
     ): List<CatalogFilter.Selection> {
         val filter = config.filter.copy(families = config.activeFamilies.intersect(config.filter.families))
         val selected = CatalogFilter.select(catalogs, filter)
-        val budget = ResultBudget(maxChars = config.maxResultChars)
+        // Settled before any tool is registered: the paged tools' text and the truncation notices
+        // recommend the export tool, and may do so only when it will be registered below.
+        val exportEnabled = config.exportEnabled
+        val budget = ResultBudget(maxChars = config.maxResultChars, exportAvailable = exportEnabled)
         // A binary payload spills to the same directory the export tool writes to, so an operator who
         // disabled filesystem writes gets none from this path either.
         val binarySpool = spool.takeUnless { config.exportDisabled }
         selected.forEach { (family, op) -> server.registerOperation(client, family, op, config, budget, binarySpool) }
-        // The export tool writes to the local filesystem, so it is gated twice: an operator can turn
-        // it off outright, and --read-only removes it because that flag promises no tool changes anything.
-        val exportEnabled = !config.filter.readOnly && !config.exportDisabled
         // The reference serves console tools only: v4 filters are expressions, not field/operator pairs.
         val criteriaEnabled = selected.any { it.family == ApiFamily.CONSOLE }
         server.registerMetaTools(config, catalogs, selected, 2 + listOf(exportEnabled, criteriaEnabled).count { it })
@@ -74,10 +74,14 @@ object CatalogTools {
         budget: ResultBudget = ResultBudget.active,
         spool: SpoolStore? = null,
     ) {
+        val text = ToolTextContext.of(config)
+        // Like the description, a notice recommends the export tool only for an operation it would
+        // accept; for a write or a secret it would answer with a refusal.
+        val opBudget = if (ExportTools.exportable(op)) budget else budget.copy(exportAvailable = false)
         apiTool(
             name = op.name,
-            description = InputSchemaBuilder.describe(op, family),
-            inputSchema = InputSchemaBuilder.build(op),
+            description = InputSchemaBuilder.describe(op, family, text),
+            inputSchema = InputSchemaBuilder.build(op, text),
             readOnly = op.readOnly,
             destructive = op.destructive,
             // By HTTP semantics a repeated PUT or DELETE leaves the state the first one did; a
@@ -105,7 +109,7 @@ object CatalogTools {
                 accept = acceptFor(op),
                 expectBinary = op.responses.binary,
             )
-            ResponseSanitizer.toToolResult(response, op, family, budget, keepLinks, spool)
+            ResponseSanitizer.toToolResult(response, op, family, opBudget, keepLinks, spool)
         }
     }
 

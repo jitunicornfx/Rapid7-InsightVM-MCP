@@ -99,7 +99,7 @@ private fun stripLinks(element: JsonElement, remainingDepth: Int, count: IntArra
  * The way back it offers first is the one the model can take itself: `include_links=true` on the
  * call. registerOperation reads and removes that argument for EVERY operation, including the
  * unpaged collection tools that are pruned here but do not list it in their schema (advertising it
- * on those would add about 14K characters to tools/list). The environment variable is only for the
+ * on those would add about 9K characters to tools/list). The environment variable is only for the
  * operator.
  */
 internal fun strippedLinksNotice(removed: Int): String =

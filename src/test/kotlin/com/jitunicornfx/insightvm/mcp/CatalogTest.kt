@@ -11,10 +11,14 @@ import com.jitunicornfx.insightvm.mcp.catalog.CatalogParam
 import com.jitunicornfx.insightvm.mcp.catalog.CriteriaField
 import com.jitunicornfx.insightvm.mcp.catalog.DiscoveryConnection
 import com.jitunicornfx.insightvm.mcp.catalog.InputSchemaBuilder
+import com.jitunicornfx.insightvm.mcp.catalog.PagingDefaults
 import com.jitunicornfx.insightvm.mcp.catalog.SearchCriteria
 import com.jitunicornfx.insightvm.mcp.catalog.SearchCriteriaMeta
 import com.jitunicornfx.insightvm.mcp.catalog.SearchCriteriaReference
+import com.jitunicornfx.insightvm.mcp.catalog.ToolTextContext
 import com.jitunicornfx.insightvm.mcp.testutil.TEST_CATALOGS
+import com.jitunicornfx.insightvm.mcp.testutil.testConfig
+import com.jitunicornfx.insightvm.mcp.tools.ExportTools
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -42,6 +46,9 @@ class CatalogTest {
 
     private val v3 get() = TEST_CATALOGS.getValue(ApiFamily.CONSOLE)
     private val v4 get() = TEST_CATALOGS.getValue(ApiFamily.CLOUD)
+
+    /** Tool text as the default configuration renders it. */
+    private val text = ToolTextContext()
 
     private fun op(name: String, method: String = "GET", path: String = "/x", tag: String = "T", admin: Boolean = false, params: List<CatalogParam> = emptyList()) =
         CatalogOp(name = name, opId = name, method = method, path = path, tag = tag, readOnly = method == "GET", destructive = method == "DELETE", admin = admin, params = params)
@@ -273,7 +280,7 @@ class CatalogTest {
     @Test
     fun `input schema includes params, body and confirm`() {
         val createSite = v3.ops.single { it.name == "create_site" }
-        val schema = InputSchemaBuilder.build(createSite)
+        val schema = InputSchemaBuilder.build(createSite, text)
         val props = schema.properties!!
         assertTrue("body" in props)
         assertEquals(listOf("body"), schema.required)
@@ -281,36 +288,70 @@ class CatalogTest {
         assertEquals("object", props["body"]!!.jsonObject["type"]!!.jsonPrimitive.content)
 
         val getAssets = v3.ops.single { it.name == "get_assets" }
-        val s2 = InputSchemaBuilder.build(getAssets)
+        val s2 = InputSchemaBuilder.build(getAssets, text)
         assertNull(s2.required)
-        assertTrue(s2.properties!!["sort"]!!.jsonObject["description"]!!.jsonPrimitive.content.endsWith("(Query parameter.)"))
+        // Parameters are passed through as the catalog has them: the binder routes by name, so a
+        // path-or-query hint would change nothing.
+        assertEquals(getAssets.params.single { it.name == "sort" }.schema, s2.properties!!["sort"]!!.jsonObject)
         assertEquals("array", s2.properties!!["sort"]!!.jsonObject["type"]!!.jsonPrimitive.content)
 
         val admin = v3.ops.single { it.admin }
-        val s3 = InputSchemaBuilder.build(admin)
+        val s3 = InputSchemaBuilder.build(admin, text)
         assertEquals(listOf("body", "confirm"), s3.required)
         assertEquals("EXECUTE", s3.properties!!["confirm"]!!.jsonObject["enum"]!!.jsonArray.single().jsonPrimitive.content)
         assertTrue(s3.properties!!["body"]!!.jsonObject["description"]!!.jsonPrimitive.content.startsWith("Request body (text/plain)."))
 
-        val desc = InputSchemaBuilder.describe(admin, ApiFamily.CONSOLE)
+        val desc = InputSchemaBuilder.describe(admin, ApiFamily.CONSOLE, text)
         assertTrue(desc.contains("[ADMIN:"))
-        val del = InputSchemaBuilder.describe(v3.ops.single { it.name == "delete_site" }, ApiFamily.CONSOLE)
-        assertTrue(del.endsWith("[destructive]"))
-        assertTrue(del.contains("DELETE /api/3/sites/{id}"))
+        val del = InputSchemaBuilder.describe(v3.ops.single { it.name == "delete_site" }, ApiFamily.CONSOLE, text)
+        assertTrue(del.endsWith("[v3 DELETE /api/3/sites/{id}] [destructive]"), del)
     }
 
     @Test
     fun `schema builder handles blank summary and descriptions`() {
         val bare = op("bare", path = "/a/{id}", params = listOf(CatalogParam("id", "path", required = true, schema = buildJsonObject { put("type", "integer") })))
-        val desc = InputSchemaBuilder.describe(bare, ApiFamily.CLOUD)
-        assertEquals("[Cloud Integrations API v4: GET /a/{id}]", desc)
-        val schema = InputSchemaBuilder.build(bare)
-        assertEquals("Path parameter.", schema.properties!!["id"]!!.jsonObject["description"]!!.jsonPrimitive.content)
+        val desc = InputSchemaBuilder.describe(bare, ApiFamily.CLOUD, text)
+        assertEquals("[v4 GET /a/{id}]", desc)
+        val schema = InputSchemaBuilder.build(bare, text)
+        assertEquals(buildJsonObject { put("type", "integer") }, schema.properties!!["id"]!!.jsonObject, "no description is invented")
         val withBody = bare.copy(body = CatalogBody("application/json", false, buildJsonObject { put("type", "object"); put("description", "Site.") }))
-        assertEquals("Request body (JSON). Site.", InputSchemaBuilder.build(withBody).properties!!["body"]!!.jsonObject["description"]!!.jsonPrimitive.content)
-        assertEquals(listOf("id"), InputSchemaBuilder.build(withBody).required)
+        assertEquals("Request body (JSON). Site.", InputSchemaBuilder.build(withBody, text).properties!!["body"]!!.jsonObject["description"]!!.jsonPrimitive.content)
+        assertEquals(listOf("id"), InputSchemaBuilder.build(withBody, text).required)
         val summaryOnly = bare.copy(summary = "Sum", description = "Desc")
-        assertTrue(InputSchemaBuilder.describe(summaryOnly, ApiFamily.CLOUD).startsWith("Sum — Desc ["))
+        assertTrue(InputSchemaBuilder.describe(summaryOnly, ApiFamily.CLOUD, text).startsWith("Sum — Desc ["))
         assertTrue(JsonPrimitive(1) is JsonPrimitive)
+    }
+
+    @Test
+    fun `paging text states only what the configured server does`() {
+        fun size(schema: JsonObject) = CatalogParam("size", "query", schema = schema)
+        val paged = op("paged", params = listOf(size(buildJsonObject { put("type", "integer"); put("default", 10); put("maximum", 50) })))
+
+        // The specification's own maximum wins over the configured default, in the text and the schema alike.
+        val guidance = InputSchemaBuilder.pagingGuidance(paged, ApiFamily.CONSOLE, ToolTextContext(defaultPageSize = 100))
+        assertTrue(guidance.startsWith(" Paged: 'size' defaults to 50 and is clamped to 50. For a COUNT ONLY, call with size=1 and read page.totalResources —"), guidance)
+        val sizeSchema = InputSchemaBuilder.build(paged, ToolTextContext(defaultPageSize = 100)).properties!!["size"]!!.jsonObject
+        assertEquals(listOf("type", "default", "maximum", "description"), sizeSchema.keys.toList())
+        assertEquals("50", sizeSchema["default"]!!.jsonPrimitive.content)
+        assertEquals("Defaults to 50 on this server; values above 50 are clamped so a page can fit the response budget.", sizeSchema["description"]!!.jsonPrimitive.content)
+        assertEquals(50, PagingDefaults.apply(paged, JsonObject(emptyMap()), default = 100)["size"]!!.jsonPrimitive.content.toInt(), "and the server agrees")
+
+        // Every configurable sentence can drop out; with none left there is no "Paged:" stub.
+        val cursorOnly = op("cursor_only", params = listOf(CatalogParam("cursor", "query", schema = buildJsonObject { put("type", "string") })))
+        assertTrue(InputSchemaBuilder.pagingGuidance(cursorOnly, ApiFamily.CLOUD, ToolTextContext()).contains(ExportTools.EXPORT_TOOL))
+        assertEquals("", InputSchemaBuilder.pagingGuidance(cursorOnly, ApiFamily.CLOUD, ToolTextContext(exportEnabled = false, keepRecordLinks = true)))
+        assertEquals("[v4 GET /x]", InputSchemaBuilder.describe(cursorOnly, ApiFamily.CLOUD, ToolTextContext(exportEnabled = false, keepRecordLinks = true)))
+
+        // A paged operation the export tool would refuse is never pointed at it.
+        val pagedWrite = op("paged_write", method = "POST", params = paged.params)
+        assertFalse(InputSchemaBuilder.pagingGuidance(pagedWrite, ApiFamily.CONSOLE, ToolTextContext()).contains(ExportTools.EXPORT_TOOL))
+    }
+
+    @Test
+    fun `tool text context follows the configuration`() {
+        val config = testConfig().copy(defaultPageSize = 25, keepRecordLinks = true)
+        assertEquals(ToolTextContext(defaultPageSize = 25, exportEnabled = true, keepRecordLinks = true), ToolTextContext.of(config))
+        assertFalse(ToolTextContext.of(config.copy(exportDisabled = true)).exportEnabled)
+        assertFalse(ToolTextContext.of(config.copy(filter = ToolFilter(readOnly = true))).exportEnabled)
     }
 }

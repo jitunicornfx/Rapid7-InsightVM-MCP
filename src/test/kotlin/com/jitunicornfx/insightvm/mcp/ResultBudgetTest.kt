@@ -2,6 +2,7 @@ package com.jitunicornfx.insightvm.mcp
 
 import com.jitunicornfx.insightvm.mcp.catalog.ApiFamily
 import com.jitunicornfx.insightvm.mcp.testutil.TEST_CATALOGS
+import com.jitunicornfx.insightvm.mcp.tools.ExportTools
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import java.security.MessageDigest
 import kotlinx.serialization.json.JsonArray
@@ -113,7 +114,30 @@ class ResultBudgetTest {
         assertEquals(200 - kept.size, marker["dropped"]!!.jsonPrimitive.content.toInt())
         assertContains(marker["note"]!!.jsonPrimitive.content, SERVER_NAME)
         assertContains(r.notice!!, "TRUNCATED")
-        assertContains(r.notice!!, CHEAPER_WAYS)
+        assertContains(r.notice!!, cheaperWays(exportAvailable = true))
+    }
+
+    /**
+     * Regression: every trim and cut notice recommended insightvm_export_to_file, including under
+     * --read-only and INSIGHTVM_DISABLE_EXPORT, where it is not registered.
+     */
+    @Test
+    fun `the notices recommend the export tool only when it is registered`() {
+        val body = pagedBody(200)
+        val withExport = ResultBudget(maxChars = 4_000)
+        val withoutExport = withExport.copy(exportAvailable = false)
+        // As JSON the page is trimmed (the dropped notice); as text, one line, it is cut (the cut notice).
+        for ((json, strategy) in listOf(true to BudgetStrategy.STRUCTURAL, false to BudgetStrategy.HARD_CUT)) {
+            val offered = renderWithinBudget(body, withExport, true, json)
+            val withheld = renderWithinBudget(body, withoutExport, true, json)
+            assertEquals(strategy, withheld.strategy)
+            assertContains(assertNotNull(offered.notice), ExportTools.EXPORT_TOOL)
+            val notice = assertNotNull(withheld.notice)
+            assertContains(notice, "size=1 and read page.totalResources")
+            assertContains(notice, "Need a SLICE?")
+            assertFalse(notice.contains(ExportTools.EXPORT_TOOL) || notice.contains("export tool"), notice)
+            assertEquals(offered.text, withheld.text, "only the advice differs")
+        }
     }
 
     @Test

@@ -51,6 +51,14 @@ object PagingDefaults {
             ?: ceiling
 
     /**
+     * The `size` an omitted one becomes for [op]: the configured [default], kept within the
+     * operation's own range. [apply] injects it and the tool text states it, through this one
+     * function, so the two cannot disagree.
+     */
+    fun defaultSizeFor(op: CatalogOp, default: Int, ceiling: Int = MAX_PAGE_SIZE): Int =
+        default.coerceIn(1, maxSizeFor(op, ceiling))
+
+    /**
      * [args] with `size` defaulted when absent and clamped when out of range; the identity for the
      * 292 operations that declare no `size` at all.
      *
@@ -67,7 +75,7 @@ object PagingDefaults {
         val max = maxSizeFor(op, ceiling)
         val requested = args[SIZE_PARAM]?.takeUnless { it is JsonNull }
         val resolved: Int = when {
-            requested == null -> default.coerceIn(1, max)
+            requested == null -> defaultSizeFor(op, default, ceiling)
             else -> {
                 val n = (requested as? JsonPrimitive)?.contentOrNull?.let(::asIntegerOrNull) ?: return args
                 if (n in 1..max) return args

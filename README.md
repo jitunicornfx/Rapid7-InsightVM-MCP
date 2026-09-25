@@ -166,7 +166,8 @@ Four mechanisms follow from that, in the order they apply:
    accepts it, though only the paged ones list it), or set `INSIGHTVM_KEEP_RECORD_LINKS=1`, for the raw shape.
 3. **Page size is defaulted and clamped** — 100 when omitted (the specification's own default of 10 makes a model
    page thousands of times), 500 maximum (above that a page cannot render inside the budget, so the console builds
-   records that are then thrown away).
+   records that are then thrown away). Each paged tool's description and `size` schema (`default`, `maximum`) state
+   the values in force, including an `INSIGHTVM_DEFAULT_PAGE_SIZE` override.
 4. **Every result is budgeted** to `INSIGHTVM_MAX_RESULT_CHARS` through four rungs: pretty-print, compact,
    drop trailing records from the largest array while keeping the document valid JSON, and finally cut at a line
    boundary. Whatever happens, a server-authored notice is emitted **outside** the untrusted-data fence saying what
@@ -190,7 +191,7 @@ swept after `INSIGHTVM_SPOOL_RETENTION_HOURS`. Each run is bounded by pages, rec
 run stopped by a cap returns a resume token plus the partial file. A `.manifest.json` sidecar records the query and
 the outcome. Binary payloads (`get_logs`, `download_report`) spill to the same directory instead of being inlined as
 base64. Set `INSIGHTVM_DISABLE_EXPORT=1` for a deployment that must never write to disk; `--read-only` also removes
-the tool.
+the tool. When it is absent, no tool description or truncation notice recommends it.
 
 ### Working with a large tool set
 

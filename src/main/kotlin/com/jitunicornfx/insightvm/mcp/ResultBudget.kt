@@ -1,5 +1,6 @@
 package com.jitunicornfx.insightvm.mcp
 
+import com.jitunicornfx.insightvm.mcp.tools.ExportTools
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -16,8 +17,9 @@ import kotlinx.serialization.json.put
  * asset list runs to megabytes. Every API response funnels through
  * [ResponseSanitizer.toToolResult], so this one type bounds all 343 tools.
  *
- * Immutable. The process-wide value is installed once at startup from [Config.maxResultChars];
- * tests pass an explicit instance, so the ladder is testable without touching global state.
+ * Immutable. The process-wide value is installed once at startup from [Config.maxResultChars] and
+ * [Config.exportEnabled]; tests pass an explicit instance, so the ladder is testable without
+ * touching global state.
  */
 data class ResultBudget(
     /** Ceiling on rendered API data, in characters. ~4 chars per token, so 200_000 is ~50k tokens. */
@@ -35,6 +37,13 @@ data class ResultBudget(
      * tool, not a bigger heap, is the answer for results this size.
      */
     val parseCeilingChars: Int = DEFAULT_PARSE_CEILING_CHARS,
+    /**
+     * Whether insightvm_export_to_file is registered ([Config.exportEnabled]). The notices recommend
+     * it for reading a whole result set, and must not when `--read-only` or
+     * `INSIGHTVM_DISABLE_EXPORT` left it out: a model that takes the advice calls a tool that is
+     * not there.
+     */
+    val exportAvailable: Boolean = true,
 ) {
     /** The limit that actually applies to a response with this [ok] flag. */
     internal fun limitFor(ok: Boolean): Int =
@@ -188,7 +197,7 @@ internal fun renderWithinBudget(
 
     // Rung 3 — structural: drop entries from the largest trimmable top-level array, keeping the
     // document valid, parseable JSON.
-    trimLargestArray(element, limit)?.let {
+    trimLargestArray(element, limit, budget)?.let {
         return it.copy(notice = join(stripNotice, it.notice))
     }
 
@@ -249,7 +258,7 @@ internal fun encodeOrNull(json: Json, element: JsonElement): String? = try {
  * so the head is always the records they asked for first. Only DIRECT children of the root are
  * considered — recursing would produce a valid-but-misleading document for a marginal saving.
  */
-private fun trimLargestArray(root: JsonElement, limit: Int): BudgetedBody? {
+private fun trimLargestArray(root: JsonElement, limit: Int, budget: ResultBudget): BudgetedBody? {
     val key: String?
     val array: JsonArray
     when (root) {
@@ -306,7 +315,7 @@ private fun trimLargestArray(root: JsonElement, limit: Int): BudgetedBody? {
         )
     }
     val text = encodeOrNull(JsonCodec.compact, trimmed) ?: return null
-    return BudgetedBody(text, droppedNotice(key, keep, array.size, limit), BudgetStrategy.STRUCTURAL)
+    return BudgetedBody(text, droppedNotice(key, keep, array.size, limit, budget.exportAvailable), BudgetStrategy.STRUCTURAL)
 }
 
 /** The document as it will be emitted with an empty target array, to measure fixed overhead. */
@@ -352,7 +361,7 @@ private fun lineAwareCut(text: String, limit: Int, budget: ResultBudget, reason:
     }
     // Never emit a dangling half of a surrogate pair — substring can split one.
     if (slice.isNotEmpty() && slice.last().isHighSurrogate()) slice = slice.dropLast(1)
-    return BudgetedBody(slice, cutNotice(text.length, slice.length, limit, reason, budget.parseCeilingChars), strategy)
+    return BudgetedBody(slice, cutNotice(text.length, slice.length, limit, reason, budget), strategy)
 }
 
 // ---------------------------------------------------------------------------
@@ -363,17 +372,29 @@ private fun lineAwareCut(text: String, limit: Int, budget: ResultBudget, reason:
 
 internal const val NOTICE_TAG = "[insightvm-mcp]"
 
-internal const val CHEAPER_WAYS =
+/**
+ * The advice every cut or trim notice ends with. The export bullet, and the comparison that ends
+ * with it, appear only when [exportAvailable]: `--read-only` and `INSIGHTVM_DISABLE_EXPORT` leave
+ * the export tool unregistered, and the notice used to recommend it anyway.
+ */
+internal fun cheaperWays(exportAvailable: Boolean): String =
     "Cheaper ways to get what you need:\n" +
         "  - Just need a COUNT? Re-run the same tool with size=1 and read page.totalResources (v3) or\n" +
         "    metadata.totalResources (v4). One tiny page answers 'how many' for a few hundred tokens\n" +
         "    instead of enumerating every record.\n" +
-        "  - Need EVERY record? Use insightvm_export_to_file: it follows all pages on the server,\n" +
-        "    writes NDJSON to a file and returns only a summary, so the cost is the same for 1 MB or 1 GB.\n" +
+        (if (exportAvailable) EXPORT_WAY else "") +
         "  - Need a SLICE? Lower 'size', set 'page', add a sort, or narrow the search body's filters.\n" +
         "Paging a whole result set through this conversation is never the right approach: enumerating\n" +
-        "every asset costs millions of tokens through the chat and roughly a thousand through the\n" +
-        "export tool."
+        if (exportAvailable) {
+            "every asset costs millions of tokens through the chat and roughly a thousand through the\n" +
+                "export tool."
+        } else {
+            "every asset costs millions of tokens. Count it, or narrow the query until the answer fits."
+        }
+
+private const val EXPORT_WAY =
+    "  - Need EVERY record? Use ${ExportTools.EXPORT_TOOL}: it follows all pages on the server,\n" +
+        "    writes NDJSON to a file and returns only a summary, so the cost is the same for 1 MB or 1 GB.\n"
 
 private fun compactedNotice(limit: Int): String =
     "$NOTICE_TAG Large result rendered as COMPACT JSON (not pretty-printed) to fit the " +
@@ -391,7 +412,7 @@ private fun compactedNotice(limit: Int): String =
 private fun safeNoticeKey(key: String): String =
     key.filter { it.isLetterOrDigit() || it == '_' || it == '-' }.take(64).ifEmpty { "top-level" }
 
-private fun droppedNotice(key: String?, kept: Int, total: Int, limit: Int): String {
+private fun droppedNotice(key: String?, kept: Int, total: Int, limit: Int, exportAvailable: Boolean): String {
     val what = key?.let(::safeNoticeKey) ?: "top-level"
     return "$NOTICE_TAG This result was TRUNCATED to fit the $limit-character response budget " +
         "(${Config.ENV_MAX_RESULT_CHARS}). The data block above is still valid, parseable JSON.\n" +
@@ -400,15 +421,15 @@ private fun droppedNotice(key: String?, kept: Int, total: Int, limit: Int): Stri
         "its counts will not match what is left here.\n" +
         "This notice is authoritative; the ${ResultBudget.TRUNCATION_KEY} object inside the data " +
         "block is a convenience copy only.\n" +
-        CHEAPER_WAYS
+        cheaperWays(exportAvailable)
 }
 
-private fun cutNotice(originalLength: Int, keptLength: Int, limit: Int, reason: CutReason, parseCeilingChars: Int): String =
+private fun cutNotice(originalLength: Int, keptLength: Int, limit: Int, reason: CutReason, budget: ResultBudget): String =
     "$NOTICE_TAG This response was $originalLength characters and was CUT to $keptLength to fit " +
         "the $limit-character response budget (${Config.ENV_MAX_RESULT_CHARS}). The block above is a " +
         "PREFIX of the response and is NOT valid JSON — do not try to parse it as a whole document.\n" +
-        cutReasonLine(reason, parseCeilingChars) +
-        CHEAPER_WAYS
+        cutReasonLine(reason, budget.parseCeilingChars) +
+        cheaperWays(budget.exportAvailable)
 
 private fun cutReasonLine(reason: CutReason, parseCeilingChars: Int): String = when (reason) {
     CutReason.NOT_JSON -> "The response was not JSON.\n"

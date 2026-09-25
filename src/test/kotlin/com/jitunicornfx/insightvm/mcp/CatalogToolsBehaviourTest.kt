@@ -13,7 +13,10 @@ import com.jitunicornfx.insightvm.mcp.testutil.testConfig
 import com.jitunicornfx.insightvm.mcp.tools.ExportTools
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.modelcontextprotocol.kotlin.sdk.types.McpJson
+import io.modelcontextprotocol.kotlin.sdk.types.Tool
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -28,6 +31,13 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+
+/**
+ * Ceiling on the compact JSON of tools/list with every gate open: 429,021 characters measured, plus
+ * a little headroom. Raise it deliberately, with the new measured size in the commit, when the
+ * catalog genuinely grows.
+ */
+private const val TOOLS_LIST_BUDGET_CHARS = 430_000
 
 /** Behaviour of the generic dispatcher beyond the happy path: sanitisation, errors, gates, meta tools. */
 class CatalogToolsBehaviourTest {
@@ -295,16 +305,18 @@ class CatalogToolsBehaviourTest {
         assertEquals(1000, text.substringAfter(UNTRUSTED_BEGIN + "\n").substringBefore("\n" + UNTRUSTED_END).length)
     }
 
+    /** A complete 200-record page on the wire, far over a 6,000-character render budget. */
+    private val oversizedPage = buildString {
+        append("""{"links":[{"href":"https://console.test:3780/api/3/assets?page=1","rel":"next"}],""")
+        append(""""page":{"number":0,"size":200,"totalPages":40,"totalResources":8000},"resources":[""")
+        append((0 until 200).joinToString(",") { """{"id":$it,"hostName":"host-${"h".repeat(80)}$it"}""" })
+        append("]}")
+    }
+
     @Test
     fun `an oversized page is trimmed to valid json with the notice outside the fence`() = runBlocking {
-        // A complete 200-record page on the wire; only the render budget is small.
-        val page = buildString {
-            append("""{"links":[{"href":"https://console.test:3780/api/3/assets?page=1","rel":"next"}],""")
-            append(""""page":{"number":0,"size":200,"totalPages":40,"totalResources":8000},"resources":[""")
-            append((0 until 200).joinToString(",") { """{"id":$it,"hostName":"host-${"h".repeat(80)}$it"}""" })
-            append("]}")
-        }
-        val h = mcpHarness(testConfig(maxResultChars = 6_000)) { Canned(body = page) }
+        // Only the render budget is small.
+        val h = mcpHarness(testConfig(maxResultChars = 6_000)) { Canned(body = oversizedPage) }
         val result = h.call("get_assets")
         val text = h.text(result)
         assertFalse(result.isError == true)
@@ -357,6 +369,107 @@ class CatalogToolsBehaviourTest {
         assertContains(paged.description!!, "insightvm_export_to_file")
         assertContains(paged.inputSchema.properties!!["size"]!!.jsonObject["description"]!!.jsonPrimitive.content, "Defaults to 100")
         assertFalse(tools.getValue("get_asset").description!!.contains("size=1 and read"))
+    }
+
+    /**
+     * Regression: the paging text was fixed when the server was built, but the default it describes
+     * is configured. Under INSIGHTVM_DEFAULT_PAGE_SIZE=25 every paged tool still said 100, and the
+     * size schema kept the specification's `default: 10`, so a client that fills in schema defaults
+     * sent size=10 and bypassed the server's default altogether.
+     */
+    @Test
+    fun `the paging text and the size schema state the configured default and the maximum`() = runBlocking {
+        val h = mcpHarness(testConfig().copy(defaultPageSize = 25))
+        val tools = h.listTools().associateBy { it.name }
+        for ((name, total) in listOf("get_assets" to "page.totalResources", "cloud_search_integration_assets" to "metadata.totalResources")) {
+            val tool = tools.getValue(name)
+            assertContains(tool.description!!, "'size' defaults to 25 and is clamped to 500.")
+            assertContains(tool.description!!, "size=1 and read $total —", message = "each tool names its own family's count")
+            val size = tool.inputSchema.properties!!["size"]!!.jsonObject
+            assertEquals("25", size["default"]!!.jsonPrimitive.content, name)
+            assertEquals("500", size["maximum"]!!.jsonPrimitive.content, name)
+            assertContains(size["description"]!!.jsonPrimitive.content, "Defaults to 25 on this server")
+        }
+        // What the text says is what the server does.
+        h.call("get_assets")
+        assertEquals(listOf("25"), h.lastRequest.url.parameters.getAll("size"))
+    }
+
+    /**
+     * Regression: every paged tool and every truncation notice pointed at insightvm_export_to_file,
+     * which --read-only and INSIGHTVM_DISABLE_EXPORT both leave unregistered, so a model that took
+     * the advice called a tool that did not exist.
+     */
+    @Test
+    fun `no tool text or result notice points at the export tool when it is not registered`() = runBlocking {
+        val withoutExport = listOf(
+            testConfig(filter = ToolFilter(readOnly = true), maxResultChars = 6_000),
+            testConfig(maxResultChars = 6_000).copy(exportDisabled = true),
+        )
+        for (config in withoutExport) {
+            val h = mcpHarness(config) { Canned(body = oversizedPage) }
+            val tools = h.listTools()
+            assertFalse(tools.any { it.name == ExportTools.EXPORT_TOOL }, "premise: the export tool is not registered")
+            val listed = McpJson.encodeToString(ListSerializer(Tool.serializer()), tools)
+            assertFalse(listed.contains(ExportTools.EXPORT_TOOL), "tools/list names an unregistered tool")
+            assertContains(tools.single { it.name == "get_assets" }.description!!, "size=1 and read page.totalResources")
+
+            val notice = h.text(h.call("get_assets")).substringAfter(UNTRUSTED_END)
+            assertContains(notice, "TRUNCATED")
+            assertContains(notice, "size=1 and read page.totalResources")
+            assertFalse(notice.contains(ExportTools.EXPORT_TOOL) || notice.contains("export tool"), notice)
+        }
+
+        // Registered, the export tool is still recommended only where it would accept the operation:
+        // it refuses a write, so a write's notice does not send the model there.
+        val h = mcpHarness(testConfig(maxResultChars = 6_000)) { Canned(body = oversizedPage) }
+        val write = h.text(h.call("cloud_stop_scan", mapOf("id" to "abc"))).substringAfter(UNTRUSTED_END)
+        assertContains(write, "TRUNCATED")
+        assertFalse(write.contains(ExportTools.EXPORT_TOOL), write)
+        assertContains(h.text(h.call("get_assets")).substringAfter(UNTRUSTED_END), ExportTools.EXPORT_TOOL)
+    }
+
+    /**
+     * Regression: with INSIGHTVM_KEEP_RECORD_LINKS=1 the server keeps per-record links, but every paged
+     * tool still said they were stripped and that include_links defaulted to false.
+     */
+    @Test
+    fun `the links text follows INSIGHTVM_KEEP_RECORD_LINKS`() = runBlocking {
+        fun includeLinks(tool: Tool) =
+            tool.inputSchema.properties!![CatalogLoader.INCLUDE_LINKS_PROPERTY]!!.jsonObject["description"]!!.jsonPrimitive.content
+
+        val stripping = mcpHarness().listTools().single { it.name == "get_assets" }
+        assertContains(includeLinks(stripping), "Defaults to false")
+        assertContains(stripping.description!!, "'links' are stripped")
+
+        val keeping = mcpHarness(testConfig().copy(keepRecordLinks = true)).listTools().single { it.name == "get_assets" }
+        assertContains(includeLinks(keeping), "Defaults to true")
+        assertFalse(keeping.description!!.contains("'links' are stripped"), keeping.description)
+    }
+
+    /**
+     * Every session pays for the whole tools/list before its first call, so its size is pinned for
+     * the full catalog (both gates open) and growth is a decision rather than an accident. It was
+     * 453,200 characters, and 429,021 once the family's name in every route, the "(Path parameter.)"
+     * and "(Query parameter.)" hints (the binder routes by name, so they changed nothing) and most of
+     * the include_links text were cut.
+     */
+    @Test
+    fun `tools list for the full catalog stays within its size budget`() = runBlocking {
+        val tools = mcpHarness(testConfig(filter = ToolFilter(allowAdminCommands = true, allowSecretTools = true))).listTools()
+        assertEquals(343 + 4, tools.size, "premise: every operation plus the meta tools")
+        val size = McpJson.encodeToString(ListSerializer(Tool.serializer()), tools).length
+        assertTrue(size <= TOOLS_LIST_BUDGET_CHARS, "tools/list is $size characters, over its $TOOLS_LIST_BUDGET_CHARS budget")
+
+        val byName = tools.associateBy { it.name }
+        assertContains(byName.getValue("get_assets").description!!, " [v3 GET /api/3/assets] Paged:")
+        assertContains(byName.getValue("cloud_get_sites").description!!, " [v4 POST /v4/integration/sites] Paged:")
+        val sort = byName.getValue("get_assets").inputSchema.properties!!["sort"]!!.jsonObject["description"]!!.jsonPrimitive.content
+        assertFalse(sort.contains("Query parameter"), sort)
+        assertEquals(
+            "The identifier of the asset.",
+            byName.getValue("get_asset").inputSchema.properties!!["id"]!!.jsonObject["description"]!!.jsonPrimitive.content,
+        )
     }
 
     @Test
