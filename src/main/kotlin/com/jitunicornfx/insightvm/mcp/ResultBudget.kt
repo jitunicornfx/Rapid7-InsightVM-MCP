@@ -1,6 +1,7 @@
 package com.jitunicornfx.insightvm.mcp
 
 import com.jitunicornfx.insightvm.mcp.tools.ExportTools
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -113,10 +114,10 @@ internal enum class CutReason {
     TRUNCATED_AT_WIRE_CAP,
 
     /**
-     * Parsed, but nested too deeply for the encoder. The parser handles deep objects without
-     * recursion and the encoder does not, so hostile nesting can pass one and overflow the other.
+     * Nested too deeply to process: over the parser's nesting limit (kotlinx-serialization's
+     * `maxNestingDepth`), or, as a backstop, parsed but too deep for the recursive encoder.
      */
-    TOO_DEEP_TO_ENCODE,
+    TOO_DEEPLY_NESTED,
 
     /** Parsed and re-encoded, but with no top-level array to drop entries from. */
     NO_TRIMMABLE_ARRAY,
@@ -150,7 +151,8 @@ internal fun renderWithinBudget(
     if (!json) return asReceived(raw, limit, budget, CutReason.NOT_JSON)
 
     val tooLargeToParse = raw.length > budget.parseCeilingChars
-    val parsed: JsonElement? = if (tooLargeToParse) null else parseOrNull(raw)
+    val outcome = if (tooLargeToParse) null else parseJson(raw)
+    val parsed: JsonElement? = outcome?.element
 
     // No tree. The wire cut is named first: that body is incomplete, and would not parse under any
     // ceiling (at the defaults a 16 MiB cut is always over the 12M-character ceiling as well).
@@ -158,6 +160,7 @@ internal fun renderWithinBudget(
         val reason = when {
             truncatedAtWire -> CutReason.TRUNCATED_AT_WIRE_CAP
             tooLargeToParse -> CutReason.TOO_LARGE_TO_PARSE
+            outcome?.tooDeep == true -> CutReason.TOO_DEEPLY_NESTED
             else -> CutReason.NOT_JSON
         }
         return asReceived(raw, limit, budget, reason)
@@ -174,7 +177,7 @@ internal fun renderWithinBudget(
     // was always thrown away. A raw body within the limit, the common case, still tries pretty first
     // and usually ends the ladder in one encode. Every path returns what the pretty-first ladder did.
     val early: String? = if (raw.length > limit) {
-        encodeOrNull(JsonCodec.compact, element) ?: return asReceived(raw, limit, budget, CutReason.TOO_DEEP_TO_ENCODE)
+        encodeOrNull(JsonCodec.compact, element) ?: return asReceived(raw, limit, budget, CutReason.TOO_DEEPLY_NESTED)
     } else {
         null
     }
@@ -190,7 +193,7 @@ internal fun renderWithinBudget(
     // Rung 2 — compact. Recovers the whitespace pretty added, which rescues bodies in the
     // [limit, ~2x limit] band. It does not shrink an already-dense API response.
     val compact = early ?: encodeOrNull(JsonCodec.compact, element)
-        ?: return asReceived(raw, limit, budget, CutReason.TOO_DEEP_TO_ENCODE)
+        ?: return asReceived(raw, limit, budget, CutReason.TOO_DEEPLY_NESTED)
     if (compact.length <= limit) {
         return BudgetedBody(compact, join(stripNotice, compactedNotice(limit)), BudgetStrategy.COMPACT)
     }
@@ -218,13 +221,33 @@ private fun asReceived(raw: String, limit: Int, budget: ResultBudget, reason: Cu
 private fun join(vararg parts: String?): String? =
     parts.filterNotNull().ifEmpty { null }?.joinToString("\n\n")
 
-internal fun parseOrNull(raw: String): JsonElement? = try {
-    JsonCodec.compact.parseToJsonElement(raw)
+/** A parsed tree, or null with whether the parser refused the body for its nesting depth. */
+internal class ParseOutcome(val element: JsonElement?, val tooDeep: Boolean = false)
+
+/**
+ * Parse [raw], never throwing. kotlinx-serialization (1.12+) refuses input nested deeper than its
+ * `maxNestingDepth` with a [SerializationException]; that refusal is reported as [ParseOutcome.tooDeep]
+ * so the notice can say why, instead of calling well-formed JSON "not JSON". The library gives the
+ * refusal no type of its own, so it is recognised by its message; `ResultBudgetTest` pins that.
+ */
+internal fun parseJson(raw: String): ParseOutcome = try {
+    ParseOutcome(JsonCodec.compact.parseToJsonElement(raw))
 } catch (_: StackOverflowError) {
-    null
+    ParseOutcome(null, tooDeep = true)
+} catch (e: SerializationException) {
+    ParseOutcome(null, tooDeep = isNestingLimit(e))
 } catch (_: Exception) {
-    null
+    ParseOutcome(null)
 }
+
+internal fun parseOrNull(raw: String): JsonElement? = parseJson(raw).element
+
+/** Whether [e] is the parser's nesting-depth refusal. */
+internal fun isNestingLimit(e: Throwable): Boolean =
+    e is SerializationException && e.message.orEmpty().contains(NESTING_LIMIT_MESSAGE)
+
+/** The fragment of kotlinx-serialization's nesting-limit message that identifies it. */
+internal const val NESTING_LIMIT_MESSAGE = "too nested"
 
 /**
  * Encode [element], neutralising the ENCODER'S OUTPUT rather than trusting the upstream pass.
@@ -439,8 +462,8 @@ private fun cutReasonLine(reason: CutReason, parseCeilingChars: Int): String = w
     CutReason.TRUNCATED_AT_WIRE_CAP ->
         "The response was cut off at ${Config.ENV_MAX_RESPONSE_BYTES} before it ended, so it is incomplete " +
             "JSON that cannot be parsed: per-record links were not stripped and no records were trimmed.\n"
-    CutReason.TOO_DEEP_TO_ENCODE ->
-        "The response was JSON nested too deeply to re-encode, so it is shown as received: per-record " +
+    CutReason.TOO_DEEPLY_NESTED ->
+        "The response was JSON nested too deeply to process, so it is shown as received: per-record " +
             "links were not stripped and no records were trimmed.\n"
     CutReason.NO_TRIMMABLE_ARRAY -> "The response had no top-level array to trim.\n"
 }

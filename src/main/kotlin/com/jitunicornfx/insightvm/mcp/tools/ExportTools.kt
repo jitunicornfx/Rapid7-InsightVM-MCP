@@ -13,6 +13,7 @@ import com.jitunicornfx.insightvm.mcp.booleanOrNull
 import com.jitunicornfx.insightvm.mcp.errorResult
 import com.jitunicornfx.insightvm.mcp.intOrNull
 import com.jitunicornfx.insightvm.mcp.longOrNull
+import com.jitunicornfx.insightvm.mcp.parseJson
 import com.jitunicornfx.insightvm.mcp.parseWholeNumber
 import com.jitunicornfx.insightvm.mcp.pruneRecordLinks
 import com.jitunicornfx.insightvm.mcp.statusHint
@@ -425,11 +426,14 @@ object ExportTools {
                     complete = false
                     break
                 }
-                val root = response.text?.let { text ->
-                    runCatching { JsonCodec.compact.parseToJsonElement(text) }.getOrNull()
-                }
+                val parsed = response.text?.let { parseJson(it) }
+                val root = parsed?.element
                 if (root == null) {
-                    status = "INCOMPLETE — page $pagesFetched was not JSON this tool can page over"
+                    status = if (parsed?.tooDeep == true) {
+                        "INCOMPLETE — page $pagesFetched was JSON nested too deeply to process"
+                    } else {
+                        "INCOMPLETE — page $pagesFetched was not JSON this tool can page over"
+                    }
                     complete = false
                     break
                 }
@@ -667,9 +671,10 @@ object ExportTools {
     /**
      * One record as a compact NDJSON line, or null when the encoder overflows the stack.
      *
-     * The parser copes with any depth (it does not recurse) but the encoder does recurse, so a hostile
-     * record can parse and then fail to render, and a StackOverflowError is no Exception: it escaped
-     * the run's handler and lost the summary and the manifest. Only that is caught here.
+     * A backstop. The parser now refuses input past its nesting limit, so a page holding such a record
+     * stops the run with its own status before anything reaches here. The encoder still recurses,
+     * though, and a StackOverflowError is no Exception: it would escape the run's handler and lose the
+     * summary and the manifest. Only that is caught here.
      */
     private fun encodeRecordOrNull(record: JsonElement): String? = try {
         JsonCodec.compact.encodeToString(JsonElement.serializer(), record)

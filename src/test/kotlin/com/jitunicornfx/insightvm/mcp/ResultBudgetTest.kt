@@ -5,7 +5,9 @@ import com.jitunicornfx.insightvm.mcp.testutil.TEST_CATALOGS
 import com.jitunicornfx.insightvm.mcp.tools.ExportTools
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import java.security.MessageDigest
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -19,6 +21,7 @@ import kotlinx.serialization.json.putJsonObject
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -328,16 +331,21 @@ class ResultBudgetTest {
     }
 
     /**
-     * The parser handles deep objects without recursion; the encoder does not. Such a body used to
-     * reach the cut as "not JSON" and, when it fitted the budget whole, was still reported as CUT to
-     * its own length.
+     * kotlinx-serialization (1.12+) refuses JSON past its nesting limit. Such a body is well-formed
+     * JSON, so the notice must say it was too deep rather than "not JSON"; and a body that fits the
+     * budget whole is passed through as received, with no notice claiming it was cut.
      */
     @Test
-    fun `json nested too deeply to re-encode is labelled so, and passed through when it fits`() {
+    fun `json over the parser's nesting limit is labelled so, and passed through when it fits`() {
         val depth = 50_000
         val deep = "{\"n\":".repeat(depth) + "1" + "}".repeat(depth)
-        val tree = assertNotNull(parseOrNull(deep), "premise: the parser survives what the encoder cannot")
-        assertNull(encodeOrNull(JsonCodec.compact, tree), "premise: the encoder overflows")
+        val refused = assertFailsWith<SerializationException>("premise: the parser refuses it") {
+            JsonCodec.compact.parseToJsonElement(deep)
+        }
+        assertTrue(isNestingLimit(refused), "the library's nesting-limit message changed: ${refused.message}")
+        assertTrue(parseJson(deep).tooDeep)
+        assertFalse(parseJson("{\"n\":").tooDeep, "a malformed body is not reported as too deep")
+        assertFalse(parseJson("[1]").tooDeep)
 
         val cutNotice = assertNotNull(render(deep, maxChars = 2_000).notice)
         assertFalse(cutNotice.contains("not JSON"), cutNotice)
@@ -346,6 +354,14 @@ class ResultBudgetTest {
         val fits = render(deep, maxChars = deep.length)
         assertEquals(deep, fits.text)
         assertNull(fits.notice, "nothing was cut, so no notice may say it was")
+    }
+
+    /** The encoder still recurses: a tree built deeper than it can render yields null, not an Error. */
+    @Test
+    fun `encodeOrNull survives a tree too deep to encode`() {
+        var tree: JsonElement = JsonPrimitive(1)
+        repeat(500_000) { tree = JsonObject(mapOf("n" to tree)) }
+        assertNull(encodeOrNull(JsonCodec.compact, tree))
     }
 
     @Test
@@ -360,7 +376,7 @@ class ResultBudgetTest {
 
     @Test
     fun `hostile input returns rather than throwing`() {
-        // Deeper than the parser's recursion limit: parseOrNull must swallow the StackOverflowError.
+        // Far past the parser's nesting limit: parseOrNull must return null, never throw.
         val deep = "[".repeat(200_000) + "]".repeat(200_000)
         val r = render(deep, maxChars = 1_000)
         assertTrue(r.text.length <= maxOf(1_000, ResultBudget.DEFAULT_SAMPLE_FLOOR_CHARS))

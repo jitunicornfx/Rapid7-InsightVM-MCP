@@ -10,12 +10,15 @@ import java.util.concurrent.atomic.AtomicBoolean
  * would pass [maxLive].
  *
  * Both HTTP transports build a Server for every session: Streamable HTTP for every POST that carries
- * no `Mcp-Session-Id`, the legacy transport for every event stream. The SDK forgets a Streamable
- * HTTP session only when the client sends DELETE, and most clients simply exit, so a long-running
- * `--http` server kept one Server per reconnect for the rest of its life.
+ * no `Mcp-Session-Id`, the legacy transport for every event stream. Before SDK 0.16 the SDK forgot a
+ * Streamable HTTP session only when the client sent DELETE, and most clients simply exit, so a
+ * long-running `--http` server kept one Server per reconnect for the rest of its life. SDK 0.16 also
+ * drops a Streamable HTTP session after 30 idle minutes and caps them at 10,000 (refusing more with
+ * 503); neither bounds a burst of reconnects inside that window, or the legacy transport at all, so
+ * this much smaller cap stays the bound.
  *
- * A limit that refused new sessions would turn those abandoned ones into a permanent lock-out, and
- * the SDK exposes no idle time to expire them by. Closing the oldest instead bounds memory and keeps
+ * A limit that refused new sessions would turn abandoned ones into a lock-out until they idled out.
+ * Closing the oldest instead bounds memory and keeps
  * the server open to new clients. Closing a Server closes its session and the SDK forgets its id, so
  * a client that does come back with it gets 404, which the Streamable HTTP specification answers by
  * initializing again; a legacy client sees its event stream end.

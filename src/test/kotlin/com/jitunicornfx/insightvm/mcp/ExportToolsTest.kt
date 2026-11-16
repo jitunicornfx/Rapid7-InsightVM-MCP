@@ -13,7 +13,6 @@ import io.ktor.client.request.HttpRequestData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -31,7 +30,6 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
@@ -651,33 +649,27 @@ class ExportToolsTest {
     }
 
     /**
-     * Regression: a record the encoder cannot render (the parser copes with any depth, the encoder
-     * recurses) threw a StackOverflowError past the export's `catch (Exception)`. The session
-     * survived, but the call ended as a bare JSON-RPC error with an orphan file and no manifest.
+     * A page holding a record past the parser's nesting limit cannot be read at all. The run stops
+     * there with a status naming the reason, and keeps what earlier pages wrote, with its manifest.
+     * (Before kotlinx-serialization 1.12 such a page parsed and the record was skipped at encode.)
      */
     @Test
-    fun `a record nested too deeply to encode is skipped and the run still reports`() = runBlocking {
-        // Twice the depth at which a direct encode overflows on this thread, for headroom on the
-        // thread that runs the tool.
-        val overflowAt = generateSequence(8_000) { it * 2 }.takeWhile { it <= 1_024_000 }.first { depth ->
-            val tree = JsonCodec.compact.parseToJsonElement(nestedObject(depth))
-            runCatching { JsonCodec.compact.encodeToString(JsonElement.serializer(), tree) }.exceptionOrNull() is StackOverflowError
+    fun `a page nested too deeply to parse stops the run and says why`() = runBlocking {
+        val deep = nestedObject(50_000)
+        val h = harness { req ->
+            val page = req.url.parameters["page"]!!.toInt()
+            if (page == 0) {
+                Canned(body = v3Page(0, 10, totalPages = 3))
+            } else {
+                Canned(body = """{"page":{"number":1,"size":10,"totalPages":3,"totalResources":30},"resources":[{"id":10,"deep":$deep}]}""")
+            }
         }
-        val deep = nestedObject(overflowAt * 2)
-        val tree = JsonCodec.compact.parseToJsonElement(deep)
-        assertFailsWith<StackOverflowError>("premise: the encoder overflows") {
-            JsonCodec.compact.encodeToString(JsonElement.serializer(), tree)
-        }
-
-        val h = harness { Canned(body = """{"resources":[{"id":1},{"id":2,"deep":$deep},{"id":3}]}""") }
-        val result = h.call(ExportTools.EXPORT_TOOL, mapOf("tool" to "get_assets", "page_size" to 10))
-        val summary = h.text(result)
-        assertContains(summary, "Exported 2 record(s)")
-        assertContains(summary, "1 record(s) too deeply nested to encode were skipped")
-        assertContains(summary, "status:    INCOMPLETE")
-        assertEquals(listOf(1, 3), ids())
-        assertContains(manifest().readText(), "1 record(s) too deeply nested to encode were skipped")
-        assertFalse(summary.contains("resume_from"), "every page was read, so there is nothing to resume")
+        val summary = export(h, mapOf("tool" to "get_assets", "page_size" to 10))
+        assertContains(summary, "Exported 10 record(s)")
+        assertContains(summary, "INCOMPLETE — page 2 was JSON nested too deeply to process")
+        assertFalse(summary.contains("not JSON"), summary)
+        assertEquals((0 until 10).toList(), ids())
+        assertContains(manifest().readText(), "nested too deeply")
     }
 
     private fun nestedObject(depth: Int) = "{\"n\":".repeat(depth) + "1" + "}".repeat(depth)

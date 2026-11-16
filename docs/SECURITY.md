@@ -156,7 +156,7 @@ Two tiers, because they defend different things:
 * Every truncation notice is server-authored — it interpolates only integers, fixed setting and tool names, and the
   trimmed array's key reduced to letters, digits, `_` and `-` — and is emitted **outside** the untrusted-data fence, so
   API content can never forge one. It names the real reason for a cut (not JSON, too large to parse, cut off at the
-  wire cap, or nested too deeply to re-encode). A cut never splits a surrogate pair.
+  wire cap, or nested too deeply to parse or re-encode). A cut never splits a surrogate pair.
 * Binary payloads are inlined only up to 4 KiB of base64; anything larger goes to a file (below).
 * All per-request work is bounded by `INSIGHTVM_TIMEOUT_MS`.
 
